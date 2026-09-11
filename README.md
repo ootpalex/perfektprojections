@@ -1,227 +1,165 @@
-# Perfekt Projections — TGS Baseball Projection System
+# Perfekt Projections
 
-A player valuation and draft-ranking system for **Out of the Park Baseball 26** (OOTP).
-Exports data from in-game Excel sheets, runs it through Future Value (FV) and
-Draft FV models, and displays everything in a local web app you open in your browser.
+A full-stack baseball analytics platform for competitive **Out of the Park Baseball** leagues:
+a calibrated projection engine fed by thousands of simulated seasons, an ingestion pipeline from
+the league's StatsPlus site, and a React dashboard that turns ~16,000 players per league into
+roster, draft, and organization decisions.
 
-Originally built for an online competitive league featuring the best players in the OOTP community; this guide explains how to set it up for yours.
+Built and used live in two online leagues (30 human GMs each). Everything below runs locally
+from two batch files.
 
----
-
-## What you get
-
-- **Hitters / Pitchers page** — every player in your league scored on FV (20-80 scale) and Draft FV
-- **Draft Board** — draft-eligible players only, filters as you make picks
-- **Market Value page** — trade/roster valuation in dollars
-- **Roster Optimizer** — lineup / bullpen / rotation suggestions
-- **Team Standings / Dev Analysis** — league overview and prospect tuning
-- **Multi-league support** — run it for as many save files as you want, side by side
-
-See [TGS Valuation Systems Explained.txt](TGS%20Valuation%20Systems%20Explained.txt)
-for how FV and Draft FV are calculated.
+![Mock Draft](docs/screenshots/mock-draft.png)
 
 ---
 
-## Requirements
+## What it does
 
-Install these once:
+**Roster Optimizer** — builds the best 26-man roster from any pool: platoon lineups vs RHP/LHP
+weighted by the league's measured plate-appearance share, a 5-man rotation, an 8-man bullpen, and a
+bench "contract" (backup C, utility IF, utility OF, flex). Linear, Pythagorean, Monte Carlo, and
+durability-adjusted win models.
 
-1. **Python 3.10+** — https://www.python.org/downloads/
-   - During install, **check the box "Add Python to PATH"**
-2. **Node.js 18+** — https://nodejs.org/ (LTS version is fine)
-3. **OOTP 26** — obviously
-4. **GitHub Desktop** (optional, but easy) — https://desktop.github.com/
+![Roster Optimizer](docs/screenshots/optimizer.png)
 
-After installing Python, open a Command Prompt and run:
+**Organization Builder** — places every player in a 30-club organization at the level he *should*
+be at (MLB through Rookie ball plus a Winter League overlay), using measured per-level talent bars
+with hysteresis so players are promoted when they would be top-third at the next level and only
+demoted when they fall below the bottom third of their own. Enforces staffing minimums, roster
+caps, and a real backup catcher on every affiliate, and tells you exactly which filler to sign when
+the system genuinely runs out of bodies.
 
-```
-pip install openpyxl
-```
+![Organization Builder](docs/screenshots/organization.png)
 
-That's the only Python package needed.
+**Team Projections** — every club's optimized roster projected to a win total, zero-sum across
+the league so the standings add up.
 
----
+![Team Projections](docs/screenshots/standings.png)
 
-## One-time setup
+**Draft tools** — a Draft Board (age-relative percentile × ceiling × projected peak, with
+durability, work ethic, and intelligence flags) and a Mock Draft that slots the *entire* class
+from the beginning and shows where every drafted player actually went. Two-way threats are
+flagged when both the bat and the arm project above league average. Both boards are built on the
+neutral park basis *and* the user's home-park basis, so you draft for the park you play in.
 
-### 1. Get the code
+**Rating Trends** — an archive of every ratings pull, biggest risers and fallers, and a measured
+development curve: how much a player at each age actually gains before he ages up, computed per
+game-year from the archive, only over players with room to grow, split by work ethic,
+intelligence, and leadership.
 
-**With GitHub Desktop (easiest):**
-- File → Clone Repository → URL tab
-- Paste: `https://github.com/perfektoa/perfektprojections`
-- Pick where to put it (default is fine) and click **Clone**
+![Rating Trends](docs/screenshots/trends.png)
 
-**Or with a terminal:**
-```
-git clone https://github.com/perfektoa/perfektprojections.git
-```
+**Market Value** — a $/WAR market fitted to the league's own free-agent signings, contract
+control windows, and trade valuation.
 
-### 2. Install webapp dependencies
+![Market Value](docs/screenshots/market-value.png)
 
-Open the folder in File Explorer. Go into `tgs-viz/`. In the address bar, type `cmd` and press Enter — that opens a Command Prompt in that folder. Then run:
+**Team sheets** — every hitter and pitcher scored on current and potential value, with the raw
+projection stat lines behind every number one click away.
 
-```
-npm install
-```
-
-Wait for it to finish (~1-2 minutes first time).
-
-### 3. Set up your league data
-
-Decide what you want to call your league (e.g. `MYLEAGUE`). Create a folder next to `tgs-viz/` named:
-
-```
-The Sheets MYLEAGUE
-```
-
-The script auto-discovers any folder starting with `The Sheets `. You can have multiple leagues at once.
-
-Inside that folder, drop in these Excel files (exported from OOTP — see "Where the xlsx files come from" below):
-
-| File | Required? | What it's for |
-|---|---|---|
-| `The Sheet Hitters.xlsx` | **Required** | Main hitters list |
-| `The Sheet Pitchers.xlsx` | **Required** | Main pitchers list |
-| `The Sheet Hitters - Draft.xlsx` | Optional | Draft board hitters |
-| `The Sheet Pitchers - Draft.xlsx` | Optional | Draft board pitchers |
-| `The Sheet Hitters - FA.xlsx` | Optional | Free agent hitters |
-| `The Sheet Pitchers - FA.xlsx` | Optional | Free agent pitchers |
-
-Each file needs a sheet named `Hitters` or `Pitchers` with the standard column layout
-(ID, Name, Age, WAA columns, wOBA, potential columns, Prone, WE, INT, etc.).
-
-See my `The Sheets TGS/` folder in the repo for a working example.
-
-### 4. Run the data extractor
-
-Double-click **`Update Data.bat`**. It will:
-- Find all `The Sheets *` folders
-- Read the xlsx files
-- Write JSON files to `tgs-viz/public/data/<LEAGUE_ID>/`
-- Update `leagues.json` so the webapp knows what's available
-
-You'll see a window showing progress. Takes 10-60 seconds depending on league size.
-
-### 5. Launch the webapp
-
-Double-click **`Launch TGS.bat`**. It will:
-- Start the Vite dev server on port 3000
-- Open your browser to `http://localhost:3000`
-
-Switch between leagues with the dropdown in the top nav.
-
-Leave the window open while you use the app. Closing it stops the server.
+![Hitters](docs/screenshots/hitters.png)
 
 ---
 
-## Daily usage
-
-Once set up, the loop is:
-
-1. Play your OOTP season
-2. Re-export the xlsx files into your `The Sheets <LEAGUE>` folder (overwrite the old ones)
-3. Double-click `Update Data.bat`
-4. Double-click `Launch TGS.bat` (if not already running) and refresh your browser
-
----
-
-## Where the xlsx files come from
-
-The Excel files are expected to be outputs of the "25 Regressions" workflow —
-in-game ratings run through regression formulas that produce WAA (Wins Above Average)
-projections per player. The key columns the app reads:
-
-- **IDs & identity:** `ID`, `Name`, `Age`, `POS`, `ORG`, `Level`
-- **Current WAA:** `WAA wtd`, `Max WAA wtd`, `Max WAA vR`, `WAA wtd RP`
-- **Potential WAA:** `MAX WAA P`, `WAP`, `WAP RP` (only for age ~16-23)
-- **Hitting metric:** `wOBA wtd`
-- **Traits:** `Prone` (durability), `WE` (work ethic), `INT` (intelligence)
-- **Draft-only:** `Player List` sheet with `Manual='DRAFT'` flag, `Drafted` sheet with StatsPlus paste
-
-If you don't have a 25 Regressions workbook of your own, the simplest path is to
-copy my `The Sheets TGS/25 Regressions.xlsx` and adapt it to your league's data.
-
----
-
-## How the pipeline works
+## How it works
 
 ```
-  OOTP ——export——>  The Sheets LEAGUE/*.xlsx
-                            |
-                    python extract_data.py
-                            |
-                            v
-             tgs-viz/public/data/LEAGUE/*.json
-                            |
-                      React webapp
-                            |
-                            v
-                    http://localhost:3000
+ OOTP league (online)                 OOTP client (local clones)
+        │                                       │
+        │ ratings + public API                  │ ootp/winsim.py — unattended UI
+        ▼                                       │ automation: clone, auto-play
+ StatsPlus  ──▶  tgs-viz/ingest/refresh.py      │ 10 seasons, bank the box scores
+                        │                       ▼
+                        │              tgs-viz/engine/calibrate.py
+                        │              fits rating → outcome regressions,
+                        │              fielding curves, pitching S-curves,
+                        │              run-value currency (per league)
+                        ▼                       │
+              tgs-viz/engine/  ◀────────────────┘
+              hitters.py / pitchers.py: ratings → stat lines → WAA,
+              park layer, split-aware potentials
+                        │
+                        ▼
+              tgs-viz/public/data/<LEAGUE>/*.json   ──▶   React app (Vite)
 ```
 
-`extract_data.py` — reads xlsx, filters draft-eligible players, writes JSON
-`tgs-viz/src/lib/futureValue.js` — FV calculation (S-curve, risk, aging)
-`tgs-viz/src/lib/draftFV.js` — Draft FV calculation (age percentile + ceiling)
-`tgs-viz/src/pages/` — each page in the webapp
+- **Projection engine** (`tgs-viz/engine/`) — pure Python, no numpy. Turns 20-80 scouting ratings
+  into full stat lines and wins above average, separately against left- and right-handed
+  opponents, on a neutral-park basis and a home-park blend. Replaced a 28-pivot Excel regression
+  workbook and was validated against it cell for cell (100 of 110 checks exact; the remaining 10
+  were Excel's own stale caches).
+- **Calibration from simulation** (`ootp/`, `tgs-viz/engine/calibrate.py`) — the game is a black
+  box, so the regressions are fitted to its output: `winsim.py` drives the OOTP client with mouse
+  and keyboard automation, clones a baseline league, auto-plays ten seasons per clone, clears the
+  popups that halt auto-play, and banks the results. One unattended "grind" cycle is ~100 seasons.
+  The fitter pools every banked season, refits piecewise regressions and curves, promotes them
+  only when the fit clears its checks, and rebuilds the app.
+- **Ingestion** (`tgs-viz/ingest/`) — pulls ratings, contracts, injuries, service time, draft
+  eligibility, and draft results from StatsPlus; archives every pull as a compressed vintage;
+  builds the draft, Rule 5, and international boards. Reports honestly: every step's exit code
+  is tracked, the final "data date report" is derived from file timestamps rather than what the
+  steps claimed, a wrong-league guard refuses to save a pull that doesn't match the league, and
+  cached fallbacks cover API outages (the pick list survived a StatsPlus maintenance window
+  mid-draft).
+- **Backtesting** (`tgs-viz/backtest/`) — a SQLite history of every ratings pull, per-age-year
+  development curves with per-interval contamination guards (a league-wide re-scout between two
+  pulls poisons only that interval), and season snapshots frozen against actual results.
+- **App** (`tgs-viz/src/`) — React 19, Vite, Tailwind, Recharts. Roster Optimizer, Organization
+  Builder, and Team Projections share one optimizer so every screen agrees.
 
-FV and Draft FV parameters are tunable — see the Dev Analysis page in the app,
-or edit the constants at the top of the two .js files.
+### Measured, not assumed
+
+A recurring theme: wherever a constant could be measured from the game instead of guessed, it was.
+
+- The platoon basis of OOTP's published potential ratings was measured over fully developed
+  players — hitters' potentials read on the vs-RHP line, pitchers' on the platoon blend — and both
+  engines build split-aware peak lines from each player's own current lean.
+- Development is measured per year of age, not per pull: each pull pair's in-game length comes
+  from the fraction of players who had a birthday inside it, and a player's change is credited to
+  the age he actually was. The measured curve independently confirmed the league's development
+  cut-off: gains reach exactly zero at age 25.
+- Park factors are read from the league's own export; the "My Park" basis is 50% home park and
+  50% the average of the other parks, reproducing the workbook's own park cells to 1e-12.
+- The two leagues are calibrated and measured entirely separately; nothing is ever pooled across
+  them.
 
 ---
 
-## Troubleshooting
-
-**"python is not recognized" when running Update Data.bat**
-You didn't check "Add Python to PATH" during install. Reinstall Python and check the box, or add it to PATH manually.
-
-**"npm is not recognized" when running Launch TGS.bat**
-Node.js isn't installed, or you need to restart your Command Prompt after installing it.
-
-**"No 'The Sheets *' folders found!"**
-Your league folder isn't named correctly — it has to start with `The Sheets ` (with a space), and it needs to be in the repo root (next to the `tgs-viz` folder).
-
-**Webapp opens but shows no data / says "Failed to load"**
-You haven't run `Update Data.bat` yet, or it errored out. Check the `leagues.json` file in `tgs-viz/public/data/` — it should list your league.
-
-**Port 3000 already in use**
-Something else is running on that port. Edit `Launch TGS.bat` and change `--port 3000` to `--port 3001`.
-
-**Browser opens to a blank page**
-Check the Command Prompt window — if there's a red error, it'll usually tell you what's wrong. Most common cause: mismatched column names in your xlsx. Compare your column headers against the ones listed above.
-
----
-
-## Folder layout
+## Repository layout
 
 ```
 perfektprojections/
-├── README.md                          <- you are here
-├── TGS Valuation Systems Explained.txt <- how FV and Draft FV work
-├── Launch TGS.bat                     <- starts the webapp
-├── Update Data.bat                    <- regenerates data from xlsx
-├── The Sheets TGS/                    <- example league (my data)
-│   ├── 25 Regressions.xlsx
-│   ├── 25 Metadata.xlsx
-│   ├── The Sheet Hitters.xlsx
-│   ├── The Sheet Pitchers.xlsx
-│   └── ...
-├── The Sheets BLM/                    <- another example league
-│   └── ...
-└── tgs-viz/
-    ├── extract_data.py                <- xlsx -> JSON pipeline
-    ├── package.json                   <- webapp dependencies
-    ├── src/                           <- React source
-    │   ├── lib/futureValue.js         <- FV logic
-    │   ├── lib/draftFV.js             <- Draft FV logic
-    │   └── pages/                     <- webapp pages
-    └── public/data/                   <- generated JSON (gitignored after first run)
-        ├── leagues.json
-        ├── TGS/
-        └── BLM/
+├── Get StatsPlus Ratings.bat      pull + rebuild everything for the signed-in league
+├── Launch TGS.bat                 start the app (http://localhost:3000)
+├── Grind TGS.bat / Grind BLM.bat  unattended simulate → recalibrate loop
+├── Recalibrate *.bat              refit from every banked season
+├── Update Draft Board.bat         rebuild the draft boards from an OOTP pool export
+├── Bank Season.bat                freeze projections + fetch actuals for backtesting
+├── WHICH BUTTON.docx              the operator's guide: what to run, when
+├── STATUS.md                      engineering log / handoff notes
+├── ootp/                          OOTP client automation (winsim, clone cleanup)
+├── tgs-viz/
+│   ├── engine/                    projection engine, calibration, park layer, age curves
+│   │   └── calib/<LEAGUE>/        fitted constants and curves per league
+│   ├── ingest/                    StatsPlus ingestion, draft / R5 / IAFA boards, pull report
+│   ├── backtest/                  ratings history DB, vintages archive, snapshots
+│   ├── src/                       React app
+│   └── public/data/<LEAGUE>/      generated datasets the app reads
+└── The Sheets <LEAGUE>/           the original Excel workbooks (still the source of a few constants)
 ```
 
----
+## Running it
+
+Requires Python 3.10+ (plus `openpyxl`) and Node 18+.
+
+```
+git clone https://github.com/perfektoa/perfektprojections.git
+cd perfektprojections/tgs-viz && npm install
+```
+
+Then double-click `Launch TGS.bat`. The repo ships with the current datasets for both leagues, so
+the app runs as-is. Refreshing data requires StatsPlus access for the league; the full operator
+workflow is in `WHICH BUTTON.docx`.
 
 ## Credit
 
-Built on top of OOTP 26's in-game rating system and the excellent excel work of YourKidnies.
+Built on OOTP 26/27's rating system and the original Excel regression work of YourKidnies.
