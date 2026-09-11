@@ -1,0 +1,230 @@
+{
+ "league": "BLM",
+ "window": [
+  "2026-05-31_p1.csv.gz",
+  "2026-09-08_p58.csv.gz"
+ ],
+ "span_years": 1.162,
+ "pairs": {
+  "used": 20,
+  "zero_time": 0,
+  "contaminated": 0
+ },
+ "players": 12523,
+ "curve": {
+  "15": {
+   "n": 53,
+   "players": 49,
+   "years": 5.3,
+   "mean": -0.3487,
+   "closure": -0.0733,
+   "n_gap": 53
+  },
+  "16": {
+   "n": 7383,
+   "players": 1455,
+   "years": 415.1,
+   "mean": -0.3819,
+   "closure": -0.098,
+   "n_gap": 7310
+  },
+  "17": {
+   "n": 15436,
+   "players": 2156,
+   "years": 894.1,
+   "mean": -0.2791,
+   "closure": -0.0703,
+   "n_gap": 15350
+  },
+  "18": {
+   "n": 17205,
+   "players": 2246,
+   "years": 1000.5,
+   "mean": -0.0261,
+   "closure": -0.0261,
+   "n_gap": 17186
+  },
+  "19": {
+   "n": 19374,
+   "players": 2189,
+   "years": 1084.6,
+   "mean": 0.0678,
+   "closure": -0.0148,
+   "n_gap": 19374
+  },
+  "20": {
+   "n": 18031,
+   "players": 2145,
+   "years": 1032.0,
+   "mean": 0.1573,
+   "closure": 0.0104,
+   "n_gap": 17980
+  },
+  "21": {
+   "n": 16557,
+   "players": 2147,
+   "years": 937.0,
+   "mean": 0.1717,
+   "closure": 0.0192,
+   "n_gap": 16250
+  },
+  "22": {
+   "n": 19228,
+   "players": 2259,
+   "years": 1101.3,
+   "mean": 0.0558,
+   "closure": -0.0154,
+   "n_gap": 18500
+  },
+  "23": {
+   "n": 19591,
+   "players": 2251,
+   "years": 1088.5,
+   "mean": -0.096,
+   "closure": -0.0825,
+   "n_gap": 18128
+  },
+  "24": {
+   "n": 16191,
+   "players": 1855,
+   "years": 903.0,
+   "mean": -0.1848,
+   "closure": -0.1378,
+   "n_gap": 13704
+  },
+  "25": {
+   "n": 11702,
+   "players": 1400,
+   "years": 640.8,
+   "mean": -0.2386,
+   "closure": -0.1956,
+   "n_gap": 9028
+  },
+  "26": {
+   "n": 8443,
+   "players": 1041,
+   "years": 474.3,
+   "mean": -0.3538,
+   "closure": -0.2988,
+   "n_gap": 5816
+  },
+  "27": {
+   "n": 5869,
+   "players": 729,
+   "years": 320.9,
+   "mean": -0.2825,
+   "closure": -0.2892,
+   "n_gap": 3190
+  },
+  "28": {
+   "n": 4009,
+   "players": 479,
+   "years": 223.3,
+   "mean": -0.2629,
+   "closure": -0.3947,
+   "n_gap": 1508
+  },
+  "29": {
+   "n": 2872,
+   "players": 369,
+   "years": 158.9,
+   "mean": -0.2947,
+   "closure": -0.2311,
+   "n_gap": 959
+  },
+  "30": {
+   "n": 1988,
+   "players": 263,
+   "years": 114.0,
+   "mean": -0.3701,
+   "closure": -0.4034,
+   "n_gap": 127
+  },
+  "31": {
+   "n": 1294,
+   "players": 187,
+   "years": 71.3,
+   "mean": -0.3878,
+   "closure": -0.095,
+   "n_gap": 116
+  },
+  "32": {
+   "n": 949,
+   "players": 149,
+   "years": 56.4,
+   "mean": -0.5625,
+   "closure": -0.9867,
+   "n_gap": 68
+  },
+  "33": {
+   "n": 821,
+   "players": 123,
+   "years": 47.6,
+   "mean": -0.2488,
+   "closure": -0.1869,
+   "n_gap": 37
+  },
+  "34": {
+   "n": 631,
+   "players": 79,
+   "years": 34.6,
+   "mean": -0.3923,
+   "closure": -0.0032,
+   "n_gap": 66
+  },
+  "35": {
+   "n": 433,
+   "players": 51,
+   "years": 23.1,
+   "mean": -0.3271,
+   "closure": null,
+   "n_gap": 19
+  },
+  "36": {
+   "n": 216,
+   "players": 34,
+   "years": 12.4,
+   "mean": -0.1829,
+   "closure": null,
+   "n_gap": 6
+  },
+  "37": {
+   "n": 121,
+   "players": 18,
+   "years": 7.4,
+   "mean": -0.3271,
+   "closure": null,
+   "n_gap": 0
+  },
+  "38": {
+   "n": 132,
+   "players": 13,
+   "years": 6.2,
+   "mean": -0.2198,
+   "closure": null,
+   "n_gap": 0
+  },
+  "39": {
+   "n": 54,
+   "players": 5,
+   "years": 2.6,
+   "mean": -0.0583,
+   "closure": null,
+   "n_gap": 0
+  },
+  "40": {
+   "n": 33,
+   "players": 3,
+   "years": 1.6,
+   "mean": -0.1028,
+   "closure": null,
+   "n_gap": 0
+  }
+ },
+ "notes": [
+  "gain per AGE-YEAR: adjacent-pair deltas attributed to the age the player was (split on birthday crossings), exposure-weighted ratio of sums",
+  "dWAA/yr on the neutral-park basis; MLB/minors only",
+  "closure = share of the (ceiling - current) gap closed per game-year",
+  "contaminated pairs (re-scout/adjusted-ratings inside the pair) are skipped individually; clean pairs keep accumulating"
+ ]
+}

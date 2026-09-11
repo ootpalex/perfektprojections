@@ -12,3 +12,11 @@ pull_id,league,real_date,real_ts,source,source_files,n_players,content_hash,inge
 32,BLM,2026-08-08,2026-08-08T09:51:01,live,"[""tgs-viz\\ingest\\.cache\\history\\statsplus_blm_20260808-0951.json""]",13892,7ab1890d98e34ef71b3ad1df2389831ee627b76f,2026-08-08T09:51:02
 34,BLM,2026-08-10,2026-08-10T16:00:49,live,"[""tgs-viz\\ingest\\.cache\\history\\statsplus_blm_20260810-1600.json""]",13907,87a1f6cad0b36937c2e3cd36108f9e353f1fa567,2026-08-10T16:00:49
 35,BLM,2026-08-11,2026-08-11T17:24:02,live,"[""tgs-viz\\ingest\\.cache\\history\\statsplus_blm_20260811-1724.json""]",13926,38a1760263f7e8a562c708ea79ceaebc102da2c3,2026-08-11T17:24:03
+37,BLM,2026-08-13,2026-08-13T07:51:49,live,"[""tgs-viz\\ingest\\.cache\\history\\statsplus_blm_20260813-0751.json""]",13937,53b804b2c3493325c33fe372b14abc6e58f6adc5,2026-08-13T07:51:50
+40,BLM,2026-08-16,2026-08-16T23:34:04,live,"[""tgs-viz\\ingest\\.cache\\history\\statsplus_blm_20260816-2334.json""]",13962,1323cec804d2eef8637146d492be4c57539370d6,2026-08-16T23:34:04
+47,BLM,2026-08-26,2026-08-26T09:27:28,live,"[""tgs-viz\\ingest\\.cache\\history\\statsplus_blm_20260826-0927.json""]",14009,b74bdf7ee2cb1f38d944e342f66f8d9044f4b05b,2026-08-26T09:27:28
+50,BLM,2026-08-28,2026-08-28T09:41:17,live,"[""tgs-viz\\ingest\\.cache\\history\\statsplus_blm_20260828-0941.json""]",14013,6c42d9dec3ad20cd5864a3bbbcf87af23d4a2b1e,2026-08-28T09:41:17
+51,BLM,2026-08-29,2026-08-29T08:44:33,live,"[""tgs-viz\\ingest\\.cache\\history\\statsplus_blm_20260829-0844.json""]",14027,7d976efa7187b4a5f2ac951dbbd6b0281f34bb8c,2026-08-29T08:44:34
+54,BLM,2026-09-03,2026-09-03T08:43:10,live,"[""tgs-viz\\ingest\\.cache\\history\\statsplus_blm_20260903-0843.json""]",14063,3ef5ccccea9c036eea1e182dee338db44523fc88,2026-09-03T08:43:11
+56,BLM,2026-09-07,2026-09-07T07:53:57,live,"[""tgs-viz\\ingest\\.cache\\history\\statsplus_blm_20260907-0753.json""]",14085,c7825da4873099d0157156c24e6f6c304e9309a6,2026-09-07T07:53:58
+58,BLM,2026-09-08,2026-09-08T11:32:14,live,"[""tgs-viz\\ingest\\.cache\\history\\statsplus_blm_20260908-1132.json""]",14053,05bb398896a9f1f820dccbc301484410d7de8dd0,2026-09-08T11:32:14
