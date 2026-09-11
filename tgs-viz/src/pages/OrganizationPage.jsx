@@ -4,6 +4,7 @@ import {
 } from '../lib/orgBuilder';
 import { PositionalStrengthCard } from '../components/PositionalStrength';
 import { LEAGUE_TEAMS } from './TeamStandingsPage';
+import { usePlayerData } from '../hooks/usePlayerData';
 import { Building2, ArrowUpCircle, ArrowDownCircle, AlertTriangle, ChevronDown, Zap, Users } from 'lucide-react';
 
 const fmt = (v) => (v === null || v === undefined ? '—' : Number(v).toFixed(1));
@@ -61,7 +62,17 @@ function Tags({ p, cardLev }) {
   );
 }
 
-function PitcherLine({ x, lev }) {
+// Parse a raw sheet value; null when the projection doesn't exist for that role.
+const pnum = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
+
+function PitcherLine({ x, lev, role }) {
+  // Show the WAA of the ROLE this line slots him in (user rule: the value at
+  // the position he's playing) — SP line in a rotation row, RP line in a pen
+  // row — not his best-of-roles value, which made a −0.26 SP4 read as +0.1.
+  const cur = role === 'SP' ? (pnum(x.p['WAA wtd']) ?? x.cur)
+    : role === 'RP' ? (pnum(x.p['WAA wtd RP']) ?? x.cur) : x.cur;
+  const pot = role === 'SP' ? (pnum(x.p['WAP']) ?? x.pot)
+    : role === 'RP' ? (pnum(x.p['WAP RP']) ?? x.pot) : x.pot;
   return (
     <div className="flex items-center justify-between px-2 py-1 border-t border-slate-800/50 text-xs">
       <span className="text-slate-200 truncate flex items-center gap-1">{x.p['Name']} <span className="text-slate-600">{x.p['T']}HP</span><LocChip p={x.p} cardLev={lev} /><Tags p={x.p} cardLev={lev} />
@@ -69,8 +80,8 @@ function PitcherLine({ x, lev }) {
         {x._devDepth && <Badge title="roster depth — fills the staff beyond the core 6 SP / 9 RP (young arms kept to develop, plus fillers to reach the roster cap)" cls="bg-sky-500/10 text-sky-300/70 border-sky-500/25">depth</Badge>}</span>
       <span className="flex items-center gap-2 tabular-nums">
         <span className="text-slate-500">{x.age ?? '—'}</span>
-        <span className={valColor(x.cur)}>{fmt(x.cur)}</span>
-        <span className="text-sky-300/70 w-8 text-right">{fmt(x.pot)}</span>
+        <span className={valColor(cur)}>{fmt(cur)}</span>
+        <span className="text-sky-300/70 w-8 text-right">{fmt(pot)}</span>
       </span>
     </div>
   );
@@ -100,6 +111,11 @@ function HitterRow({ h, lev, bench }) {
   const prospect = h.age != null && h.age < 25 && h.pot != null && h.cur != null && h.pot > h.cur + 1;
   const slot = h.slot || 'BN';
   const pos = h.slotPos || h.bestPos || h.p['POS'];
+  // Value at the position he's PLAYING on this card (user rule) — a bat slotted
+  // at 2B shows his 2B WAA, not his best-position number. Bench/role rows with
+  // no assigned position keep the best-position value.
+  const cur = h.slotPos ? (pnum(h.p[`${h.slotPos} WAA wtd`]) ?? h.cur) : h.cur;
+  const pot = h.slotPos ? (pnum(h.p[`${h.slotPos} WAA P`]) ?? h.pot) : h.pot;
   return (
     <tr className={`border-t border-slate-800/50 hover:bg-slate-800/30 ${bench ? 'opacity-70' : ''}`}>
       <td className="px-2 py-1"><Badge cls={bench ? 'bg-slate-800/40 text-slate-500 border-slate-700/40' : 'bg-slate-700/40 text-slate-300 border-slate-600/40'}>{slot}</Badge></td>
@@ -107,8 +123,8 @@ function HitterRow({ h, lev, bench }) {
       <td className="px-2 py-1 text-slate-500 text-center">{h.age ?? '—'}</td>
       <td className="px-2 py-1 text-slate-400 text-center">{pos}</td>
       <td className={`px-2 py-1 text-right tabular-nums ${wobaColor(h.woba)}`}>{fmtWoba(h.woba)}</td>
-      <td className={`px-2 py-1 text-right tabular-nums ${valColor(h.cur)}`}>{fmt(h.cur)}</td>
-      <td className="px-2 py-1 text-right tabular-nums text-sky-300/70">{fmt(h.pot)}</td>
+      <td className={`px-2 py-1 text-right tabular-nums ${valColor(cur)}`}>{fmt(cur)}</td>
+      <td className="px-2 py-1 text-right tabular-nums text-sky-300/70">{fmt(pot)}</td>
       <td className="px-2 py-1">
         <div className="flex gap-1 items-center">
           <Tags p={h.p} cardLev={lev} />
@@ -137,7 +153,7 @@ function LevelCard({ lev, data }) {
           {!empty && <span className="text-xs text-slate-500 tabular-nums">{c.SP} SP · {c.RP} RP · {c.hitters} bats{c.bench ? ` (${c.bench} bench)` : ''} · {c.LHP} LHP</span>}
         </div>
         <div className="flex gap-1.5 flex-wrap justify-end">
-          {data.gaps.map((g, i) => <Badge key={i} cls="bg-rose-500/15 text-rose-400 border-rose-500/30">filler: {g}</Badge>)}
+          {data.gaps.map((g, i) => <Badge key={i} cls="bg-rose-500/15 text-rose-400 border-rose-500/30" title="every fill path was tried — the org has no eligible 25+ body left for this slot; sign a minor-league filler">{g}: sign a filler</Badge>)}
         </div>
       </div>
       {empty ? <div className="px-4 py-3 text-xs text-slate-600 italic">No players reach this level</div> : (
@@ -145,9 +161,13 @@ function LevelCard({ lev, data }) {
           {/* pitching */}
           <div className="lg:col-span-2 border-r border-slate-800/60">
             <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-slate-600 flex items-center gap-1"><Zap size={11} /> Rotation</div>
-            {data.SP.length ? data.SP.map((x, i) => <PitcherLine key={i} x={x} lev={lev} />) : <div className="px-2 py-1 text-[11px] text-rose-400/70">need {lev === 'MLB' ? 5 : 6} SP</div>}
+            {data.SP.map((x, i) => <PitcherLine key={i} x={x} lev={lev} role="SP" />)}
+            {lev !== 'WL' && lev !== 'INT' && data.SP.length < (lev === 'MLB' ? 5 : 6) &&
+              <div className="px-2 py-1 text-[11px] text-rose-400/70">{data.SP.length}/{lev === 'MLB' ? 5 : 6} SP — sign {(lev === 'MLB' ? 5 : 6) - data.SP.length} filler starter{(lev === 'MLB' ? 5 : 6) - data.SP.length > 1 ? 's' : ''}</div>}
             <div className="px-2 py-1 mt-1 text-[10px] uppercase tracking-wider text-slate-600">Bullpen</div>
-            {data.RP.length ? data.RP.map((x, i) => <PitcherLine key={i} x={x} lev={lev} />) : <div className="px-2 py-1 text-[11px] text-rose-400/70">need {lev === 'MLB' ? 8 : 9} RP</div>}
+            {data.RP.map((x, i) => <PitcherLine key={i} x={x} lev={lev} role="RP" />)}
+            {lev !== 'WL' && lev !== 'INT' && data.RP.length < 8 &&
+              <div className="px-2 py-1 text-[11px] text-rose-400/70">{data.RP.length}/8 RP — sign {8 - data.RP.length} filler reliever{8 - data.RP.length > 1 ? 's' : ''}</div>}
           </div>
           {/* hitters */}
           <div className="lg:col-span-3">
@@ -182,14 +202,32 @@ function SummaryCard({ title, icon, children }) {
   );
 }
 
-export default function OrganizationPage({ hitters = [], pitchers = [], league }) {
+export default function OrganizationPage({ hitters: hittersIn = [], pitchers: pitchersIn = [], metadata, league }) {
+  // The Org Builder ALWAYS reads the NEUTRAL park basis. Farm placement is a
+  // normalized development question — the kid plays in minor-league parks, not
+  // Wrigley — and a knife-edge player must not change LEVELS when the MLB park
+  // lens flips (James Barbera cleared the AA bar by 0.01 neutral and missed by
+  // 0.01 on My Park). Park-lens MLB context lives on the Roster Optimizer and
+  // Team Projections pages. When the app toggle is already Neutral the files
+  // are identical (and cached), so this costs nothing.
+  const { data: neutralData } = usePlayerData(league, 'neutral');
+  const hitters = neutralData.hitters.length ? neutralData.hitters : hittersIn;
+  const pitchers = neutralData.pitchers.length ? neutralData.pitchers : pitchersIn;
+
   const orgs = useMemo(() => listOrgs(hitters, pitchers), [hitters, pitchers]);
   const [org, setOrg] = useState('');
   useEffect(() => { if (orgs.length && !orgs.includes(org)) setOrg(orgs.find((o) => /cub/i.test(o)) || orgs[0]); }, [orgs]); // eslint-disable-line
 
+  // Same platoon-weight basis as the Roster Optimizer + Team Projections, so
+  // the MLB card is the SAME roster those screens show.
+  const vrShare = metadata?.matchups?.['OVR vR'];
+
   // One source of truth: buildRosters places everyone AND derives the promote / buried /
   // pipeline summaries from that same placement, so the panels match the level cards.
-  const rosters = useMemo(() => (org ? buildRosters(org, hitters, pitchers) : null), [org, hitters, pitchers]);
+  const rosters = useMemo(
+    () => (org ? buildRosters(org, hitters, pitchers, { league, vrShare }) : null),
+    [org, hitters, pitchers, league, vrShare]
+  );
 
   // Same club set the standings rank against, so "8th of 28" means the same
   // thing on both screens. Unmapped leagues pass null and fall back to any org
@@ -258,7 +296,15 @@ export default function OrganizationPage({ hitters = [], pitchers = [], league }
           </div>
 
           <div className="space-y-3">
-            {[...LEVELS].reverse().map((lev) => <LevelCard key={lev} lev={lev} data={rosters.levels[lev]} />)}
+            {[...LEVELS].reverse()
+              // hide the WL card entirely for a league with no Winter League
+              // (BLM) — an empty phantom card is noise, not information
+              .filter((lev) => {
+                const d = rosters.levels[lev];
+                if (lev !== 'WL' || !d) return true;
+                return d.SP.length + d.RP.length + d.hitters.length + (d.bench?.length || 0) > 0;
+              })
+              .map((lev) => <LevelCard key={lev} lev={lev} data={rosters.levels[lev]} />)}
           </div>
 
           {(cuts.H.length > 0 || cuts.P.length > 0) && (

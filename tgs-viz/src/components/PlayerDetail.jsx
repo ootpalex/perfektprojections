@@ -1,10 +1,115 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { calculateFutureValue } from '../lib/futureValue';
 import { controlWindow, formatControl } from '../lib/serviceTime';
 import { formatCellValue, getCellColorClass } from '../lib/columns';
 import { loadRatingTrends, playerHistory } from '../lib/ratingTrends';
+import { loadAgeCurve, measuredTrajectory } from '../lib/ageCurve';
 import { X } from 'lucide-react';
+
+/**
+ * OOTP-style 20-80 rating chip. The whole point is legibility: a big number in
+ * a bucket color you can read across the room, like the game's own star scale.
+ */
+function ratingClass(v) {
+  if (v === null || v === undefined || isNaN(v)) return 'bg-slate-800 text-slate-600';
+  if (v >= 75) return 'bg-sky-500/25 text-sky-300';
+  if (v >= 65) return 'bg-emerald-500/25 text-emerald-300';
+  if (v >= 55) return 'bg-lime-500/20 text-lime-300';
+  if (v >= 45) return 'bg-yellow-500/15 text-yellow-200';
+  if (v >= 40) return 'bg-amber-600/25 text-amber-300';
+  if (v >= 30) return 'bg-orange-600/25 text-orange-300';
+  return 'bg-red-600/25 text-red-300';
+}
+
+function RChip({ value, dim }) {
+  const v = parseFloat(value);
+  const has = !isNaN(v);
+  return (
+    <span className={`inline-flex items-center justify-center w-9 h-7 rounded-md text-sm font-bold tabular-nums ${
+      has ? ratingClass(v) : 'bg-slate-800/60 text-slate-600'
+    } ${dim ? 'opacity-70' : ''}`}>
+      {has ? Math.round(v) : '–'}
+    </span>
+  );
+}
+
+/** Ratings table: label | vR | vL | Pot — every cell a colored 20-80 chip. */
+function RatingsTable({ rows, player }) {
+  return (
+    <table className="w-full border-separate" style={{ borderSpacing: '0 3px' }}>
+      <thead>
+        <tr className="text-[10px] text-slate-500 uppercase tracking-wider">
+          <th className="text-left font-semibold"> </th>
+          <th className="font-semibold w-10">vR</th>
+          <th className="font-semibold w-10">vL</th>
+          <th className="font-semibold w-10">Pot</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(([label, vr, vl, pot]) => (
+          <tr key={label}>
+            <td className="text-xs text-slate-400 pr-1">{label}</td>
+            <td className="text-center"><RChip value={player[vr]} /></td>
+            <td className="text-center"><RChip value={player[vl]} /></td>
+            <td className="text-center"><RChip value={player[pot]} /></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** Ratings without splits (speed, stamina, fielding...): the same aligned
+ * label-left / value-right rows the rest of the panel uses, chip-valued. */
+function ChipRow({ items, player, cols = 2 }) {
+  return (
+    <div className={`grid ${cols === 1 ? 'grid-cols-1' : 'grid-cols-2'} gap-x-5`}>
+      {items.map(([label, key]) => (
+        <div key={label} className="flex items-center justify-between py-[3px]">
+          <span className="text-xs text-slate-400">{label}</span>
+          <RChip value={player[key]} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// OOTP pitch codes -> names; potential is the same code + 'P'.
+const PITCHES = [
+  ['FB', 'Fastball'], ['SI', 'Sinker'], ['CT', 'Cutter'], ['SL', 'Slider'],
+  ['CB', 'Curveball'], ['CH', 'Changeup'], ['SP', 'Splitter'], ['FO', 'Forkball'],
+  ['CC', 'Circle Ch.'], ['SC', 'Screwball'], ['KC', 'Knuckle Cu.'], ['KN', 'Knuckleball'],
+];
+
+function PitchRepertoire({ player }) {
+  const owned = PITCHES
+    .map(([code, name]) => ({ code, name, cur: parseFloat(player[code]), pot: parseFloat(player[code + 'P']) }))
+    .filter(p => !isNaN(p.cur) && p.cur > 0);
+  if (!owned.length) return null;
+  owned.sort((a, b) => b.cur - a.cur);
+  return (
+    <div>
+      <h4 className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5 mt-3">
+        Pitches ({owned.length})
+      </h4>
+      <div className="space-y-1">
+        {owned.map(p => (
+          <div key={p.code} className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 w-20">{p.name}</span>
+            <RChip value={p.cur} />
+            {!isNaN(p.pot) && p.pot > p.cur ? (
+              <>
+                <span className="text-slate-600 text-xs">→</span>
+                <RChip value={p.pot} dim />
+              </>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /** Tiny inline sparkline for a rating series (nulls = missing pulls, skipped). */
 function Sparkline({ values, delta }) {
@@ -93,32 +198,50 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
 
   // FV counts the seasons this club still holds, not a flat six (serviceTime).
   const control = useMemo(() => controlWindow(player), [player]);
+
+  // Measured league dev curve (null until loaded / absent for the league)
+  const [ageCurve, setAgeCurve] = useState(null);
+  useEffect(() => {
+    let on = true;
+    loadAgeCurve(player._appLeague).then(c => { if (on) setAgeCurve(c); });
+    return () => { on = false; };
+  }, [player._appLeague]);
+
   // valueYears: control is what you keep, valueYears is what is worth counting (a free
   // agent controls 0 seasons but is not worth 0). See serviceTime.controlWindow.
+  // NOTE: the measured age curve is NOT passed here (calculateFutureValue has a
+  // dormant measured path). The archive's only window so far is pre-first-full-
+  // development-cycle (offseason dev labs still running — user, 2026-08-26), so
+  // its closure rates aren't representative yet. The chart below still SHOWS the
+  // measured line for comparison. Flip: pass { ageCurve } here and in
+  // usePlayersWithFV once a full tracked dev cycle is in the archive.
   const fv = useMemo(() => calculateFutureValue(player, control.valueYears), [player, control]);
 
-  // Development curve data
-  const devCurve = fv.yearByYear.map(y => ({
-    age: y.age,
-    WAA: y.rawWAA,
-  }));
-
-  // Radar chart data for hitters
-  const radarData = type === 'hitter' ? [
-    { stat: 'Contact', value: parseFloat(player['BA vR']) || 0, potential: parseFloat(player['HT P']) || 0 },
-    { stat: 'Power', value: parseFloat(player['POW vR']) || 0, potential: parseFloat(player['POW P']) || 0 },
-    { stat: 'Eye', value: parseFloat(player['EYE vR']) || 0, potential: parseFloat(player['EYE P']) || 0 },
-    { stat: 'Gap', value: parseFloat(player['GAP vR']) || 0, potential: parseFloat(player['GAP P']) || 0 },
-    { stat: 'Speed', value: parseFloat(player['SPE']) || 0, potential: parseFloat(player['SPE']) || 0 },
-    { stat: 'Avoid K', value: parseFloat(player['K vR']) || 0, potential: parseFloat(player['K P']) || 0 },
-  ] : [
-    { stat: 'Stuff', value: parseFloat(player['STU vR']) || 0, potential: parseFloat(player['STU P']) || 0 },
-    { stat: 'Control', value: parseFloat(player['CON vR']) || 0, potential: parseFloat(player['CON P']) || 0 },
-    { stat: 'HR Rate', value: parseFloat(player['HRR vR']) || 0, potential: parseFloat(player['HRR P']) || 0 },
-    { stat: 'BABIP', value: parseFloat(player['PBABIP vR']) || 0, potential: parseFloat(player['PBABIP P']) || 0 },
-    { stat: 'Stamina', value: parseFloat(player['STM']) || 0, potential: parseFloat(player['STM']) || 0 },
-    { stat: 'Hold', value: parseFloat(player['HLD']) || 0, potential: parseFloat(player['HLD']) || 0 },
-  ];
+  // Development curve data: the model's assumed track, plus (when the league has
+  // a measured age curve) the MEASURED track — per-age gap-closure rates from the
+  // ratings archive applied to this player's own current->ceiling gap.
+  const devCurve = useMemo(() => {
+    // y.waa (display-WAA basis) — NOT y.rawWAA (internal WAR/market track):
+    // both chart lines must share the WAA basis the card's stats show, or the
+    // model line sits a constant replacement-offset above the Measured overlay.
+    const rows = fv.yearByYear.map(y => ({ age: y.age, WAA: y.waa ?? y.rawWAA }));
+    const meas = measuredTrajectory(
+      ageCurve,
+      parseFloat(player.Age),
+      fv.displayWAA ? fv.displayWAA.current : NaN,
+      fv.displayWAA ? fv.displayWAA.potential : NaN,
+    );
+    if (meas) {
+      const byAge = new Map(rows.map(r => [r.age, r]));
+      for (const m of meas) {
+        const row = byAge.get(m.age);
+        if (row) row.Measured = m.waa;
+        else { const nr = { age: m.age, Measured: m.waa }; rows.push(nr); byAge.set(m.age, nr); }
+      }
+      rows.sort((a, b) => a.age - b.age);
+    }
+    return rows;
+  }, [fv, ageCurve, player]);
 
   // Position WAA bar chart (hitters only)
   const posWAAData = type === 'hitter' ? [
@@ -203,6 +326,42 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
               )}
             </div>
 
+            {type === 'hitter' && (() => {
+              const num = k => { const v = parseFloat(player[k]); return isNaN(v) ? null : v; };
+              const off = num('Off Runs'), def = num('Def Runs'), offP = num('Off Runs P');
+              if (off === null || def === null) return null;
+              const best = player['Best Pos'];
+              const bat = num('BatR wtd'), bsr = num('BSR wtd');
+              const glove = best && best !== 'DH' ? num(`${best} RunsP`) : null;
+              const posadj = glove !== null ? def - glove : def;
+              const R = ({ label, v, strong, indent }) => v === null ? null : (
+                <div className={`flex justify-between items-center py-0.5 ${strong ? 'border-t border-slate-700/50 mt-0.5 pt-1' : ''}`}>
+                  <span className={`text-xs ${strong ? 'text-slate-300 font-semibold' : 'text-slate-500'} ${indent ? 'pl-3' : ''}`}>{label}</span>
+                  <span className={`text-sm font-mono ${strong ? 'font-bold' : ''} ${
+                    v > 0.05 ? 'text-green-400' : v < -0.05 ? 'text-red-400' : 'text-slate-400'
+                  }`}>{v > 0 ? '+' : ''}{v.toFixed(1)}</span>
+                </div>
+              );
+              return (
+                <div className="bg-slate-800/50 rounded-lg p-3">
+                  <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">
+                    Runs Breakdown{best ? ` (at ${best})` : ''}
+                  </h3>
+                  <R label="Batting" v={bat} indent />
+                  <R label="Baserunning" v={bsr} indent />
+                  <R label="Offense" v={off} strong />
+                  <R label={glove !== null ? `Glove (${best})` : 'Glove'} v={glove} indent />
+                  <R label={best === 'DH' ? 'DH charge' : 'Position adj'} v={posadj} indent />
+                  <R label="Defense" v={def} strong />
+                  <R label="Offense at potential" v={offP} strong />
+                  <div className="text-[10px] text-slate-600 mt-1.5">
+                    Runs per 600 PA season. Offense + Defense ÷ runs-per-win = Best WAA.
+                    {best === 'C' ? ' Catcher offense is on the 500-PA catcher basis, so the components are approximate.' : ''}
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="bg-slate-800/50 rounded-lg p-3">
               <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">Future Value Breakdown</h3>
               {statLine('FV (20-80)', fv.fvScale, '_fvScale')}
@@ -211,8 +370,8 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                   expectedPeakWAA / potentialWAA are the internal WAR values and must
                   NOT be shown under a WAA label; fv.displayWAA is the converted track. */}
               {statLine('Current WAA', fv.displayWAA?.current, '_currentWAA')}
-              {statLine('Proj Peak (WAA)', fv.displayWAA?.expectedPeak, '_potentialWAA')}
-              {statLine('Raw Ceiling (WAA)', fv.displayWAA?.potential, '_potentialWAA')}
+              {statLine('Proj Potential (WAA)', fv.displayWAA?.expectedPeak, '_potentialWAA')}
+              {statLine('Peak Potential (WAA)', fv.displayWAA?.potential, '_rawPotentialWAA')}
               {statLine('Peak WAA', fv.displayWAA?.peakProjected, '_peakWAA')}
               {/* The internal WAR basis, shown raw so the WAA numbers above are auditable.
                   Plain divs, not statLine — statLine runs values through formatCellValue,
@@ -230,7 +389,7 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                   )}
                 </span>
               </div>
-              {statLine('% to Peak', `${fv.pctToPeak}%`)}
+              {statLine('To Peak (WAA)', fv.displayWAA ? Math.round((fv.displayWAA.potential - fv.displayWAA.current) * 10) / 10 : null, '_potentialWAA')}
               {statLine('ETA to Peak', fv.yearsTilPeak > 0 ? `${fv.yearsTilPeak} yrs` : 'At peak')}
               {/* Remaining control — the window everything above is summed over.
                   Plain div, not statLine: formatCellValue would parseFloat the
@@ -289,24 +448,43 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
 
           {/* Column 2: Charts */}
           <div className="space-y-4">
-            {/* Radar Chart - Ratings vs Potential */}
+            {/* Ratings — big colored 20-80 chips, not a radar. This is the card the
+                user reads first: what ARE this guy's ratings. */}
             <div className="bg-slate-800/50 rounded-lg p-3">
               <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">
-                {type === 'hitter' ? 'Hitting Profile' : 'Pitching Profile'}
+                {type === 'hitter' ? 'Batting Ratings' : 'Pitching Ratings'}
               </h3>
-              <ResponsiveContainer width="100%" height={220}>
-                <RadarChart data={radarData}>
-                  <PolarGrid stroke="#334155" />
-                  <PolarAngleAxis dataKey="stat" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                  <PolarRadiusAxis domain={[0, 80]} tick={false} />
-                  <Radar name="Current" dataKey="value" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} />
-                  <Radar name="Potential" dataKey="potential" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.15} strokeDasharray="4 4" />
-                </RadarChart>
-              </ResponsiveContainer>
-              <div className="flex justify-center gap-6 text-xs">
-                <span className="text-blue-400">--- Current</span>
-                <span className="text-purple-400">- - Potential</span>
-              </div>
+              {type === 'hitter' ? (
+                <>
+                  <RatingsTable
+                    player={player}
+                    rows={[
+                      ['BABIP', 'BA vR', 'BA vL', 'HT P'],
+                      ['Gap', 'GAP vR', 'GAP vL', 'GAP P'],
+                      ['Power', 'POW vR', 'POW vL', 'POW P'],
+                      ['Eye', 'EYE vR', 'EYE vL', 'EYE P'],
+                      ['Avoid K', 'K vR', 'K vL', 'K P'],
+                    ]}
+                  />
+                  <h4 className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5 mt-3">Running</h4>
+                  <ChipRow player={player} items={[['Speed', 'SPE'], ['Steal', 'STE'], ['Baserun', 'RUN']]} />
+                </>
+              ) : (
+                <>
+                  <RatingsTable
+                    player={player}
+                    rows={[
+                      ['Stuff', 'STU vR', 'STU vL', 'STU P'],
+                      ['Control', 'CON vR', 'CON vL', 'CON P'],
+                      ['HR Rate', 'HRR vR', 'HRR vL', 'HRR P'],
+                      ['pBABIP', 'PBABIP vR', 'PBABIP vL', 'PBABIP P'],
+                    ]}
+                  />
+                  <h4 className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5 mt-3">Usage</h4>
+                  <ChipRow player={player} items={[['Stamina', 'STM'], ['Hold', 'HLD'], ['GB%', 'GB']]} />
+                  <PitchRepertoire player={player} />
+                </>
+              )}
             </div>
 
             {/* Position WAA Bar Chart (hitters only) */}
@@ -347,28 +525,32 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                     labelStyle={{ color: '#e2e8f0' }}
                   />
                   <Line type="monotone" dataKey="WAA" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="Measured" stroke="#a78bfa" strokeWidth={2}
+                        strokeDasharray="5 4" dot={{ r: 2 }} connectNulls />
                 </LineChart>
               </ResponsiveContainer>
               <div className="text-center text-xs text-slate-500 mt-1">
-                Projected WAA by Age (dev to 25, decline starts immediately after)
+                <span className="text-blue-400">model curve</span>
+                {devCurve.some(r => r.Measured !== undefined) && (
+                  <> · <span className="text-purple-300">measured league curve</span>
+                    {ageCurve ? ` (${ageCurve.players} players, ${ageCurve.span_years}yr archive)` : ''}</>
+                )}
               </div>
             </div>
 
             {type === 'hitter' && (
               <div className="bg-slate-800/50 rounded-lg p-3">
-                <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">Fielding Skills</h3>
-                <div className="grid grid-cols-2 gap-x-4">
-                  {statLine('IF Range', player['IF RNG'], 'IF RNG')}
-                  {statLine('IF Error', player['IF ERR'], 'IF ERR')}
-                  {statLine('IF Arm', player['IF ARM'], 'IF ARM')}
-                  {statLine('Turn DP', player['TDP'], 'TDP')}
-                  {statLine('OF Range', player['OF RNG'], 'OF RNG')}
-                  {statLine('OF Error', player['OF ERR'], 'OF ERR')}
-                  {statLine('OF Arm', player['OF ARM'], 'OF ARM')}
-                  {statLine('C Ability', player['C ABI'], 'C ABI')}
-                  {statLine('C Frame', player['C FRM'], 'C FRM')}
-                  {statLine('C Arm', player['C ARM'], 'C ARM')}
-                </div>
+                <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">Fielding Ratings</h3>
+                <ChipRow
+                  player={player}
+                  items={[
+                    ['IF Range', 'IF RNG'], ['OF Range', 'OF RNG'],
+                    ['IF Error', 'IF ERR'], ['OF Error', 'OF ERR'],
+                    ['IF Arm', 'IF ARM'], ['OF Arm', 'OF ARM'],
+                    ['Turn DP', 'TDP'], ['C Frame', 'C FRM'],
+                    ['C Ability', 'C ABI'], ['C Arm', 'C ARM'],
+                  ]}
+                />
               </div>
             )}
 

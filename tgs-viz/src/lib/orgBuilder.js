@@ -14,13 +14,15 @@ export const LEVEL_RANK = Object.fromEntries(LEVELS.map((l, i) => [l, i]));
 // Age caps per level: a player older than the cap is too old for that rung and is
 // pushed UP to the lowest level he's young enough for (AA and up have no cap). If
 // his ability can't hold that level he's org filler -> depth. Tunable.
-export const MAX_AGE_BY_LEVEL = { INT: 19, WL: 19, "R-": 21, "R+": 23, "A-": 25, "A+": 27, AA: Infinity, AAA: Infinity, MLB: Infinity };
+export const MAX_AGE_BY_LEVEL = { INT: 19, WL: 20, "R-": 21, "R+": 23, "A-": 25, "A+": 27, AA: Infinity, AAA: Infinity, MLB: Infinity };
 // Lowest level a player of this age is young enough for (his age floor, as a rank).
 function ageFloorRank(age) {
   if (age == null) return 0;
   for (let i = 0; i < LEVELS.length; i++) if (age <= (MAX_AGE_BY_LEVEL[LEVELS[i]] ?? Infinity)) return i;
   return LEVELS.length - 1;
 }
+
+import { optimizeRoster } from './rosterOptimizer.js';
 
 const num = (v) => {
   if (v === null || v === undefined || v === "" || v === "-") return null;
@@ -274,8 +276,15 @@ export function bestPosition(p) {
 // developing player gets him demolished and tanks his potential (OOTP 26 punishes
 // being overmatched — seen it a million times). Underplacing wastes reps against weak
 // competition. The bar is his ability; he develops by succeeding there and earning up.
-const FIT_PCT_HIT = 0.50;   // hitters: highest level where wOBA >= the level's median (was a 0.35 survive bar)
-const FIT_PCT_PIT = 0.50;   // pitchers: same, on developed-role value (was 0.40)
+// Placement bar (user philosophy, 2026-08-30: "where they can hit WELL, not
+// hit ok"): a player is promoted to the highest level where he'd be a top-third
+// performer among its current players — comfortably good, never a bare-median
+// reach. 0.67 (not 0.70): a knife-edge player exactly ON a 70th-pct bar was
+// flipping levels with tiny basis shifts (James Barbera: 70.2th neutral /
+// 69.2th park) — two points of headroom keep "good for the level" guys from
+// being hard-stuck below it. History: 0.35 survive -> 0.50 median -> 0.70 -> 0.67.
+const FIT_PCT_HIT = 0.67;   // hitters: highest level where wOBA >= the level's 67th percentile
+const FIT_PCT_PIT = 0.67;   // pitchers: same philosophy, on developed-role value
 
 // Pitchers are judged for LEVEL FIT in the role they'll actually be DEVELOPED in — a
 // future starter on his STARTER projection, not the relief line he won't pitch. (Fixes
@@ -449,6 +458,25 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   const oFloors = offenseFloors(hitters, { ...opts, pct: FIT_PCT_HIT });
   const pFloors = pitcherFloors(pitchers, { ...opts, pct: FIT_PCT_PIT });
   const rpFloors = relieverFloors(pitchers, { ...opts, pct: FIT_PCT_PIT });   // relievers vs relievers
+  // HYSTERESIS (user, 2026-08-30: "our rules are too strict — common sense way
+  // to get players playing at A+"): PROMOTION still requires the top-third bar
+  // above, but a player ALREADY AT a level only gets sent DOWN if he falls
+  // below its BOTTOM third — a median guy HOLDS the job he has. Earn the jump,
+  // don't lose the seat for being average. Ratings-only, same engine values —
+  // just a looser bar for incumbency. Kills knife-edge yo-yoing and stops the
+  // league's weak orgs from defining where a strong org's kids may stand.
+  const HOLD_PCT = 1 / 3;
+  const oHold = offenseFloors(hitters, { ...opts, pct: HOLD_PCT });
+  const pHold = pitcherFloors(pitchers, { ...opts, pct: HOLD_PCT });
+  const rpHold = relieverFloors(pitchers, { ...opts, pct: HOLD_PCT });
+  const holdLev = (p, val, holdFloors) => {
+    let lev = p["Lev"];
+    if (lev === "MLB") lev = "AAA";                 // MLB incumbency is the optimizer's call
+    if (!isAffiliate(lev) || lev === "WL" || lev === "INT") return null;
+    const f = holdFloors[lev];
+    return (f != null && val != null && val >= f) ? lev : null;
+  };
+  const maxLev = (a, b) => (b && LEVEL_RANK[b] > LEVEL_RANK[a] ? b : a);
   // All owned players, including those currently in winter ball (Lev "WL") or
   // international / all-star duty (Lev "INT"): they're treated as ordinary minor
   // leaguers and placed at whatever level their ability fits, same as everyone
@@ -459,7 +487,11 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   // (he can't sit on a rung he's too old for), and it guards both initial placement
   // AND the cascade. Promotion = a player whose ability places him above his current
   // level (↑ tag).
-  const minLev = (p) => (p["Lev"] === "INT" ? "INT" : "WL");
+  // WL is NOT a summer placement level any more (user, 2026-08-30): the Winter
+  // League plays at a different time of year and its roster overlays the
+  // summer system (built separately below). R- is the summer floor for
+  // everyone except international-complex players.
+  const minLev = (p) => (p["Lev"] === "INT" ? "INT" : "R-");
   const floorRankOf = (p, age) => Math.max(LEVEL_RANK[minLev(p)], ageFloorRank(age));
   const H = hitters.filter((p) => p["ORG"] === org).map((p) => {
     const cur = currentValue(p, false), pot = potentialValue(p, false), woba = num(p["wOBA wtd"]), age = num(p["Age"]);
@@ -467,7 +499,8 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
     // can't hit the level gets buried; one too good for it wastes the rep.
     return { p, isPitcher: false, cur, pot, woba, age,
              priority: (pot != null ? pot : cur) ?? -99, play: blendScore(cur, pot),
-             ceiling: highestClearing(woba, oFloors, minLev(p)) || minLev(p), floorRank: floorRankOf(p, age), bestPos: bestPosition(p) };
+             ceiling: maxLev(highestClearing(woba, oFloors, minLev(p)) || minLev(p), holdLev(p, woba, oHold)),
+             floorRank: floorRankOf(p, age), bestPos: bestPosition(p) };
   });
   const P = pitchers.filter((p) => p["ORG"] === org).map((p) => {
     const cur = currentValue(p, true), pot = potentialValue(p, true), age = num(p["Age"]);
@@ -479,25 +512,82 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
     return { p, isPitcher: true, cur, pot, age,
              priority: (pot != null ? pot : cur) ?? -99, play: blendScore(cur, pot),
              spPot: num(p["WAP"]),   // SP potential (WAP) — decides who STARTS in the minors: future starters first
-             ceiling: highestClearing(devRoleValue(p), pFloors, minLev(p)) || minLev(p), floorRank: floorRankOf(p, age),
+             ceiling: maxLev(highestClearing(devRoleValue(p), pFloors, minLev(p)) || minLev(p), holdLev(p, devRoleValue(p), pHold)),
+             floorRank: floorRankOf(p, age),
              role: pitcherRole(p), devRole: pitcherRole(p, { developmental: true }) };
   });
 
   const usedH = new Set(), usedP = new Set();
   const levels = {};
 
-  // ---- MLB: the actual team — best available, NO hitting gate ----
+  // ---- MLB: the actual team — EXACTLY the Roster Optimizer's answer ----
+  // One brain for the big-league club: the same optimizeRoster call that powers
+  // the Roster Optimizer page and Team Projections also builds this card
+  // (blended vR/vL platoon objective, exact position assignment, bench
+  // contract, rotation by SP line / pen by RP line). The org builder used to
+  // re-derive the lineup with its own greedy fill and role rules, and the two
+  // screens disagreed on lineups and depth (user, 2026-08-26). The card shows
+  // the optimizer's EVERYDAY nine (weighted assignment of the final 13); the
+  // vR/vL platoon lineups live on the Roster Optimizer page.
   {
-    const byCur = (a, b) => (b.cur ?? -99) - (a.cur ?? -99);
-    const sp = P.filter((x) => x.role === "SP").sort(byCur).slice(0, 5);
-    const rp = P.filter((x) => x.role === "RP").sort(byCur).slice(0, 8);
-    [...sp, ...rp].forEach((x) => usedP.add(x));
-    const used = new Set();
-    const vf = (h, pos) => posWAA(h.p, pos) ?? h.cur ?? -99;
-    const { roster, gaps } = fillSlots(H, MLB_STARTER_SLOTS, used, vf);
-    const { roster: bench } = fillSlots(H, MLB_BENCH_SLOTS, used, vf);
-    [...roster, ...bench].forEach((h) => usedH.add(h));
-    levels.MLB = { SP: sp, RP: rp, hitters: roster, bench, gaps, counts: cnt(sp, rp, roster, bench) };
+    const key = (row) => String(row?.["ID"] ?? row?.["Name"] ?? "");
+    const HM = new Map(H.map((r) => [key(r.p), r]));
+    const PM = new Map(P.map((r) => [key(r.p), r]));
+    let done = false;
+    try {
+      const R = optimizeRoster(hitters, pitchers, {
+        teamOrg: org, league: opts.league || null, vrShare: opts.vrShare ?? null,
+      });
+      const roster = [], gaps = [];
+      const seen = new Set();
+      for (const [pos] of MLB_STARTER_SLOTS) {
+        const rec = HM.get(key(R.starters?.[pos]));
+        // seen guard: key() falls back to Name when ID is missing, so two
+        // same-name ID-less players would collapse to one rec — never place
+        // the same rec at two slots (the twin falls to the minors instead).
+        if (rec && !seen.has(rec)) { rec.slot = pos; rec.slotPos = pos; seen.add(rec); roster.push(rec); usedH.add(rec); }
+        else gaps.push(pos);
+      }
+      const bench = [];
+      const pushBench = (row, label, pos = null) => {
+        const rec = HM.get(key(row));
+        if (!rec || seen.has(rec)) return;
+        // pos = the position this bench ROLE covers, so the row can show the
+        // WAA where he'd actually play (BU C -> his C line, UTIL IF -> SS).
+        rec.slot = label; rec.slotPos = pos; seen.add(rec); bench.push(rec); usedH.add(rec);
+      };
+      pushBench(R.bench?.backupC, "BU C", "C");
+      pushBench(R.bench?.utilityIF, "UTIL IF", "SS");
+      pushBench(R.bench?.utilityOF, "UTIL OF", "CF");
+      pushBench(R.bench?.flexBat, "BEST");
+      for (const x of R.bench?.extraBench || []) pushBench(x, "DEPTH");
+      const sp = (R.startingPitchers || []).map((row) => PM.get(key(row))).filter(Boolean);
+      const rp = (R.reliefPitchers || []).map((row) => PM.get(key(row))).filter(Boolean);
+      [...sp, ...rp].forEach((x) => usedP.add(x));
+      levels.MLB = { SP: sp, RP: rp, hitters: roster, bench, gaps, counts: cnt(sp, rp, roster, bench) };
+      done = true;
+    } catch (e) {
+      console.warn(`orgBuilder: optimizeRoster failed for ${org} — legacy MLB fill used`, e);
+    }
+    if (!done) {
+      // Legacy fallback only (kept so one bad org can't blank the card):
+      // rotation from starter-capable arms by SP line, pen by RP line, greedy
+      // hardest-position-first lineup fill.
+      const spLine = (x) => num(x.p["WAA wtd"]);
+      const rpLine = (x) => num(x.p["WAA wtd RP"]);
+      const sp = P.filter((x) => x.devRole === "SP" && spLine(x) !== null)
+        .sort((a, b) => (spLine(b) ?? -99) - (spLine(a) ?? -99)).slice(0, 5);
+      const spSet = new Set(sp);
+      const rp = P.filter((x) => !spSet.has(x) && rpLine(x) !== null)
+        .sort((a, b) => (rpLine(b) ?? -99) - (rpLine(a) ?? -99)).slice(0, 8);
+      [...sp, ...rp].forEach((x) => usedP.add(x));
+      const used = new Set();
+      const vf = (h, pos) => posWAA(h.p, pos) ?? h.cur ?? -99;
+      const { roster, gaps } = fillSlots(H, MLB_STARTER_SLOTS, used, vf);
+      const { roster: bench } = fillSlots(H, MLB_BENCH_SLOTS, used, vf);
+      [...roster, ...bench].forEach((h) => usedH.add(h));
+      levels.MLB = { SP: sp, RP: rp, hitters: roster, bench, gaps, counts: cnt(sp, rp, roster, bench) };
+    }
   }
 
   // ---- Minors: remaining players, hit-gated + development-prioritized ----
@@ -516,7 +606,10 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   const rpCur = (x) => num(x.p["WAA wtd RP"]);
   const rpPotV = (x) => num(x.p["WAP RP"]);
   const rpPlay = (x) => blendScore(rpCur(x), rpPotV(x));                  // RP potential-weighted
-  const rpCeil = (x) => highestClearing(rpCur(x), rpFloors, minLev(x.p)) || minLev(x.p);
+  const rpCeil = (x) => maxLev(
+    highestClearing(rpCur(x), rpFloors, minLev(x.p)) || minLev(x.p),
+    holdLev(x.p, rpCur(x), rpHold)   // hysteresis: a median pen arm HOLDS his current level
+  );
 
   // Pass 1 — SP rotations: the best SP-potential arms start; a blocked starter cascades
   // DOWN to keep starting at a level he fits, and only leaves the rotation track if he
@@ -526,16 +619,21 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   const SProt = {};
   for (let li = minors.length - 1; li >= 0; li--) {
     const L = minors[li], down = li > 0 ? minors[li - 1] : null, dr = down ? LEVEL_RANK[down] : -1;
+    if (L === "WL") { SProt[L] = []; continue; }   // WL = overlay, built after the summer system
     // Rotation order = SP POTENTIAL (WAP) first: a future-positive starter must out-rank a
     // future-negative one, so a weak current line can't bury a real prospect in the pen.
     // Win+grow blend breaks ties among equal-ceiling arms.
     const sp = spBy[L].sort((a, b) => (b.spPot ?? -99) - (a.spPot ?? -99) || b.play - a.play);
     SProt[L] = sp.slice(0, 6); SProt[L].forEach((x) => usedP.add(x));
-    // Cascade overflow down ONE level only (mark it). A blocked starter gets a shot to start
-    // one rung lower; if he can't crack THAT rotation either he converts to relief at his own
-    // ability (Pass 2) instead of tumbling level after level to the bottom — that multi-level
-    // slide is what dumped A--ability arms into WL rotations.
-    if (down) for (const x of sp.slice(6)) if (dr >= x.floorRank && !x._spDropped) { x._spDropped = true; spBy[down].push(x); }
+    // Cascade overflow down. A YOUNG starter-capable arm (dev not done) KEEPS
+    // STARTING — he cascades rotation to rotation all the way to his age floor
+    // before ever converting to relief (user, 2026-08-30: "we aren't
+    // developing him as a starter if he's at A- as an RP" — Rocha case). A
+    // 25+ arm gets one rung, then converts to relief at his own ability
+    // (Pass 2) — his development is over, the pen is his honest job. The old
+    // one-rung-for-everyone guard existed to stop multi-level slides into WL
+    // rotations; WL left the summer chain, and age floors still bound the slide.
+    if (down) for (const x of sp.slice(6)) if (dr >= x.floorRank && (!x._spDropped || (x.age ?? 99) < 25)) { x._spDropped = true; spBy[down].push(x); }
   }
 
   // Pass 2 — RP bullpens: everyone still unplaced. The lower-ceiling starters who never
@@ -547,6 +645,7 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   const RPpen = {};
   for (let li = minors.length - 1; li >= 0; li--) {
     const L = minors[li], down = li > 0 ? minors[li - 1] : null, dr = down ? LEVEL_RANK[down] : -1;
+    if (L === "WL") { RPpen[L] = []; continue; }   // WL = overlay
     const rp = rpBy[L].sort((a, b) => rpPlay(b) - rpPlay(a));
     RPpen[L] = rp.slice(0, 9); RPpen[L].forEach((x) => usedP.add(x));
     if (down) for (const x of rp.slice(9)) if (dr >= x.floorRank) rpBy[down].push(x);
@@ -562,24 +661,45 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   const SP_TARGET = 6, RP_TARGET = 9;
   const isProspectArm = (x) => (x.age ?? 99) <= 24 && (x.pot ?? -99) > 1.0;   // young + real ceiling
   const isFillerArm = (x) => !isProspectArm(x);
+  // 25+ = development is over (the turn-25 rule) — the ONLY guys who should
+  // travel long distances as roster fillers; a young low-pot arm still belongs
+  // near his own level (user, 2026-08-30).
+  const devDone = (x) => (x.age ?? 99) >= 25;
+  // Fill preference (user, 2026-08-30, FINAL): "never place young players as
+  // fillers, period — at A+ and higher." At A+/AA/AAA only 25+ dev-done
+  // players fill/stash; below A+ young no-future fillers may also move, and a
+  // cut-bound youngster may take a LOW seat before hitting the street. A high
+  // seat nobody 25+ can take stays open ("not enough players") — accepted.
+  const fillPrefs = (lr) => lr >= LEVEL_RANK["A+"]
+    ? [(x) => isFillerArm(x) && devDone(x)]
+    : [(x) => isFillerArm(x) && devDone(x), isFillerArm];
   let unplaced = P.filter((x) => !usedP.has(x));
-  const borrowFiller = (staff) => {                         // weakest filler from a staff, for the chain
-    let wi = -1, wv = Infinity;
-    for (let i = 0; i < staff.length; i++) { if (!isFillerArm(staff[i])) continue; const v = staff[i].pot ?? staff[i].cur ?? -99; if (v < wv) { wv = v; wi = i; } }
-    return wi < 0 ? null : staff.splice(wi, 1)[0];
+  const borrowFiller = (staff, prefs) => {                  // weakest allowed filler from a staff, for the chain
+    for (const pref of prefs) {
+      let wi = -1, wv = Infinity;
+      for (let i = 0; i < staff.length; i++) { if (!pref(staff[i])) continue; const v = staff[i].pot ?? staff[i].cur ?? -99; if (v < wv) { wv = v; wi = i; } }
+      if (wi >= 0) return staff.splice(wi, 1)[0];
+    }
+    return null;
   };
   const fillStaff = (staff, belowStaff, target, lr, ceilOf, scoreOf, roleOk, L) => {
     while (staff.length < target) {
-      let cand = null, ci = -1, cs = -Infinity;
-      for (let i = 0; i < unplaced.length; i++) {
-        const x = unplaced[i];
-        if (!isFillerArm(x) || !roleOk(x) || x.floorRank > lr) continue;
-        const r = LEVEL_RANK[ceilOf(x)];
-        if (r < lr - 1 || r > lr) continue;                 // at most a one-rung stretch up
-        const s = scoreOf(x); if (s > cs) { cs = s; cand = x; ci = i; }
+      let cand = null, ci = -1;
+      // allowed filler tiers for this level (25+ only at A+ and above) —
+      // still at most a one-rung stretch in this pass.
+      for (const pref of fillPrefs(lr)) {
+        let cs = -Infinity;
+        for (let i = 0; i < unplaced.length; i++) {
+          const x = unplaced[i];
+          if (!pref(x) || !roleOk(x) || x.floorRank > lr) continue;
+          const r = LEVEL_RANK[ceilOf(x)];
+          if (r < lr - 1 || r > lr) continue;               // at most a one-rung stretch up
+          const s = scoreOf(x); if (s > cs) { cs = s; cand = x; ci = i; }
+        }
+        if (cand) break;
       }
       if (cand) { unplaced.splice(ci, 1); usedP.add(cand); }
-      else if (belowStaff) cand = borrowFiller(belowStaff);   // chain: pull a filler up from the level below
+      else if (belowStaff) cand = borrowFiller(belowStaff, fillPrefs(lr));   // chain: pull an allowed filler up from the level below
       if (!cand) break;
       if (LEVEL_RANK[ceilOf(cand)] < lr) cand._stretch = L;    // flag the overplacement
       staff.push(cand); usedP.add(cand);
@@ -587,13 +707,76 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   };
   for (let li = minors.length - 1; li >= 0; li--) {
     const L = minors[li], lr = LEVEL_RANK[L], below = li > 0 ? minors[li - 1] : null;
+    if (L === "WL") continue;   // WL = overlay, never force-filled
     fillStaff(SProt[L], below ? SProt[below] : null, SP_TARGET, lr, (x) => x.ceiling, (x) => x.cur ?? -99, (x) => x.devRole === "SP", L);
     fillStaff(RPpen[L], below ? RPpen[below] : null, RP_TARGET, lr, (x) => cap(rpCeil(x)), (x) => rpPlay(x), () => true, L);
+  }
+
+  // Pass 4 — HARD staffing minimums (user rule, 2026-08-30): every minor
+  // system must carry at least 6 SP and 8 RP after MLB takes its best 26.
+  // The pass above stretches only no-future fillers, at most one rung — a thin
+  // level could stay short. Here a still-short staff takes ANY unplaced arm
+  // the age floor allows (multi-rung stretches flagged), preferring fillers
+  // and touching prospects only as the last resort (overplacing a real future
+  // costs development, but a 4-man pen costs the whole level). A shortage
+  // that survives this means the org genuinely has no more arms — the card's
+  // "need N" note then says so honestly.
+  // WL is exempt: the Winter League literally plays at a different time of
+  // year than every other level (user, 2026-08-30), so it needs no staffed
+  // roster during the season — it can run empty. INT is exempt too — the
+  // complex is a holding pool, not a staffed affiliate; the hard pass would
+  // otherwise drag arms DOWN into it.
+  const SP_MIN = 6, RP_MIN = 8;
+  const HARD_MIN_EXEMPT = new Set(["WL", "INT"]);
+  for (let li = minors.length - 1; li >= 0; li--) {
+    const L = minors[li], lr = LEVEL_RANK[L];
+    if (HARD_MIN_EXEMPT.has(L)) continue;
+    for (const [staff, min, roleOk, ceilOf, scoreOf] of [
+      [SProt[L], SP_MIN, (x) => x.devRole === "SP", (x) => x.ceiling, (x) => x.spPot ?? x.cur ?? -99],
+      [RPpen[L], RP_MIN, () => true, (x) => cap(rpCeil(x)), (x) => rpPlay(x)],
+    ]) {
+      // candidate sources, in preference order: unplaced arms; the WL card
+      // (Winter League plays at a DIFFERENT time of year — a WL spot must
+      // never starve a summer affiliate); then LOWER affiliate staffs,
+      // nearest level first — pulling up cascades the vacancy downward, and
+      // the loop refills each lower level in turn, so any true shortage
+      // lands at the bottom of the system instead of stranding AA at 1 RP.
+      const sources = [unplaced, SProt["WL"] || [], RPpen["WL"] || []];
+      for (let lj = li - 1; lj >= 0; lj--) {
+        const LL = minors[lj];
+        if (HARD_MIN_EXEMPT.has(LL)) continue;
+        sources.push(SProt[LL], RPpen[LL]);
+      }
+      // filler tiers over every source; BELOW A+ only, a last resort over the
+      // UNPLACED pool (a cut-bound young arm may fill a LOW hole — never a
+      // high one). Nobody is pulled off a lower roster except via the tiers.
+      const tiers = fillPrefs(lr).map((pref) => ({ pref, srcs: sources }));
+      if (lr < LEVEL_RANK["A+"]) tiers.push({ pref: () => true, srcs: [unplaced] });
+      for (const { pref, srcs } of tiers) {
+        while (staff.length < min) {
+          let cand = null, pool = null, ci = -1, cs = -Infinity;
+          for (const src of srcs) {
+            for (let i = 0; i < src.length; i++) {
+              const x = src[i];
+              if (!roleOk(x) || x.floorRank > lr || !pref(x)) continue;
+              const s = scoreOf(x); if (s > cs) { cs = s; cand = x; ci = i; pool = src; }
+            }
+            if (cand) break;   // take from the closest source that has anyone
+          }
+          if (!cand) break;
+          pool.splice(ci, 1);
+          if (LEVEL_RANK[ceilOf(cand)] < lr) cand._stretch = L;
+          staff.push(cand); usedP.add(cand);
+        }
+        if (staff.length >= min) break;
+      }
+    }
   }
 
   // ===== HITTERS per level (reads the SP/RP staffs built above) =====
   for (let li = minors.length - 1; li >= 0; li--) {
     const L = minors[li], down = li > 0 ? minors[li - 1] : null, dr = down ? LEVEL_RANK[down] : -1;
+    if (L === "WL") continue;   // WL card = overlay, built after all summer passes
     const SP = SProt[L], RP = RPpen[L];
     const used = new Set();
     const pool = hBy[L].slice().sort((a, b) => b.play - a.play);          // best win+grow blend first
@@ -608,7 +791,9 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
     addCaptainIfMissing(roster, bench, [...SP, ...RP], pool, used);
     if (down) for (const h of pool) if (!used.has(h) && dr >= h.floorRank) hBy[down].push(h);   // logjam extras cascade down (split)
     [...roster, ...bench].forEach((h) => usedH.add(h));   // sync placed minor hitters to the global set so the backfills don't re-grab them
-    levels[L] = { SP, RP, hitters: roster, bench, gaps, _benchNeed: need, counts: cnt(SP, RP, roster, bench) };
+    // INT is a holding complex for international signees — "sign a filler"
+    // advice there is nonsense; its lineup shows whoever the complex holds.
+    levels[L] = { SP, RP, hitters: roster, bench, gaps: L === "INT" ? [] : gaps, _benchNeed: need, counts: cnt(SP, RP, roster, bench) };
   }
 
   // Hitter completeness backfills (after the per-level loop). One shared unplaced pool —
@@ -628,18 +813,39 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
     for (const slot of lv.gaps) {
       if (total() >= rosterCap) { remaining.push(slot); continue; }
       const eg = slotElig[slot] || [slot];
-      let cand = null, ci = -1, cs = -Infinity;
-      for (let i = 0; i < unplacedH2.length; i++) {
-        const x = unplacedH2[i];
-        if (!isFillerArm(x) || x.floorRank > lr || !eg.some((pos) => eligibleAt(x.p, pos))) continue;
-        const r = LEVEL_RANK[x.ceiling]; if (r < lr - 1 || r > lr) continue;
-        const s = x.play ?? -99; if (s > cs) { cs = s; cand = x; ci = i; }
+      // Fill from the ALLOWED filler tiers only (25+ dev-done only at A+ and
+      // above; below A+ a young low-pot filler may also move; prospects are
+      // never fill material). An org that can't supply an allowed body shows
+      // "not enough players" — that's on them (user, 2026-08-30, Baltimore).
+      // Then the borrow chain walks every lower level's bench, nearest first.
+      let cand = null, ci = -1;
+      const prefs = fillPrefs(lr);
+      // unplaced pool: filler tiers; BELOW A+ a cut-bound bat may also fill
+      // (young players never fill at A+ and higher — user rule)
+      for (const pref of (lr < LEVEL_RANK["A+"] ? [...prefs, () => true] : prefs)) {
+        let cs = -Infinity;
+        for (let i = 0; i < unplacedH2.length; i++) {
+          const x = unplacedH2[i];
+          if (!pref(x) || x.floorRank > lr || !eg.some((pos) => eligibleAt(x.p, pos))) continue;
+          const s = x.play ?? -99; if (s > cs) { cs = s; cand = x; ci = i; }
+        }
+        if (cand) break;
       }
       if (cand) { unplacedH2.splice(ci, 1); usedH.add(cand); }
-      else if (below) {                                  // chain: borrow weakest eligible filler from below's bench
-        const bb = levels[below].bench; let wi = -1, wv = Infinity;
-        for (let i = 0; i < bb.length; i++) { if (!isFillerArm(bb[i]) || !eg.some((pos) => eligibleAt(bb[i].p, pos))) continue; const v = benchScore(bb[i]); if (v < wv) { wv = v; wi = i; } }
-        if (wi >= 0) cand = bb.splice(wi, 1)[0];
+      else {
+        for (const pref of prefs) {
+          for (let lj = li - 1; lj >= 0 && !cand; lj--) {
+            const blv = levels[minors[lj]]; if (!blv) continue;   // WL/INT have no summer bench to raid
+            const bb = blv.bench;
+            let wi = -1, wv = Infinity;
+            for (let i = 0; i < bb.length; i++) {
+              if (!pref(bb[i]) || !eg.some((pos) => eligibleAt(bb[i].p, pos))) continue;
+              const v = benchScore(bb[i]); if (v < wv) { wv = v; wi = i; }
+            }
+            if (wi >= 0) cand = bb.splice(wi, 1)[0];
+          }
+          if (cand) break;
+        }
       }
       if (!cand) { remaining.push(slot); continue; }
       cand.slot = slot; cand.slotPos = eg.find((pos) => eligibleAt(cand.p, pos)) || slot;
@@ -665,22 +871,108 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
     const total = () => lv.SP.length + lv.RP.length + lv.hitters.length + lv.bench.length;
     for (const grp of ["C", "IF", "OF"]) {
       while (benchNeedNow(lv.bench)[grp] > 0 && total() < rosterCap) {
-        let cand = null, ci = -1, cs = -Infinity;
-        for (let i = 0; i < unplacedH2.length; i++) {
-          const x = unplacedH2[i];
-          if (!isFillerArm(x) || x.floorRank > lr || !benchEligAt(x.p, grp)) continue;
-          const r = LEVEL_RANK[x.ceiling]; if (r < lr - 1 || r > lr) continue;   // at most a one-rung stretch
-          const s = benchScore(x); if (s > cs) { cs = s; cand = x; ci = i; }
+        let cand = null, ci = -1;
+        // filler tiers, then anyone-from-unplaced (cut-bound bats cover bench
+        // needs before hitting the street; the one-rung limit only binds the
+        // filler tiers — a cut-bound bat can travel). CATCHERS are exempt from
+        // the rung limit entirely (user, 2026-08-30: "we don't have a catcher
+        // shortage" — 26 mitts for 14 jobs; a backup C's job is the mitt, so
+        // any allowed catcher body may travel any distance).
+        const anyDistance = grp === "C";
+        const benchTiers = fillPrefs(lr).map((pref) => ({ pref, anyone: false }));
+        if (lr < LEVEL_RANK["A+"]) benchTiers.push({ pref: () => true, anyone: true });
+        for (const { pref, anyone } of benchTiers) {
+          let cs = -Infinity;
+          for (let i = 0; i < unplacedH2.length; i++) {
+            const x = unplacedH2[i];
+            if (!pref(x) || x.floorRank > lr || !benchEligAt(x.p, grp)) continue;
+            const r = LEVEL_RANK[cap(x.ceiling)];
+            if (!anyone && !anyDistance && (r < lr - 1 || r > lr)) continue;   // one-rung limit (non-catchers)
+            const s = benchScore(x); if (s > cs) { cs = s; cand = x; ci = i; }
+          }
+          if (cand) break;
         }
         if (cand) { unplacedH2.splice(ci, 1); usedH.add(cand); }
-        else if (below) {                                  // chain: borrow the weakest eligible filler from below
-          const bb = levels[below].bench; let wi = -1, wv = Infinity;
-          for (let i = 0; i < bb.length; i++) { if (!isFillerArm(bb[i]) || !benchEligAt(bb[i].p, grp)) continue; const v = benchScore(bb[i]); if (v < wv) { wv = v; wi = i; } }
-          if (wi >= 0) cand = bb.splice(wi, 1)[0];
+        else {
+          // borrow chain: catchers walk EVERY lower bench (nearest first);
+          // other groups keep the one-level chain.
+          const chain = anyDistance
+            ? Array.from({ length: li }, (_, k) => minors[li - 1 - k]).filter((L2) => levels[L2])
+            : (below && levels[below] ? [below] : []);
+          for (const pref of fillPrefs(lr)) {
+            for (const L2 of chain) {
+              const bb = levels[L2].bench;
+              let wi = -1, wv = Infinity;
+              for (let i = 0; i < bb.length; i++) { if (!pref(bb[i]) || !benchEligAt(bb[i].p, grp)) continue; const v = benchScore(bb[i]); if (v < wv) { wv = v; wi = i; } }
+              if (wi >= 0) { cand = bb.splice(wi, 1)[0]; break; }
+            }
+            if (cand) break;
+          }
         }
         if (!cand) break;
         if (LEVEL_RANK[cand.ceiling] < lr) cand._stretch = L;
         lv.bench.push(cand); usedH.add(cand);
+      }
+    }
+    // Backup C must be an actual BENCH catcher (user: "it can't be the person
+    // starting at DH or 1B"). The import loop above tries 25+ mitts first —
+    // benches are for dev-done guys. LAST RESORT, when no old catcher exists
+    // anywhere: swap a catcher-eligible DH/1B starter to the bench and start
+    // the bench's best bat in his slot (a young catcher losing reps beats an
+    // empty backup job — barely; user: Varela is young and should develop).
+    if (benchNeedNow(lv.bench).C > 0) {
+      const ci2 = lv.hitters.findIndex((x) => (x.slot === "DH" || x.slot === "1B") && benchEligAt(x.p, "C"));
+      if (ci2 >= 0) {
+        const slot = lv.hitters[ci2].slot, slotPos = lv.hitters[ci2].slotPos || lv.hitters[ci2].slot;
+        let bi = -1, bv = -Infinity;
+        for (let i = 0; i < lv.bench.length; i++) {
+          const b = lv.bench[i];
+          if (benchEligAt(b.p, "C")) continue;               // don't burn another catcher on the swap
+          if (!eligibleAt(b.p, slotPos)) continue;
+          const s = b.play ?? -99; if (s > bv) { bv = s; bi = i; }
+        }
+        if (bi >= 0) {
+          const cRec = lv.hitters[ci2], bat = lv.bench[bi];
+          bat.slot = slot; bat.slotPos = slotPos;
+          cRec.slot = "BN"; cRec.slotPos = "C";
+          lv.hitters[ci2] = bat; lv.bench[bi] = cRec;
+        }
+      }
+    }
+    // HARD requirement (user, 2026-08-30): every minors level carries a
+    // catcher ON THE BENCH — a second catcher starting at DH/1B does NOT count.
+    if (L !== "WL" && L !== "INT" && benchNeedNow(lv.bench).C > 0 && !lv.gaps.includes("BU C")) {
+      lv.gaps.push("BU C");
+    }
+    // User rule (2026-08-30, Hernández/Horiuchi case): a YOUNG bench C should
+    // be STARTING one level down instead — swap him with a 25+ starting C
+    // from the nearest level below. The vet takes the bench job up here (his
+    // development is over; reps beat level for the kid's).
+    if (L !== "WL" && L !== "INT") {
+      const bi2 = lv.bench.findIndex((x) => benchEligAt(x.p, "C") && (x.age ?? 99) < 25);
+      if (bi2 >= 0) {
+        for (let lj = li - 1; lj >= 0; lj--) {
+          const L2 = minors[lj], lv2 = levels[L2];
+          if (!lv2 || L2 === "WL" || L2 === "INT") continue;
+          const si = lv2.hitters.findIndex((x) => x.slot === "C" && (x.age ?? 99) >= 25);
+          if (si < 0) continue;
+          const young = lv.bench[bi2], vet = lv2.hitters[si];
+          vet.slot = "BN"; vet.slotPos = "C";
+          young.slot = "C"; young.slotPos = "C";
+          lv.bench[bi2] = vet; lv2.hitters[si] = young;
+          lv2.counts = cnt(lv2.SP, lv2.RP, lv2.hitters, lv2.bench);
+          break;
+        }
+      }
+    }
+    // Advisory (user: real growth is not defined solely by potential rating —
+    // benching ANY under-25 costs development): when an upper-minors bench C
+    // is STILL young after the swap above (no vet starter below to trade with),
+    // say the action out loud: one veteran catcher signing frees him.
+    if (L !== "WL" && L !== "INT" && lr >= LEVEL_RANK["A+"]) {
+      const bc = lv.bench.find((x) => benchEligAt(x.p, "C"));
+      if (bc && (bc.age ?? 99) < 25 && !lv.gaps.some((g) => g.startsWith("BU C"))) {
+        lv.gaps.push("BU C is " + (bc.age ?? "?") + " — to free him");
       }
     }
     lv.counts = cnt(lv.SP, lv.RP, lv.hitters, lv.bench);
@@ -700,7 +992,14 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   const keepValue = (x) => (x.pot ?? x.cur ?? -99) + youthBonus(x.age);
   const totalAt = (L) => levels[L].SP.length + levels[L].RP.length + levels[L].hitters.length + (levels[L].bench ? levels[L].bench.length : 0);
   {
-    const pool = [...H, ...P].filter((x) => !(x.isPitcher ? usedP.has(x) : usedH.has(x))).sort((a, b) => keepValue(b) - keepValue(a));
+    // User rule (2026-08-30): a 20-and-under with NO dev potential can live on
+    // the WL card as a filler — so he takes a summer depth seat LAST, after
+    // every player who needs the reps. But "at least doesn't mean at max":
+    // with seats still open he fills one rather than being cut (WL only holds
+    // 40; the org has room — use it).
+    const noDevU20 = (x) => ((x.age ?? 99) <= 20 && (x.pot ?? -99) <= 0) ? 1 : 0;
+    const pool = [...H, ...P].filter((x) => !(x.isPitcher ? usedP.has(x) : usedH.has(x)))
+      .sort((a, b) => (noDevU20(a) - noDevU20(b)) || (keepValue(b) - keepValue(a)));
     for (const x of pool) {
       for (let r = Math.max(LEVEL_RANK[cap(x.ceiling)], x.floorRank); r >= x.floorRank; r--) {   // floorRank = age floor; never below it
         const L = LEVELS[r];
@@ -710,9 +1009,97 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
         x._devDepth = true;
         break;
       }
+      if (x.isPitcher ? usedP.has(x) : usedH.has(x)) continue;
+      // Keep-before-cut (user rules, FINAL): his own range is full. Rules for
+      // who takes a distant open seat: 25+ dev-done players may stash at ANY
+      // level; a YOUNG player may only take an open seat BELOW A+ himself, or
+      // displace a weaker filler inside his own range — with the displaced
+      // filler taking the distant seat ONLY if he's 25+ when that seat is at
+      // A+ or above. "Never place young players as fillers at A+ and higher,
+      // period." If none of that works, the youngster is a genuine cut (the
+      // card's advice: sign a filler).
+      const A_PLUS = LEVEL_RANK["A+"];
+      const topRank = Math.max(LEVEL_RANK[cap(x.ceiling)], x.floorRank);
+      const findOpen = (maxExcl) => {
+        for (let r = topRank + 1; r < maxExcl; r++) {
+          const L = LEVELS[r];
+          if (!levels[L] || L === "WL") continue;
+          if (totalAt(L) < (MINOR_ROSTER_CAP[L] ?? 99)) return L;
+        }
+        return null;
+      };
+      const seatAt = (rec, L, stretch) => {
+        if (rec.isPitcher) { levels[L].RP.push(rec); usedP.add(rec); } else { levels[L].bench.push(rec); usedH.add(rec); }
+        rec._devDepth = true; if (stretch) rec._stretch = L;
+      };
+      if (devDone(x)) {
+        const open = findOpen(LEVEL_RANK["MLB"]);
+        if (open) seatAt(x, open, true);
+        continue;
+      }
+      const lowOpen = findOpen(Math.min(A_PLUS, LEVEL_RANK["MLB"]));   // seats a youngster may take himself
+      const anyOpen = lowOpen || findOpen(LEVEL_RANK["MLB"]);
+      if (!anyOpen) continue;   // no seat anywhere -> genuine cut
+      const openHigh = LEVEL_RANK[anyOpen] >= A_PLUS;
+      let disp = null, dispList = null, dispLev = null, di = -1, dv = Infinity;
+      for (let r = topRank; r >= x.floorRank; r--) {
+        const L = LEVELS[r], lv = levels[L];
+        if (!lv || L === "MLB" || L === "WL") continue;
+        const list = x.isPitcher ? lv.RP : lv.bench;
+        for (let j = 0; j < list.length; j++) {
+          const o = list[j];
+          if (!isFillerArm(o)) continue;                    // never displace a prospect
+          if (openHigh && !devDone(o)) continue;            // a high seat only takes a 25+ body
+          const v = keepValue(o);
+          if (v < keepValue(x) && v < dv) { dv = v; disp = o; dispList = list; dispLev = L; di = j; }
+        }
+      }
+      if (disp) {
+        dispList.splice(di, 1);
+        seatAt(disp, anyOpen, true);                        // the dev-done guy makes the jump
+        if (x.isPitcher) { levels[dispLev].RP.push(x); usedP.add(x); } else { levels[dispLev].bench.push(x); usedH.add(x); }
+        x._devDepth = true;                                 // at his proper level — no stretch flag
+      } else if (lowOpen) {
+        seatAt(x, lowOpen, true);                           // a LOW seat he may take himself
+      }
+      // else: only high seats exist and no 25+ body to send — he stays a cut.
     }
   }
   for (const L of minors) if (levels[L]) levels[L].counts = cnt(levels[L].SP, levels[L].RP, levels[L].hitters, levels[L].bench);
+
+  // ---- WL OVERLAY (user rules, 2026-08-30) ----
+  // The Winter League plays at a DIFFERENT time of year than every other
+  // level, and a player can be rostered in the WL *and* at a summer affiliate
+  // at the same time. So the WL card is an OVERLAY, not a placement: the
+  // org's best age-20-and-under players by POTENTIAL winter here for extra
+  // reps, without being consumed from any summer roster. Records are CLONED
+  // so slot labels set here never clobber the summer cards'.
+  {
+    // Only leagues that actually HAVE a Winter League get the overlay (TGS
+    // does; BLM has no WL level at all — never invent one for it).
+    const leagueHasWL = hitters.some((p) => p["Lev"] === "WL") || pitchers.some((p) => p["Lev"] === "WL");
+    const u20 = (x) => leagueHasWL && (x.age ?? 99) <= 20;
+    const clone = (x) => ({ ...x });
+    const arms = P.filter(u20);
+    const SP = arms.filter((x) => x.devRole === "SP")
+      .sort((a, b) => (b.spPot ?? -99) - (a.spPot ?? -99)).slice(0, 6).map(clone);
+    const spIds = new Set(SP.map((x) => x.p["ID"]));
+    const RP = arms.filter((x) => !spIds.has(x.p["ID"]))
+      .sort((a, b) => (rpPotV(b) ?? -99) - (rpPotV(a) ?? -99)).slice(0, 9).map(clone);
+    const bats = H.filter(u20)
+      .sort((a, b) => (b.pot ?? b.cur ?? -99) - (a.pot ?? a.cur ?? -99)).map(clone);
+    const used = new Set();
+    const { roster, gaps } = fillSlots(bats, MINOR_SLOTS, used, (h) => h.pot ?? h.cur ?? -99);
+    const capWL = MINOR_ROSTER_CAP.WL ?? 40;
+    const room = Math.max(0, capWL - SP.length - RP.length - roster.length);
+    const bench = bats.filter((h) => !used.has(h)).slice(0, room);
+    levels.WL = { SP, RP, hitters: roster, bench,
+                  // the WL overlay never nags "sign a filler" — it holds the
+                  // best U20s the org HAS; an unfilled winter slot is not an
+                  // actionable shortage (and a WL-less league shows nothing)
+                  gaps: [],
+                  counts: cnt(SP, RP, roster, bench) };
+  }
 
   const placed = new Set();
   const placedAt = {};

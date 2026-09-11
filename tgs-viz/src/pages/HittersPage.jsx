@@ -5,8 +5,11 @@ import { HITTER_COLUMN_GROUPS } from '../lib/columns';
 import { usePlayersWithFV, usePlayersWithDraftFV, usePlayersWithG5FV, usePlayersWithHybridFV, useHittersWithMarketValue } from '../hooks/usePlayerData';
 import { formatMoney } from '../lib/marketValue';
 
-export default function HittersPage({ players, isDraft = false, isFA = false, allPlayers, marketRate }) {
+export default function HittersPage({ players, isDraft = false, isFA = false, isIAFA = false, isR5 = false, allPlayers, marketRate }) {
   const [selectedPlayer, setSelectedPlayer] = useState(null);
+  // A dataset swap (league or park-basis change) replaces every row object;
+  // an open detail panel would keep showing the OLD basis next to new numbers.
+  React.useEffect(() => { setSelectedPlayer(null); }, [players]);
   const playersWithFV = usePlayersWithFV(players);
 
   // Compute Draft FV for all players when allPlayers is available
@@ -32,9 +35,13 @@ export default function HittersPage({ players, isDraft = false, isFA = false, al
   // silently stale dollars on the page free agents are actually shopped from.
   const banked = marketRate?.provenance?.used === 'banked' ? marketRate.provenance : null;
 
-  const defaultGroups = isFA
-    ? ['info', 'value', 'futureValue', 'marketCurrent', 'marketFuture']
-    : ['info', 'value', 'futureValue', 'draftValue'];
+  const defaultGroups = isIAFA
+    ? ['info', 'signing', 'value', 'draftValue']
+    : isFA
+    ? ['info', 'value', 'marketCurrent']
+    : isDraft
+    ? ['info', 'value', 'draftValue', 'runsSplit']
+    : ['info', 'value', 'runsSplit', 'offense'];
 
   return (
     <div className="h-full flex flex-col">
@@ -42,7 +49,7 @@ export default function HittersPage({ players, isDraft = false, isFA = false, al
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-white">
-              {isDraft ? 'Draft Hitters' : isFA ? 'Free Agent Hitters' : 'Hitters'}
+              {isDraft ? 'Draft Hitters' : isIAFA ? 'International Amateur Hitters' : isR5 ? 'Rule 5 Hitters' : isFA ? 'Free Agent Hitters' : 'Hitters'}
             </h1>
             <p className="text-sm text-slate-400 mt-1">
               {players.length} players | Toggle column groups to explore data | Click a player for details

@@ -30,14 +30,26 @@ export const PITCHER_WAA_COLUMNS = [
 export const HITTER_COLUMN_GROUPS = {
   info: {
     label: 'Player Info',
-    columns: ['Name', 'POS', 'ORG', 'Lev', 'Age', 'B', 'T'],
+    columns: ['Name', 'Best Pos', 'ORG', 'Lev', 'Age', 'B', 'T'],
   },
   value: {
     label: 'Value',
     // 'Pot WAA' (_potentialWAA) is the REALISTIC age-adjusted peak, not the raw 'MAX WAA P'
     // ceiling — so a past-prime hitter doesn't show phantom growth. Raw ceiling lives in the
     // 'Position WAA (Potential)' group for anyone who wants it.
-    columns: ['Rank', 'Max WAA wtd', 'Max WAA vR', 'Max WAA vL', '_potentialWAA', '_fvScale', '_fvGap', 'Ovr', 'Pot', '_futureValue'],
+    // 'Fair AAV' sits here, right after the WAA splits, so one dollar figure is
+    // visible by DEFAULT near the left edge. Full money detail stays in the
+    // '$ Current' / '$ Future' groups.
+    columns: ['Max WAA wtd', 'Max WAA vR', 'Max WAA vL', '_offerMid', 'Price', '_ctrStatus', '_ctrLeft', '_owed', '_potentialWAA', '_rawPotentialWAA', '_toPeakWAA', 'Ovr', 'Pot'],
+  },
+  // Max WAA, split the way the rest of baseball reads it. Off = bat + legs,
+  // Def = glove + the positional charge, both at the player's BEST position and both
+  // in RUNS (not wins), so Off + Def over runs-per-win reproduces Best WAA exactly.
+  // There is no 'Def Runs P': OOTP publishes potential for the bat only — no potential
+  // range, error, arm or framing exists in the pull — so the glove is never projected.
+  runsSplit: {
+    label: 'Off / Def Runs',
+    columns: ['Off Runs', 'Def Runs', 'Off Runs P'],
   },
   ratingsVR: {
     label: 'Ratings vs R',
@@ -89,7 +101,7 @@ export const HITTER_COLUMN_GROUPS = {
   },
   contract: {
     label: 'Contract',
-    columns: ['Price', 'ContractYr', 'ContractYrs', 'SalarySchedule', 'NoTrade', 'MLBSvcYrs', 'MLBSvcDays', 'MLBSvcDaysTY'],
+    columns: ['Price', '_ctrStatus', '_ctrLeft', '_owed', 'ContractYr', 'ContractYrs', 'SalarySchedule', 'NoTrade', 'MLBSvcYrs', 'MLBSvcDays', 'MLBSvcDaysTY'],
   },
   health: {
     label: 'Health',
@@ -97,7 +109,7 @@ export const HITTER_COLUMN_GROUPS = {
   },
   futureValue: {
     label: 'Future Value',
-    columns: ['_fvScale', '_futureValue', '_currentWAA', '_potentialWAA', '_peakWAA', '_pctToPeak', '_yearsTilPeak'],
+    columns: ['_fvScale', '_futureValue', '_currentWAA', '_potentialWAA', '_peakWAA', '_toPeakWAA', '_yearsTilPeak'],
   },
   personality: {
     label: 'Personality',
@@ -105,7 +117,7 @@ export const HITTER_COLUMN_GROUPS = {
   },
   draftValue: {
     label: 'Draft FV',
-    columns: ['_draftRawFV', '_agePercentile', '_draftCeiling', '_durability', '_highINT'],
+    columns: ['_draftRawFV', '_agePercentile', '_draftCeilingWAA', '_durability', '_highINT'],
   },
   g5Value: {
     label: 'G5 Peak FV',
@@ -114,6 +126,11 @@ export const HITTER_COLUMN_GROUPS = {
   hybridValue: {
     label: 'Hybrid FV',
     columns: ['_hybridFV', '_hybridRaw', '_hybridWFV', '_hybridWG5', '_hybridWDraft'],
+  },
+  signing: {
+    label: 'Signing',
+    // From the in-game international export only — StatsPlus carries neither.
+    columns: ['_iafaDem', '_iafaSign'],
   },
   marketCurrent: {
     label: '$ Current',
@@ -132,11 +149,17 @@ export const PITCHER_COLUMN_GROUPS = {
   },
   value: {
     label: 'Value (SP)',
-    columns: ['Rank', 'WAA wtd', 'WAA vR', 'WAA vL', 'WAR wtd', '_fvScale', '_fvGap', 'Ovr', 'Pot', '_futureValue'],
+    // see the hitter note: one headline dollar figure by default, after the splits.
+    // _potentialWAA (not raw WAP): the SP-basis WAP is BLANK for ~2/3 of pure
+    // RP/CL arms (the starter-stamina gate refuses them an SP projection), which
+    // made relief prospects unevaluable at a glance. _potentialWAA is the
+    // best-peak-ROLE projection (max of SP/RP potential, role-offset aware) —
+    // the same Proj Peak the hitter table shows, never blank for a real arm.
+    columns: ['WAA wtd', 'WAA vR', 'WAA vL', '_offerMid', 'Price', '_ctrStatus', '_ctrLeft', '_owed', '_potentialWAA', '_rawPotentialWAA', '_toPeakWAA', 'Ovr', 'Pot'],
   },
   valueRP: {
     label: 'Value (RP)',
-    columns: ['Rank RP', 'WAA wtd RP', 'WAA vR RP', 'WAA vL RP'],
+    columns: ['WAA wtd RP', 'WAA vR RP', 'WAA vL RP', 'WAP RP'],
   },
   ratingsVR: {
     label: 'Ratings vs R',
@@ -168,7 +191,7 @@ export const PITCHER_COLUMN_GROUPS = {
   },
   contract: {
     label: 'Contract',
-    columns: ['Price', 'ContractYr', 'ContractYrs', 'SalarySchedule', 'NoTrade', 'MLBSvcYrs', 'MLBSvcDays', 'MLBSvcDaysTY'],
+    columns: ['Price', '_ctrStatus', '_ctrLeft', '_owed', 'ContractYr', 'ContractYrs', 'SalarySchedule', 'NoTrade', 'MLBSvcYrs', 'MLBSvcDays', 'MLBSvcDaysTY'],
   },
   health: {
     label: 'Health',
@@ -180,11 +203,11 @@ export const PITCHER_COLUMN_GROUPS = {
   },
   futureValue: {
     label: 'Future Value',
-    columns: ['_fvScale', '_futureValue', '_currentWAA', '_potentialWAA', '_peakWAA', '_pctToPeak', '_yearsTilPeak'],
+    columns: ['_fvScale', '_futureValue', '_currentWAA', '_potentialWAA', '_peakWAA', '_toPeakWAA', '_yearsTilPeak'],
   },
   draftValue: {
     label: 'Draft FV',
-    columns: ['_draftRawFV', '_agePercentile', '_draftCeiling', '_durability', '_highINT'],
+    columns: ['_draftRawFV', '_agePercentile', '_draftCeilingWAA', '_durability', '_highINT'],
   },
   g5Value: {
     label: 'G5 Peak FV',
@@ -193,6 +216,11 @@ export const PITCHER_COLUMN_GROUPS = {
   hybridValue: {
     label: 'Hybrid FV',
     columns: ['_hybridFV', '_hybridRaw', '_hybridWFV', '_hybridWG5', '_hybridWDraft'],
+  },
+  signing: {
+    label: 'Signing',
+    // From the in-game international export only — StatsPlus carries neither.
+    columns: ['_iafaDem', '_iafaSign'],
   },
   marketCurrent: {
     label: '$ Current',
@@ -220,7 +248,7 @@ export function formatCellValue(value, columnName) {
   const num = parseFloat(value);
 
   const intCols = ['Age', 'Rank', 'Rank vR', 'Rank vL', 'Rank P', 'Rank RP', 'Ovr', 'Pot',
-    '_fvScale', '_draftFV', '_g5FV', '_hybridFV', '_pctToPeak', '_yearsTilPeak',
+    '_fvScale', '_draftFV', '_g5FV', '_hybridFV', '_yearsTilPeak',
     '_hybridWFV', '_hybridWG5', '_hybridWDraft',
     'ContractYr', 'ContractYrs', 'MLBSvcYrs', 'MLBSvcDays', 'MLBSvcDaysTY', 'DLDays', '_ctrYears',
     'SPE', 'STE', 'RUN', 'STM', 'HLD',
@@ -245,11 +273,11 @@ export function formatCellValue(value, columnName) {
   // WAA/WAR/Runs columns - 1 decimal
   const isWaaCols = columnName.includes('WAA') || columnName.includes('WAR') || columnName.includes('WAP') ||
     columnName.includes('BatR') || columnName.includes('BSR') || columnName.includes('UBR') ||
-    columnName.includes('wSB') || columnName.includes('RunsP') || columnName.includes('PMAA') ||
+    columnName.includes('wSB') || columnName.includes('Runs') || columnName.includes('PMAA') ||
     columnName.includes('EAA') || columnName.includes('DPAA') || columnName.includes('ARMAA') ||
     columnName.includes('FRMAA') || columnName.includes('ArmR') ||
     columnName === '_futureValue' || columnName === '_peakWAA' ||
-    columnName === '_currentWAA' || columnName === '_potentialWAA' ||
+    columnName === '_currentWAA' || columnName === '_potentialWAA' || columnName === '_rawPotentialWAA' ||
     columnName === '_draftRawFV' || columnName === '_draftCeiling' ||
     columnName === '_draftCeilingWAA' || columnName === '_ceilingScore' ||
     columnName === '_g5Raw' || columnName === '_hybridRaw';
@@ -270,10 +298,6 @@ export function formatCellValue(value, columnName) {
 
   if (columnName === 'SB%' && !isNaN(num)) {
     return (num * 100).toFixed(0) + '%';
-  }
-
-  if (columnName === '_pctToPeak' && !isNaN(num)) {
-    return `${Math.round(num)}%`;
   }
 
   if (columnName === '_agePercentile' && !isNaN(num)) {
@@ -305,7 +329,7 @@ export function formatCellValue(value, columnName) {
   }
 
   // Money columns — format as $12.5M / $750K
-  const moneyCols = ['Price', '_perWAA', '_marketValue', '_offerFloor', '_offerMid', '_offerCeiling', '_annualValue', '_surplus',
+  const moneyCols = ['Price', '_owed', '_perWAA', '_marketValue', '_offerFloor', '_offerMid', '_offerCeiling', '_annualValue', '_surplus',
     '_mktPrice', '_mktSurplus',
     '_ctrSurplus', '_futureAAV', '_futureOfferLow', '_futureOfferMid', '_futureOfferHigh'];
   if (moneyCols.includes(columnName) && !isNaN(num)) {
@@ -403,7 +427,7 @@ export function getCellColorClass(value, columnName) {
 
   const isValueCol = columnName.includes('WAA') || columnName.includes('WAR') ||
     columnName.includes('WAP') || columnName === '_futureValue' || columnName === '_peakWAA' ||
-    columnName === '_currentWAA' || columnName === '_potentialWAA' ||
+    columnName === '_currentWAA' || columnName === '_potentialWAA' || columnName === '_rawPotentialWAA' ||
     columnName === '_draftCeiling' || columnName === '_draftCeilingWAA' || columnName === '_g5Raw';
 
   if (isValueCol) {
@@ -474,11 +498,18 @@ export const COLUMN_LABELS = {
   'Pot': 'POT',
   '_futureValue': 'Future$',
   '_currentWAA': 'Curr WAA',
-  '_potentialWAA': 'Proj Peak',
+  '_potentialWAA': 'Proj Potential',
+  '_rawPotentialWAA': 'Peak Potential',
+  'WAP': 'Peak SP',
+  'WAP RP': 'Peak RP',
   '_peakWAA': 'Peak WAA',
-  '_pctToPeak': '% to Peak',
+  '_toPeakWAA': 'To Peak',
   '_yearsTilPeak': 'Yrs to Peak',
   '_maxWAA': 'Max WAA',
+  'Best Pos': 'Pos',
+  'Off Runs': 'Off Runs',
+  'Def Runs': 'Def Runs',
+  'Off Runs P': 'Off Runs P',
   'Max WAA wtd': 'Best WAA',
   'Max WAA vR': 'Best vR',
   'Max WAA vL': 'Best vL',
@@ -489,7 +520,12 @@ export const COLUMN_LABELS = {
   '_draftFV': 'Draft FV',
   '_draftRawFV': 'Draft FV',
   '_agePercentile': 'Age Pctl',
-  '_draftCeiling': 'Ceiling (WAR)',
+  // Since the ceiling basis fix these two ARE the same number (WAA); the offsets that
+  // made one of them WAR are gone. Kept as a distinct key only because the draft
+  // board's above/below-zero sort tier reads _draftCeiling.
+  '_iafaDem': 'Demand',
+  '_iafaSign': 'Signability',
+  '_draftCeiling': 'Ceiling',
   '_draftCeilingWAA': 'Ceiling',
   '_ceilingScore': 'Ceil Score',
   '_durability': 'Durability',
@@ -536,6 +572,9 @@ export const COLUMN_LABELS = {
   '_marketRole': 'Role $',
   '_bestWAA': 'Best WAA',
   // Contract / service
+  '_ctrLeft': 'Ctrl Yrs',
+  '_owed': 'Owed',
+  '_ctrStatus': 'Status',
   'Price': 'Salary',
   'ContractYr': 'Yr #',
   'ContractYrs': 'Yrs',

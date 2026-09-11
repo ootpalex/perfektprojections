@@ -1021,7 +1021,17 @@ export function localFit(sample, x0raw) {
   // prices no one has ever paid).
   let minX = Infinity, maxX = -Infinity;
   for (const p of sample) { if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x; }
-  const x0 = Math.min(maxX, Math.max(minX, x0raw));
+  // ABOVE the best contract ever signed, hand back to the fitted line (null => the
+  // caller's fallback) instead of pinning to the top tier. Pinning made the entire top
+  // of the market one number: TGS has never signed above 4.17 WAR, so Montero (5.69),
+  // Guerrero (4.98), Oses (4.70) and everyone else were quoted an identical $34.37M
+  // across a 1.5-win spread — no discrimination exactly where it matters most. Refusing
+  // to extrapolate the LOCAL slope is right; freezing the price is not, and the line
+  // carries the fitted $/WAR the rest of the system already prices on.
+  // The LOW end still clamps: below the cheapest signing the tier IS the league minimum,
+  // which is a real floor rather than an absence of evidence.
+  if (x0raw > maxX) return null;
+  const x0 = Math.max(minX, x0raw);
   const k = Math.min(n, Math.max(LOESS_MIN_PTS, Math.ceil(LOESS_SPAN * n)));
   const dists = sample.map(p => Math.abs(p.x - x0)).sort((a, b) => a - b);
   const h = Math.max(dists[k - 1], 1e-6) * 1.0001; // include the k-th point
@@ -1286,10 +1296,15 @@ export function calculatePlayerValue(player, rate) {
   // held one year for. Floored at 1: an offer is at least the season in front
   // of you, which is also the horizon for a player already past free agency.
   const control = controlWindow(player);
-  const offerYears = Math.max(1, Math.min(
-    control.controlYears,
-    FV_DEFAULTS.MAX_CAREER_AGE - age,
-  ));
+  // ONE YEAR, for everybody (user directive). The headline offer has to be COMPARABLE
+  // down a column, and a per-player horizon is not: it ran 1..6 years, with every age
+  // from 25 to 28 containing all six. Worse, it pointed the wrong way — a shorter
+  // horizon averages in LESS decline, so an older player was quoted a HIGHER AAV than an
+  // identical younger one. Quoting one season of him puts every player on one basis and
+  // removes the variable entirely.
+  // Pricing an actual multi-year deal still lives in offerByLength below, which quotes
+  // 1..maxLen years side by side — that is the place to choose a term, not the headline.
+  const offerYears = 1;
   // The table runs to 8 years, but a long extension can control a young player
   // for more than that; the horizon row has to exist or meanWAR(offerYears)
   // would divide a shorter path by the longer horizon and understate it.

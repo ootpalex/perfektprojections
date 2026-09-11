@@ -12,15 +12,34 @@ import { getBestWAA, getPlayerWAR, calculatePlayerValue, calculatePitcherValue, 
  * With a league: /data/{league}/hitters.json
  * Without (fallback): /data/hitters.json
  */
-function getDataFiles(league) {
+function getDataFiles(league, parkMode = 'neutral') {
   const prefix = league ? `/data/${league}` : '/data';
+  // Park basis (park spec 2026-08-14): the shipped default is NEUTRAL (all
+  // parks equal — contracts normalized). 'park' swaps hitters/pitchers for the
+  // *_park variants (50% home park / 50% avg of other MLB parks). The DRAFT
+  // boards follow the basis too ("we have to draft for our park", 2026-09-04) —
+  // draft.py builds both variants like refresh.py does. FA derives live from
+  // hitters/pitchers (so it follows automatically); IAFA/R5 stay neutral-built.
+  const suffix = parkMode === 'park' ? '_park' : '';
   return {
-    hitters: `${prefix}/hitters.json`,
-    pitchers: `${prefix}/pitchers.json`,
-    hitters_draft: `${prefix}/hitters_draft.json`,
-    pitchers_draft: `${prefix}/pitchers_draft.json`,
-    hitters_fa: `${prefix}/hitters_fa.json`,
-    pitchers_fa: `${prefix}/pitchers_fa.json`,
+    hitters: `${prefix}/hitters${suffix}.json`,
+    pitchers: `${prefix}/pitchers${suffix}.json`,
+    hitters_draft: `${prefix}/hitters_draft${suffix}.json`,
+    pitchers_draft: `${prefix}/pitchers_draft${suffix}.json`,
+    // Full class incl. already-drafted (stamped with DraftedOverall/DraftedTeam) —
+    // the Mock Draft page's from-the-beginning dataset. Absent file -> empty
+    // (the loader falls back to the neutral draft files for a league whose last
+    // board build predates the park variants).
+    hitters_draft_all: `${prefix}/hitters_draft_all${suffix}.json`,
+    pitchers_draft_all: `${prefix}/pitchers_draft_all${suffix}.json`,
+    // NOTE: hitters_fa/pitchers_fa.json are no longer fetched — they were a
+    // retired Excel extract that shadowed live data; the FA pages now derive
+    // free agents from the live hitters/pitchers rows (no org = FA) in App.jsx.
+    // Membership + signing terms for the international amateur class. Absent for a
+    // league with no international phase, which the loader already treats as empty.
+    iafa: `${prefix}/iafa.json`,
+    // Rule 5 pool membership (ingest/r5.py). Absent file -> empty pool.
+    r5: `${prefix}/r5.json`,
   };
 }
 
@@ -105,13 +124,15 @@ export function useLeagues() {
  * Loads all player data for the given league.
  * Re-fetches when league changes.
  */
-export function usePlayerData(league) {
+export function usePlayerData(league, parkMode = 'neutral') {
   const [data, setData] = useState({
     hitters: [],
     pitchers: [],
     hitters_draft: [],
     pitchers_draft: [],
-    hitters_fa: [],
+    hitters_draft_all: [],
+    pitchers_draft_all: [],
+    hitters_fa: [], iafa: [], r5: [],
     pitchers_fa: [],
     metadata: null,
     marketBank: null,
@@ -130,12 +151,13 @@ export function usePlayerData(league) {
     setData({
       hitters: [], pitchers: [],
       hitters_draft: [], pitchers_draft: [],
-      hitters_fa: [], pitchers_fa: [],
+      hitters_draft_all: [], pitchers_draft_all: [],
+      hitters_fa: [], pitchers_fa: [], iafa: [], r5: [],
       metadata: null,
       marketBank: null,
     });
 
-    const dataFiles = getDataFiles(league);
+    const dataFiles = getDataFiles(league, parkMode);
 
     async function loadAll() {
       const results = {};
@@ -143,10 +165,17 @@ export function usePlayerData(league) {
       for (const [key, url] of Object.entries(dataFiles)) {
         try {
           setLoadProgress(prev => ({ ...prev, [key]: 'loading' }));
-          const res = await fetch(url);
+          let res = await fetch(url);
           // Dev server SPA-fallback returns index.html (200, text/html) for
           // missing files — treat non-JSON responses as missing, same as a 404.
-          const ctype = res.headers.get('content-type') || '';
+          let ctype = res.headers.get('content-type') || '';
+          // A missing *_park draft file (league's last board build predates the
+          // park variants) falls back to the neutral draft file rather than an
+          // empty board.
+          if ((!res.ok || !ctype.includes('json')) && url.includes('_draft') && url.includes('_park')) {
+            res = await fetch(url.replace('_park', ''));
+            ctype = res.headers.get('content-type') || '';
+          }
           if (!res.ok || !ctype.includes('json')) {
             setLoadProgress(prev => ({ ...prev, [key]: 'missing' }));
             results[key] = [];
@@ -203,7 +232,7 @@ export function usePlayerData(league) {
     });
 
     return () => { cancelled = true; };
-  }, [league]);
+  }, [league, parkMode]);
 
   return { data, loading, error, loadProgress };
 }
@@ -346,8 +375,29 @@ export function useFilteredPlayers(players, initialFilters = {}) {
 /**
  * Hook that adds Future Value calculations to player data.
  */
+// League minimum salary. Measured, not guessed: 437 of 489 (89%) pre-arb one-year
+// MLB deals in the TGS market sample sit exactly here (market_fit.json minSalaryInfo).
+const LEAGUE_MIN_SALARY = 750000;
+
 export function usePlayersWithFV(players) {
   return useMemo(() => {
+    // League minimum salary, measured from THIS league's own rows: the modal
+    // single-year salary among org-attached players (TGS 750k, BLM 700k — the
+    // leagues are separate and their minimums differ; the old shared 750k
+    // constant misread BLM salaries between ~805k and ~862k as Pre-arb).
+    // Falls back to the TGS-measured 750k when no mode is computable.
+    const salCount = new Map();
+    for (const p of players) {
+      const org = String(p.ORG ?? '').trim();
+      if (!org || org === '0') continue;
+      const sched = Array.isArray(p.SalarySchedule) ? p.SalarySchedule.filter(Number.isFinite) : [];
+      if (sched.length > 1) continue;
+      const sal = parseFloat(p.Price);
+      if (!Number.isFinite(sal) || sal <= 0 || sal > 2_000_000) continue;
+      salCount.set(sal, (salCount.get(sal) || 0) + 1);
+    }
+    let minSalary = LEAGUE_MIN_SALARY, bestN = 0;
+    for (const [s, c] of salCount) if (c > bestN || (c === bestN && s < minSalary)) { minSalary = s; bestN = c; }
     return players.map(p => {
       // Value only the seasons this club actually holds. Every board used to
       // count six for everyone, which is right for a prospect (his clock hasn't
@@ -379,8 +429,43 @@ export function usePlayersWithFV(players) {
         _fvScale: fv.fvScale,
         _fvGap: (Number.isFinite(fv.fvScale) && Number.isFinite(pot)) ? fv.fvScale - pot : null,
         _peakWAA: toWAA(d.peakProjected),
-        _pctToPeak: fv.pctToPeak,
+        // ceiling minus current, in display WAA — one meaning for every player
+        // (the old % mixed three formulas; see futureValue.pctToPeak history)
+        _toPeakWAA: fv.displayWAA
+          ? Math.round((fv.displayWAA.potential - fv.displayWAA.current) * 10) / 10
+          : null,
         _yearsTilPeak: fv.yearsTilPeak,
+        // --- contract, summarized for trade work -------------------------------
+        // The pull already carries Price / ContractYr / ContractYrs / SalarySchedule
+        // / NoTrade / service time; reading a raw per-year array to work out "what
+        // would I be taking on" is the part that sent the user to another source.
+        // controlWindow() already measured that the schedule IS the remaining years.
+        _ctrLeft: cw.controlYears ?? null,
+        _owed: Array.isArray(p.SalarySchedule) && p.SalarySchedule.length
+          ? p.SalarySchedule.filter(Number.isFinite).reduce((a, b) => a + b, 0)
+          : (Number.isFinite(parseFloat(p.Price)) ? parseFloat(p.Price) : null),
+        _ctrStatus: (() => {
+          const yrs = Number.isFinite(cw.serviceYears) ? cw.serviceYears : null;
+          const sched = Array.isArray(p.SalarySchedule)
+            ? p.SalarySchedule.filter(Number.isFinite) : [];
+          const org = String(p.ORG ?? '').trim();
+          const sal = parseFloat(p.Price);
+          if (!org || org === '0') return p.FA === false ? 'AMA' : 'FA';
+          if (sched.length > 1) return sched.length + "Y";
+          // SALARY leads, service time only breaks ties. Service years are missing or
+          // stale on ~20% of MLB rows, and OOTP's Super-Two arb pays 2-service-year
+          // players well above the minimum — reading those as "Pre-arb" was wrong on
+          // 33 TGS players (Montero, $6.6M at 2 svc yrs). Nobody paid meaningfully
+          // above the league minimum is pre-arbitration.
+          if (Number.isFinite(sal) && sal > minSalary * 1.15) {
+            return (yrs !== null && yrs >= 6) ? 'FA after' : 'Arb';
+          }
+          if (Number.isFinite(sal)) return 'Pre-arb';        // at/near the minimum
+          if (yrs !== null && yrs >= 6) return 'FA after';   // no salary on the row
+          if (yrs !== null && yrs >= 3) return 'Arb';
+          if (yrs !== null) return 'Pre-arb';
+          return null;
+        })(),
         _projYears: fv.projectionYears,
         _currentWAA: toWAA(d.current),
         // "Proj Peak" = the REALISTIC age-adjusted peak (what we project he'll actually reach),
@@ -411,8 +496,20 @@ export function usePlayersWithDraftFV(draftPlayers, allPlayers, playerType) {
   // Pitchers: best of SP or RP WAR for age comparison (audit M5 — same
   // role-offset currency calculateDraftFV uses, so a swingman's percentile is
   // taken on the same value that scores him; league read off the data itself).
+  // Hitters: 0.7·Off Runs + 0.3·Def Runs — bat AND the delivered glove, NOT bare
+  // wOBA (Otoo 2026-09-04: 71.5th pctile bat-only; bat-only buried young catchers
+  // by 17-22 raw FV). The 70/30 bat-glove lean is a USER PREFERENCE (2026-09-04):
+  // full-run-value glove (Max WAA wtd) overweighted defense for his taste — glove
+  // counts at 3/7 of its run value in this CURRENT leg only; the ceiling leg
+  // stays full-value. Must match calculateDraftFV's hitter currentPerf.
   const metricKeyOrFn = useMemo(() => {
-    if (playerType === 'hitter') return 'wOBA wtd';
+    if (playerType === 'hitter') {
+      return (player) => {
+        const o = parseFloat(player['Off Runs']);
+        const d = parseFloat(player['Def Runs']);
+        return (Number.isFinite(o) && Number.isFinite(d)) ? 0.7 * o + 0.3 * d : NaN;
+      };
+    }
     const lg = (allPlayers && allPlayers[0] && allPlayers[0]._appLeague) || undefined;
     const spOff = replacementOffset(lg, 'sp');
     const rpOff = replacementOffset(lg, 'rp');

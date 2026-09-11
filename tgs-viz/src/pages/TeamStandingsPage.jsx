@@ -57,7 +57,7 @@ const FALLBACK_MIN_ROSTER = 20;
 // Step 2: Normalize so total league wins = total league losses
 //         (optimizer cherry-picks best 26, leaving negative-WAA guys
 //          off rosters, inflating the sum — normalization fixes this)
-function buildTeamProjections(hitters, pitchers, knownTeams, league = null) {
+function buildTeamProjections(hitters, pitchers, knownTeams, league = null, vrShare = null) {
   // B3 (audit, corrected): base wins are G/2 for the league's REAL season
   // length — MEASURED at 162 for both real leagues (see LEAGUE_GAMES).
   const G = leagueGames(league);
@@ -80,15 +80,21 @@ function buildTeamProjections(hitters, pitchers, knownTeams, league = null) {
   // ── Pass 1: raw optimizer results ──
   const raw = [];
   for (const org of orgs) {
-    const roster = optimizeRoster(hitters, pitchers, { teamOrg: org, league });
+    // vrShare = the league's REAL season vs-RHP share from metadata (same value the
+    // Roster Optimizer uses) — without it every row silently used the optimizer's
+    // hardcoded TGS fallback, so the two screens computed on different bases.
+    const roster = optimizeRoster(hitters, pitchers, { teamOrg: org, league, vrShare });
     const t = roster.totals;
     raw.push({
       team: org,
       rawWAAwtd: t.weightedLineupWAA + t.totalPitcherWAA,  // win-relevant WAA: platoon lineups (PA-weighted) + pitching, NOT the 13-bat sum (which over-counts rest-day bench). Matches the Roster Optimizer basis.
+      rawOffWtd: t.weightedLineupWAA,
       rawWAAvR: t.lineupWAA_vR,
       rawWAAvL: t.lineupWAA_vL,
-      rawSPWAA: t.totalSPWAA,
-      rawRPWAA: t.totalRPWAA,
+      // workload-scaled rotation/pen — the values that actually feed the total,
+      // so Off wtd + SP + RP = Total WAA wtd holds exactly in the table
+      rawSPWAA: t.totalSPWAAeff ?? t.totalSPWAA,
+      rawRPWAA: t.totalRPWAAeff ?? t.totalRPWAA,
       rawHitterWAA: t.totalHitterWAA,
     });
   }
@@ -105,8 +111,10 @@ function buildTeamProjections(hitters, pitchers, knownTeams, league = null) {
   // Also normalize the split WAAs (vR / vL) and component WAAs proportionally
   const rawTotalvR = raw.reduce((s, t) => s + t.rawWAAvR, 0);
   const rawTotalvL = raw.reduce((s, t) => s + t.rawWAAvL, 0);
+  const rawTotalOff = raw.reduce((s, t) => s + t.rawOffWtd, 0);
   const vROffset = rawTotalvR / numTeams;
   const vLOffset = rawTotalvL / numTeams;
+  const offOffset = rawTotalOff / numTeams;
 
   // Center SP and RP each on its OWN league mean — zero-sum per component, exactly like
   // offense vR/vL above. (Previously they took a proportional share of the TOTAL offset,
@@ -120,6 +128,7 @@ function buildTeamProjections(hitters, pitchers, knownTeams, league = null) {
 
   return raw.map(t => {
     const adjWAA = t.rawWAAwtd - waaOffset;
+    const adjOff = t.rawOffWtd - offOffset;
     const adjSP = t.rawSPWAA - spOffset;
     const adjRP = t.rawRPWAA - rpOffset;
     const adjvR = t.rawWAAvR - vROffset;
@@ -130,6 +139,7 @@ function buildTeamProjections(hitters, pitchers, knownTeams, league = null) {
       team: t.team,
       projW,
       projL: G - projW,
+      offWAAwtd: Math.round(adjOff * 100) / 100,
       totalWAAvR: Math.round(adjvR * 100) / 100,
       totalWAAvL: Math.round(adjvL * 100) / 100,
       spWAA: Math.round(adjSP * 100) / 100,
@@ -174,11 +184,12 @@ const COLUMNS = [
   { key: 'team',       label: 'Team',       accessor: r => r.team,         fmt: v => v,            align: 'left',  tip: 'Organization' },
   { key: 'projW',      label: 'Proj W',     accessor: r => r.projW,        fmt: v => v,            align: 'right', tip: 'Projected wins = G/2 + total WAA vs league average (G = league games/season, 162 here)' },
   { key: 'projL',      label: 'Proj L',     accessor: r => r.projL,        fmt: v => v,            align: 'right', tip: 'Projected losses = G − Proj W' },
+  { key: 'offWAAwtd',  label: 'Off WAA wtd', accessor: r => r.offWAAwtd,  fmt: v => v.toFixed(1), align: 'right', tip: 'Lineup (offense) WAA, platoon-weighted by the league’s real vs-RHP share, vs the league-average lineup. Off wtd + SP + RP = Total WAA wtd exactly.' },
   { key: 'totalWAAvR', label: 'Off WAA vR', accessor: r => r.totalWAAvR,   fmt: v => v.toFixed(1), align: 'right', tip: 'Lineup (offense) WAA vs right-handed pitching, as a team total relative to the league-average lineup. Not the platoon-weighted value — this is the vR split.' },
   { key: 'totalWAAvL', label: 'Off WAA vL', accessor: r => r.totalWAAvL,   fmt: v => v.toFixed(1), align: 'right', tip: 'Lineup (offense) WAA vs left-handed pitching, as a team total relative to the league-average lineup. Not the platoon-weighted value — this is the vL split.' },
-  { key: 'spWAA',      label: 'SP WAA wtd', accessor: r => r.spWAA,        fmt: v => v.toFixed(1), align: 'right', tip: 'Rotation: sum of the 5 starters’ weighted WAA, as a team total vs the league-average rotation. Above average = positive. (The org page shows each pitcher’s raw WAA, which runs higher.)' },
-  { key: 'rpWAA',      label: 'RP WAA wtd', accessor: r => r.rpWAA,        fmt: v => v.toFixed(1), align: 'right', tip: 'Bullpen: sum of the 8 relievers’ weighted WAA, as a team total vs the league-average bullpen. Every team stacks its 8 best arms, so a pen of small-positive raw WAA can still land below average and read negative here.' },
-  { key: 'totalWAAwtd',label: 'Total WAA wtd', accessor: r => r.totalWAAwtd, fmt: v => v.toFixed(1), align: 'right', tip: 'Whole-team weighted WAA vs the league-average team. Proj W = G/2 + this. Equals offense + SP + RP.' },
+  { key: 'spWAA',      label: 'SP WAA wtd', accessor: r => r.spWAA,        fmt: v => v.toFixed(1), align: 'right', tip: 'Rotation: the 5 starters’ weighted WAA scaled to the innings the sim actually gives a rotation (~94%), vs the league-average rotation. Above average = positive. (The org page shows each pitcher’s raw WAA, which runs higher.)' },
+  { key: 'rpWAA',      label: 'RP WAA wtd', accessor: r => r.rpWAA,        fmt: v => v.toFixed(1), align: 'right', tip: 'Bullpen: the 8 relievers’ weighted WAA scaled to the innings the sim actually gives a pen, vs the league-average bullpen. Every team stacks its 8 best arms, so a pen of small-positive raw WAA can still land below average and read negative here.' },
+  { key: 'totalWAAwtd',label: 'Total WAA wtd', accessor: r => r.totalWAAwtd, fmt: v => v.toFixed(1), align: 'right', tip: 'Whole-team weighted WAA vs the league-average team. Proj W = G/2 + this. Equals Off wtd + SP + RP exactly.' },
 ];
 
 // ─── Sortable table component ────────────────────────────────────
@@ -307,7 +318,7 @@ function StandingsTable({ title, rows, onExport, halfWins = 81 }) {
 }
 
 // ─── Main page ───────────────────────────────────────────────────
-export default function TeamStandingsPage({ hitters, pitchers, league }) {
+export default function TeamStandingsPage({ hitters, pitchers, metadata, league }) {
   // Resolve the per-league AL/NL map. Unknown leagues fall back to a single
   // combined table (no sub-league split) so teams are never silently dropped.
   const map = LEAGUE_TEAMS[league] || null;
@@ -318,9 +329,13 @@ export default function TeamStandingsPage({ hitters, pitchers, league }) {
     [map]
   );
 
+  // Same platoon-weight basis as the Roster Optimizer (real season vs-RHP share
+  // from the league metadata) so the two screens agree on every team's WAA.
+  const vrShare = metadata?.matchups?.['OVR vR'];
+
   const allTeams = useMemo(
-    () => buildTeamProjections(hitters, pitchers, knownTeams, league),
-    [hitters, pitchers, knownTeams, league]
+    () => buildTeamProjections(hitters, pitchers, knownTeams, league, vrShare),
+    [hitters, pitchers, knownTeams, league, vrShare]
   );
 
   const alTeams = useMemo(

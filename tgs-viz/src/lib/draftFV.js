@@ -18,7 +18,7 @@
  * between Normal and Durable used to outrank genuine differences in the inputs.
  *
  * Key inputs:
- *   - Hitters: wOBA wtd (current), MAX WAA P (ceiling)
+ *   - Hitters: 0.7·Off Runs + 0.3·Def Runs (current; 70/30 bat-glove per user), MAX WAA P (ceiling)
  *   - Pitchers: WAA wtd (current), WAP (ceiling)
  *   - _potentialWAA (projected peak): the ceiling after the development gap-factor and
  *     risk haircut, stamped upstream by usePlayersWithFV. Same units and anchors as the
@@ -358,7 +358,13 @@ export function calculateDraftFV(player, ageGroups, playerType, params = {}) {
   let ceilingRole = null;
 
   if (playerType === 'hitter') {
-    currentPerf = parseFloat(player['wOBA wtd']);
+    // 0.7·Off Runs + 0.3·Def Runs (matches usePlayersWithDraftFV's age-group
+    // metric — the two must stay identical). Bare wOBA ignored the delivered
+    // glove (Otoo/young-C case); full run value overweighted it — the 70/30
+    // bat-glove lean is the user's preference (2026-09-04), current leg only.
+    const _o = parseFloat(player['Off Runs']);
+    const _d = parseFloat(player['Def Runs']);
+    currentPerf = (Number.isFinite(_o) && Number.isFinite(_d)) ? 0.7 * _o + 0.3 * _d : NaN;
     ceiling = parseFloat(player['MAX WAA P']);
     // Mature players (no potential data): current best WAA IS their ceiling
     if (isNaN(ceiling)) {

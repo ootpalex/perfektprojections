@@ -32,6 +32,7 @@
 // ============================================================
 
 import { replacementOffset } from './leagueCalib.js';
+import { measuredTrajectory } from './ageCurve.js';
 
 export const FV_DEFAULTS = {
   // Development curve (Gap Factor)
@@ -394,18 +395,38 @@ export function calculateFutureValue(player, yearsOfControl, params = {}) {
   const gap = potentialWAA - currentWAA;
   const riskFactor = getPlayerRisk(age, gap, hasPotential, p);
 
-  // Expected peak WAA (what we think they'll actually reach), two effects:
-  //  (1) Development credit TAPERS OUT as the player matures — OOTP growth stops ~25, so a player
-  //      26+ won't fill remaining potential (barring rare Talent Change Randomness / a Dev Lab).
-  //      Past 26 his projected peak is just his current WAA (trending down), NOT his stale ceiling.
-  //  (2) For developing players, anchor the peak on POTENTIAL with current FLOORED at 0, so a
-  //      teenager's rookie-ball negative WAA doesn't drag his ceiling.
-  const devCredit = Math.max(0, Math.min(1, (26 - age) / 2));   // 1.0 at ≤24, 0.5 at 25, 0 at ≥26
+  // Expected peak WAA ("Proj Potential" — what we think they'll actually reach).
+  //
+  // MEASURED PATH (DORMANT — no caller passes ageCurve yet): when a caller
+  // supplies the measured age curve (engine/agecurve_fit.py, refreshed every
+  // ratings pull), iterate the MEASURED per-age gap-closure rates from his age
+  // to 25. This is what separates a nearly-there 21-year-old from a massively
+  // underdeveloped 23-year-old with the same ceiling. No invented constants on
+  // this path. WHY DORMANT (user, 2026-08-26): the archive's only window so
+  // far predates the league's first full tracked development cycle — offseason
+  // dev labs still running, and the commissioner mass-toggles adjusted ratings
+  // in this period — so the measured closure rates aren't development yet.
+  // Enable by passing { ageCurve } from usePlayersWithFV + PlayerDetail once a
+  // full clean dev cycle is in the archive.
+  //
+  // LIVE PATH (until then, and for a league with no curve at all):
+  // the original assumed model — GAP_MAX x riskFactor with current floored
+  // at 0 so a teenager's rookie-ball negative WAA doesn't drag his ceiling.
+  //
+  // Either way development ends when a player TURNS 25 (league rule,
+  // user-stated): 25+ gets NO growth credit — his projected peak is what he
+  // is now. (measuredTrajectory returns null at 25+, so both paths agree.)
+  const devCredit = age >= 25 ? 0 : 1;
+  const mTraj = (p.ageCurve && hasPotential && gap > 0 && devCredit > 0)
+    ? measuredTrajectory(p.ageCurve, age, currentWAA, potentialWAA)
+    : null;
   const baseForPeak = Math.max(currentWAA, 0);
   const developedPeak = baseForPeak + (potentialWAA - baseForPeak) * p.GAP_MAX * riskFactor;
-  const expectedPeakWAA = hasPotential && gap > 0
-    ? currentWAA + (developedPeak - currentWAA) * devCredit
-    : currentWAA;
+  const expectedPeakWAA = mTraj
+    ? mTraj[mTraj.length - 1].waa
+    : (hasPotential && gap > 0
+        ? currentWAA + (developedPeak - currentWAA) * devCredit
+        : currentWAA);
 
   // ---- PARALLEL WAA (vs average) TRACK — display only ----
   // The boards display WAA by user directive while this engine computes in WAR
@@ -426,9 +447,16 @@ export function calculateFutureValue(player, yearsOfControl, params = {}) {
   const potentialAsWAA = potentialWAA - oPot;
   const baseAsWAA = baseForPeak === currentWAA ? currentAsWAA : -oPot;
   const developedPeakAsWAA = baseAsWAA + (potentialAsWAA - baseAsWAA) * p.GAP_MAX * riskFactor;
-  const expectedPeakAsWAA = hasPotential && gap > 0
-    ? currentAsWAA + (developedPeakAsWAA - currentAsWAA) * devCredit
-    : currentAsWAA;
+  // measured path: same iteration on the display-WAA inputs (closure applies to
+  // the gap, so the two tracks stay in step; drift years use the same rates)
+  const mTrajAs = mTraj
+    ? measuredTrajectory(p.ageCurve, age, currentAsWAA, potentialAsWAA)
+    : null;
+  const expectedPeakAsWAA = mTrajAs
+    ? mTrajAs[mTrajAs.length - 1].waa
+    : (hasPotential && gap > 0
+        ? currentAsWAA + (developedPeakAsWAA - currentAsWAA) * devCredit
+        : currentAsWAA);
 
   // Projection window — D5 audit fix: value a FIXED number of controlled
   // seasons (yoc) from EXPECTED ARRIVAL (maturity for prospects, today for
@@ -476,6 +504,12 @@ export function calculateFutureValue(player, yearsOfControl, params = {}) {
     yearByYear.push({
       age: futureAge,
       rawWAA: Math.round(yearWAA * 100) / 100,
+      // display-WAA basis of the same year (rawWAA is the internal WAR/market
+      // track and must stay — marketValue.js consumes it). Charts labeled WAA
+      // must plot THIS, never rawWAA: the two differ by the role's market
+      // replacement offset (~1.65 hitters / 2.5 SP), which made the model line
+      // sit a constant offset above the measured overlay on the dev chart.
+      waa: Math.round(yearAsWAA * 100) / 100,
       discountedWAA: Math.round((yearWAA * discountFactor) * 100) / 100,
     });
   }

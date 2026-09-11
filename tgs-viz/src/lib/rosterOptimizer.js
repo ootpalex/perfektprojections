@@ -1018,6 +1018,7 @@ function callupUpgrades({ everydayStarters, startingPitchers, reliefPitchers, po
     let best = null;
     for (const p of pitcherPool) {
       if (rosteredIds.has(_idOf(p))) continue;
+      if (role === 'SP' && p._canStart === false) continue;   // no SP projection = can't be a rotation upgrade
       const v = role === 'SP' ? p._spWAA : p._rpWAA;
       const gain = v - (weak[col] || 0);
       if (gain > 0 && (!best || gain > best.gain)) best = { player: p, gain };
@@ -1310,7 +1311,15 @@ export function optimizeRoster(hitters, pitchers, options = {}) {
     const spWAA = parseFloat(p[PITCHER_WAA_SP_COL]);
     const rpWAA0 = parseFloat(p[PITCHER_WAA_RP_COL]);
     const rpWAA = isNaN(rpWAA0) ? 0 : rpWAA0 * rpEdgeSlope;
-    const spv = isNaN(spWAA) ? 0 : spWAA;
+    // A missing SP line is NOT a league-average starter. The engine refuses a
+    // starter projection to arms that fail the sheet's Starter rule (repertoire
+    // + stamina) even when OOTP's POS label says "SP" — pricing that absence as
+    // 0 let a projection-less arm (Wisniewski, TB/BLM: POS SP, Starter false,
+    // only a -0.35 RP line) out-rank real starters with mildly negative SP
+    // lines and take a rotation slot. _canStart gates rotation eligibility;
+    // spv stays 0 only for the aggregate bookkeeping of arms never selected.
+    const canStart = !isNaN(spWAA);
+    const spv = canStart ? spWAA : 0;
     // M5: role-specific WAR in the **ORG** (next-man-up) currency
     // (leagueCalib.js replacementOrg) — internal cut/keep only; the $ layer
     // prices in the MARKET currency instead. Selection within a role stays
@@ -1322,16 +1331,17 @@ export function optimizeRoster(hitters, pitchers, options = {}) {
       ...p,
       _spWAA: spv,
       _rpWAA: rpWAA,
+      _canStart: canStart,
       _spWAR: spv + spOff,
       _rpWAR: rpWAA + rpOff,
-      _bestWAA: Math.max(spv, rpWAA),
+      _bestWAA: Math.max(canStart ? spv : -Infinity, rpWAA),
       _isStarter: pos === 'SP',
       _isReliever: pos === 'RP' || pos === 'CL' || pos === 'MR',
     };
   });
 
   const spCandidates = scoredPitchers
-    .filter(p => p._isStarter || !p._isReliever)
+    .filter(p => p._canStart && (p._isStarter || !p._isReliever))
     .sort((a, b) => b._spWAA - a._spWAA);
 
   const startingPitchers = spCandidates.slice(0, numStartingPitchers);
@@ -1437,6 +1447,10 @@ export function optimizeRoster(hitters, pitchers, options = {}) {
       totalHitterWAA: Math.round(totalHitterWAA * 100) / 100,
       totalSPWAA: Math.round(totalSPWAA * 100) / 100,
       totalRPWAA: Math.round(totalRPWAA * 100) / 100,
+      // workload-scaled components: these are what actually feed totalPitcherWAA
+      // and the win models, so Off wtd + SPeff + RPeff = the win-relevant total exactly
+      totalSPWAAeff: Math.round(totalSPWAA * spWorkload * 100) / 100,
+      totalRPWAAeff: Math.round(totalRPWAA * rpWorkload * 100) / 100,
       totalPitcherWAA: Math.round(totalPitcherWAA * 100) / 100,
       totalRosterWAA: Math.round(totalRosterWAA * 100) / 100,
       estimatedWins,
@@ -1509,12 +1523,15 @@ export function leagueOrgs(hitters, pitchers, knownTeams = null) {
   return orgs;
 }
 
-export function leagueWinOffset(hitters, pitchers, knownTeams = null, league = null) {
+export function leagueWinOffset(hitters, pitchers, knownTeams = null, league = null, vrShare = null) {
   const orgs = leagueOrgs(hitters, pitchers, knownTeams);
   if (!orgs.length) return 0;
   let sum = 0;
   for (const org of orgs) {
-    const t = optimizeRoster(hitters, pitchers, { teamOrg: org, league }).totals;
+    // vrShare MUST match the basis of the roster this offset is subtracted from —
+    // omitting it here while the caller's roster uses the metadata value would
+    // mis-center wins by the platoon-weight difference.
+    const t = optimizeRoster(hitters, pitchers, { teamOrg: org, league, vrShare }).totals;
     sum += t.weightedLineupWAA + t.totalPitcherWAA;   // raw winBasis (no offset, G-independent)
   }
   return sum / orgs.length;

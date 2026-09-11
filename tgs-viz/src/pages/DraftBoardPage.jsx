@@ -266,7 +266,15 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
                       {player._type}
                     </span>
                   </td>
-                  <td className="font-medium text-white">{player.Name}</td>
+                  <td className="font-medium text-white">
+                    {player.Name}
+                    {(player['Bat Peak'] != null || player['Arm Peak'] != null) && (
+                      <span className="ml-1.5 px-1 rounded text-xs font-bold bg-purple-900/50 text-purple-300"
+                        title={`Genuine two-way threat — ${player['Bat Peak'] != null ? 'bat' : 'arm'} also peaks at +${player['Bat Peak'] ?? player['Arm Peak']} WAA`}>
+                        2W
+                      </span>
+                    )}
+                  </td>
                   <td>{player.POS}</td>
                   <td className="text-slate-400">{player.ORG}</td>
                   <td>{Math.round(parseFloat(player.Age) || 0)}</td>

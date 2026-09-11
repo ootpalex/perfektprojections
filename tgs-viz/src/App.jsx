@@ -4,8 +4,10 @@ import { usePlayerData, useLeagues, useMarketRate, DEFAULT_FEATURES } from './ho
 import HittersPage from './pages/HittersPage';
 import PitchersPage from './pages/PitchersPage';
 import DraftBoardPage from './pages/DraftBoardPage';
+import MockDraftPage from './pages/MockDraftPage';
 import RosterOptimizerPage from './pages/RosterOptimizerPage';
 import DevAnalysisPage from './pages/DevAnalysisPage';
+import CalibrationPage from './pages/CalibrationPage';
 import MarketValuePage from './pages/MarketValuePage';
 import TeamStandingsPage from './pages/TeamStandingsPage';
 import OrganizationPage from './pages/OrganizationPage';
@@ -13,7 +15,7 @@ import TrendsPage from './pages/TrendsPage';
 import WaiverClaimPage from './pages/WaiverClaimPage';
 import { Users, Zap, Target, Trophy, Loader2, AlertCircle, BarChart3, TrendingUp, ChevronDown, DollarSign, TableProperties, Building2, Activity, ClipboardList } from 'lucide-react';
 
-function Sidebar({ leagues, currentLeague, onLeagueChange, features }) {
+function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeChange, features, iafaCount = 0, r5Count = 0 }) {
   const linkClass = ({ isActive }) =>
     `flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
       isActive
@@ -47,6 +49,26 @@ function Sidebar({ leagues, currentLeague, onLeagueChange, features }) {
         </div>
       )}
 
+      {/* Park basis toggle — Neutral is the shipped default (contracts normalized) */}
+      <div className="px-3 pt-2 pb-1">
+        <p className="text-[10px] text-slate-600 uppercase tracking-widest px-1 pb-1.5">Park Basis</p>
+        <div className="flex rounded-lg overflow-hidden border border-slate-700">
+          {[['neutral', 'Neutral'], ['park', 'My Park']].map(([mode, label]) => (
+            <button
+              key={mode}
+              onClick={() => onParkModeChange(mode)}
+              className={`flex-1 px-2 py-1.5 text-xs font-semibold transition-colors ${
+                parkMode === mode
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="flex-1 p-2 space-y-0.5">
         <p className="text-[10px] text-slate-600 uppercase tracking-widest px-3 pt-3 pb-1">Team Sheets</p>
         <NavLink to="/hitters" className={linkClass}>
@@ -67,6 +89,33 @@ function Sidebar({ leagues, currentLeague, onLeagueChange, features }) {
             </NavLink>
             <NavLink to="/draft-board" className={linkClass}>
               <BarChart3 size={16} /> Draft Board
+            </NavLink>
+            <NavLink to="/mock-draft" className={linkClass}>
+              <BarChart3 size={16} /> Mock Draft
+            </NavLink>
+          </>
+        )}
+
+        {iafaCount > 0 && (
+          <>
+            <p className="text-[10px] text-slate-600 uppercase tracking-widest px-3 pt-4 pb-1">International</p>
+            <NavLink to="/hitters-iafa" className={linkClass}>
+              <Users size={16} /> IAFA Hitters
+            </NavLink>
+            <NavLink to="/pitchers-iafa" className={linkClass}>
+              <Zap size={16} /> IAFA Pitchers
+            </NavLink>
+          </>
+        )}
+
+        {r5Count > 0 && (
+          <>
+            <p className="text-[10px] text-slate-600 uppercase tracking-widest px-3 pt-4 pb-1">Rule 5</p>
+            <NavLink to="/hitters-r5" className={linkClass}>
+              <Users size={16} /> R5 Hitters
+            </NavLink>
+            <NavLink to="/pitchers-r5" className={linkClass}>
+              <Zap size={16} /> R5 Pitchers
             </NavLink>
           </>
         )}
@@ -110,6 +159,9 @@ function Sidebar({ leagues, currentLeague, onLeagueChange, features }) {
         </NavLink>
         <NavLink to="/trends" className={linkClass}>
           <Activity size={16} /> Rating Trends
+        </NavLink>
+        <NavLink to="/calibration" className={linkClass}>
+          <Target size={16} /> Model vs Actual
         </NavLink>
       </div>
       <div className="p-3 border-t border-slate-800 text-[10px] text-slate-600">
@@ -197,8 +249,16 @@ export default function App() {
     localStorage.setItem('tgs-league', leagueId);
   };
 
+  // Park basis — Neutral (default, all parks equal) vs My Park (50% home /
+  // 50% other MLB parks). Persisted like the league choice.
+  const [parkMode, setParkMode] = useState(() => localStorage.getItem('tgs-park') || 'neutral');
+  const handleParkModeChange = (mode) => {
+    setParkMode(mode);
+    localStorage.setItem('tgs-park', mode);
+  };
+
   // Load player data for the selected league
-  const { data, loading, error, loadProgress } = usePlayerData(currentLeague);
+  const { data, loading, error, loadProgress } = usePlayerData(currentLeague, parkMode);
 
   // Compute league-wide $/WAA rate (must be before early returns — React hooks rule)
   const marketRate = useMarketRate(data.hitters, data.pitchers, data.marketBank);
@@ -207,6 +267,53 @@ export default function App() {
   // pages already degrade gracefully on missing fields/datasets).
   const activeLeague = leagues.find(lg => lg.id === currentLeague);
   const features = { ...DEFAULT_FEATURES, ...(activeLeague?.features || {}) };
+
+  // International amateur class. The ratings pull cannot identify these players (no
+  // nationality field exists), so membership comes from the in-game export via
+  // ingest/iafa.py. Their projections are the SAME rows as everywhere else, joined on
+  // ID — only signing demand and signability are merged in, because StatsPlus has
+  // neither. A league with no international phase simply has an empty list.
+  const iafa = useMemo(() => {
+    const terms = new Map((data.iafa || []).map(r => [String(r.ID), r]));
+    if (!terms.size) return { hitters: [], pitchers: [], count: 0 };
+    const take = (rows) => (rows || [])
+      .filter(p => terms.has(String(p.ID)))
+      .map(p => ({ ...p, _iafaDem: terms.get(String(p.ID)).DEM, _iafaSign: terms.get(String(p.ID)).Sign }));
+    const h = take(data.hitters), pit = take(data.pitchers);
+    return { hitters: h, pitchers: pit, count: h.length + pit.length };
+  }, [data.iafa, data.hitters, data.pitchers]);
+
+  // Rule 5 pool — membership from the in-game export (ingest/r5.py), projections
+  // joined on ID. The edge: the league shops this pool by OVR/POT card; this
+  // screen sorts it by the engine instead.
+  const r5 = useMemo(() => {
+    const ids = new Set((data.r5 || []).map(r => String(r.ID)));
+    if (!ids.size) return { hitters: [], pitchers: [], count: 0 };
+    const take = (rows) => (rows || []).filter(p => ids.has(String(p.ID)));
+    const h = take(data.hitters), pit = take(data.pitchers);
+    return { hitters: h, pitchers: pit, count: h.length + pit.length };
+  }, [data.r5, data.hitters, data.pitchers]);
+
+  // Free agents, derived LIVE from the current pull (no org = FA — same rule as
+  // the contract Status column). The old hitters_fa/pitchers_fa.json files were
+  // a retired Excel extract that silently shadowed fresh data with a stale
+  // snapshot on a different calibration basis; they are no longer read, and the
+  // FA pages now follow every pull (and the park toggle) automatically.
+  const fa = useMemo(() => {
+    // Prefer the pull's stamped FA flag (true free agent; amateurs get FA:false +
+    // Lev "AMA" — a 15yo draft-pool kid is NOT a free agent, user 2026-09-04).
+    // Data from before the stamp has no FA field anywhere — fall back to the old
+    // no-org rule so the pages never go empty on a stale pull.
+    const stamped = (data.hitters || []).some(p => p.FA !== undefined)
+      || (data.pitchers || []).some(p => p.FA !== undefined);
+    const isFA = stamped
+      ? (p) => p.FA === true
+      : (p) => { const org = String(p.ORG ?? '').trim(); return !org || org === '0'; };
+    return {
+      hitters: (data.hitters || []).filter(isFA),
+      pitchers: (data.pitchers || []).filter(isFA),
+    };
+  }, [data.hitters, data.pitchers]);
 
   // Show loading while leagues manifest loads
   if (leaguesLoading) return <LoadingScreen progress={{}} league="" />;
@@ -228,7 +335,11 @@ export default function App() {
         leagues={leagues}
         currentLeague={currentLeague}
         onLeagueChange={handleLeagueChange}
+        parkMode={parkMode}
+        onParkModeChange={handleParkModeChange}
         features={features}
+        iafaCount={iafa.count}
+        r5Count={r5.count}
       />
       <main className="flex-1 overflow-hidden">
         <div className="gradient-bar" />
@@ -239,8 +350,12 @@ export default function App() {
             <Route path="/pitchers" element={<PitchersPage players={data.pitchers} allPlayers={data.pitchers} marketRate={marketRate} />} />
             <Route path="/hitters-draft" element={<HittersPage players={data.hitters_draft} isDraft allPlayers={data.hitters} marketRate={marketRate} />} />
             <Route path="/pitchers-draft" element={<PitchersPage players={data.pitchers_draft} isDraft allPlayers={data.pitchers} marketRate={marketRate} />} />
-            <Route path="/hitters-fa" element={<HittersPage players={data.hitters_fa.length ? data.hitters_fa : data.hitters} isFA allPlayers={data.hitters} marketRate={marketRate} />} />
-            <Route path="/pitchers-fa" element={<PitchersPage players={data.pitchers_fa.length ? data.pitchers_fa : data.pitchers} isFA allPlayers={data.pitchers} marketRate={marketRate} />} />
+            <Route path="/hitters-fa" element={<HittersPage players={fa.hitters} isFA allPlayers={data.hitters} marketRate={marketRate} />} />
+            <Route path="/pitchers-fa" element={<PitchersPage players={fa.pitchers} isFA allPlayers={data.pitchers} marketRate={marketRate} />} />
+            <Route path="/hitters-iafa" element={<HittersPage players={iafa.hitters} isIAFA isFA allPlayers={data.hitters} marketRate={marketRate} />} />
+            <Route path="/pitchers-iafa" element={<PitchersPage players={iafa.pitchers} isIAFA isFA allPlayers={data.pitchers} marketRate={marketRate} />} />
+            <Route path="/hitters-r5" element={<HittersPage players={r5.hitters} isR5 allPlayers={data.hitters} marketRate={marketRate} />} />
+            <Route path="/pitchers-r5" element={<PitchersPage players={r5.pitchers} isR5 allPlayers={data.pitchers} marketRate={marketRate} />} />
             <Route path="/draft-board" element={
               <DraftBoardPage
                 hitters={data.hitters_draft.length ? data.hitters_draft : data.hitters}
@@ -249,11 +364,21 @@ export default function App() {
                 allPitchers={data.pitchers}
               />
             } />
+            <Route path="/mock-draft" element={
+              <MockDraftPage
+                hitters={data.hitters_draft}
+                pitchers={data.pitchers_draft}
+                fullHitters={data.hitters_draft_all}
+                fullPitchers={data.pitchers_draft_all}
+                allHitters={data.hitters}
+                allPitchers={data.pitchers}
+              />
+            } />
             <Route path="/standings" element={
-              <TeamStandingsPage hitters={data.hitters} pitchers={data.pitchers} league={currentLeague} />
+              <TeamStandingsPage hitters={data.hitters} pitchers={data.pitchers} metadata={data.metadata} league={currentLeague} />
             } />
             <Route path="/organization" element={
-              <OrganizationPage hitters={data.hitters} pitchers={data.pitchers} league={currentLeague} />
+              <OrganizationPage hitters={data.hitters} pitchers={data.pitchers} metadata={data.metadata} league={currentLeague} />
             } />
             <Route path="/waivers" element={
               <WaiverClaimPage hitters={data.hitters} pitchers={data.pitchers} league={currentLeague} />
@@ -265,6 +390,7 @@ export default function App() {
               <RosterOptimizerPage hitters={data.hitters} pitchers={data.pitchers} metadata={data.metadata} league={currentLeague} />
             } />
             <Route path="/dev-analysis" element={<DevAnalysisPage />} />
+            <Route path="/calibration" element={<CalibrationPage league={currentLeague} />} />
             <Route path="/trends" element={<TrendsPage league={currentLeague} />} />
           </Routes>
         </div>

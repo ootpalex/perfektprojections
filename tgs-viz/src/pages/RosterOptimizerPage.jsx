@@ -68,8 +68,8 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
     return m ? new Set([...m.AL, ...m.NL]) : null;
   }, [league]);
   const leagueOffset = useMemo(
-    () => leagueWinOffset(hitters, pitchers, knownTeams, league),
-    [hitters, pitchers, knownTeams, league]
+    () => leagueWinOffset(hitters, pitchers, knownTeams, league, vrShare),
+    [hitters, pitchers, knownTeams, league, vrShare]
   );
 
   // Injury toggle guard: offline leagues carry no injury fields at all — the toggle
