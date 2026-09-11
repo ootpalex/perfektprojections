@@ -1,6 +1,6 @@
 {
  "league": "BLM",
- "fitted_at": "2026-08-11T13:56:50",
+ "fitted_at": "2026-08-11T19:51:07",
  "source": "engine/fielding_curves_fit.py over calib/BLM archive + 25 Metadata.xlsx live population (offsets)",
  "positions": {
   "1B": {

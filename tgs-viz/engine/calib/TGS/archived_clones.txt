@@ -24,3 +24,13 @@ tgs-run11.lg
 tgs-run12.lg
 tgs-run13.lg
 tgs-run14.lg
+0tgs17.lg
+0tgs18.lg
+0tgs19.lg
+0tgs20.lg
+0tgs21.lg
+0tgs22.lg
+0tgs23.lg
+0tgs24.lg
+0tgs25.lg
+0tgs16.lg

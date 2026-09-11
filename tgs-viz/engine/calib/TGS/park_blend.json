@@ -1,0 +1,17 @@
+{
+ "league": "TGS",
+ "home_team": "Chicago Cubs",
+ "n_parks": 28,
+ "n_road": 27,
+ "n_excluded": 12,
+ "blend": {
+  "avg_rhb": 1.011111,
+  "avg_lhb": 0.995926,
+  "avg": 1.005963,
+  "doubles": 1.018889,
+  "triples": 1.009722,
+  "hr_rhb": 1.120741,
+  "hr_lhb": 1.09463,
+  "hr": 1.111722
+ }
+}

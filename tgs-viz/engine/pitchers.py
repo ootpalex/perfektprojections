@@ -334,46 +334,57 @@ def compute(p, dp, filt, park_aa, scurves=None, currency=None):
                     handed=dict(hr=f("D11"), bab=f("D8")))
     emit(" RP", rp_R, rp_L, share_by_T, g("H34"), g("H42"), g("H30"), g("I29"), ra9_exp["RP"])
 
-    # ================= P block (starter potential, single line) =================
-    # Uses the SP regression layout but P-ratings and a *blended* handedness mult.
-    def blended_hr():
-        if T == "R":
-            return f("C11") * g("H24") + f("D11") * (1 - g("H24"))
-        if T == "L":
-            return f("C11") * g("H23") + f("D11") * (1 - g("H23"))
-        return f("E11")
-
-    def blended_bab():
-        if T == "R":
-            return f("C8") * g("H24") + f("D8") * (1 - g("H24"))
-        if T == "L":
-            return f("C8") * g("H23") + f("D8") * (1 - g("H23"))
-        return f("E11")  # sheet quirk: switch-throwers fall back to E11 here
-
+    # ================= P blocks (potential, SPLIT-AWARE) =================
+    # OOTP publishes pitcher potential without splits. Measured on fully-developed
+    # (28+) TGS pitchers whose current split is >=5 pts (2026-09-04, n=911 lean-vR /
+    # 396 lean-vL): the published P sits at the platoon BLEND of the two current
+    # splits (P-mid +1.2/+0.1, vs P-vR -1.6/+3.0 and P-vL +4.0/-2.7) — NOT the vR
+    # basis hitters.py measured for bats. So the peak keeps the pitcher's own
+    # current lean AROUND P: per rating, with s = the same H24/H23/H25 platoon
+    # share and lean = current vR - vL,
+    #     peak_vR = P + (1-s)*lean      peak_vL = P - s*lean
+    # (the s-weighted blend of the two peak lines is exactly P). Both peak lines
+    # run through the same per-hand handedness multipliers and platoon weighting
+    # as the current blocks — a splitty arm is no longer priced as flat-P against
+    # both hands. INTENTIONAL divergence from the sheet, whose P cells are a
+    # single blended line: the validator shows P-column diffs on splitty arms
+    # (a zero-lean pitcher is unchanged to the digit).
     have_p = all(p.get(k) is not None for k in ("CON P", "STU P", "HRR P", "PBABIP P"))
     if have_p:
-        sp_P = statline(p["CON P"], p["STU P"], p["HRR P"], p["PBABIP P"], H31, SP_CFG,
-                        handed=dict(hr=blended_hr(), bab=blended_bab()))
-        for k, src in (("HBP P", "HBP"), ("uBB P", "uBB"), ("SO P", "SO"), ("HR P", "HR"),
-                       ("H-HR P", "HHR"), ("XBH-HR P", "XBH"), ("3B P", "T3B"), ("2B P", "D2B"),
-                       ("1B P", "S1B"), ("SBAT P", "SBAT"), ("SB% P", "SBpct"), ("SB P", "SB"),
-                       ("CS P", "CS"), ("wOBA P", "wOBA"), ("RA/9 P", "RA9")):
-            out[k] = sp_P[src]
-        out["WAP"] = waa(sp_P["RA9"], g("H33"), g("H41"), g("H30"))
-        if not starter:   # non-starter -> no starter-potential projection either
-            for k in ("HBP P", "uBB P", "SO P", "HR P", "H-HR P", "XBH-HR P", "3B P", "2B P",
-                      "1B P", "SBAT P", "SB% P", "SB P", "CS P", "wOBA P", "RA/9 P", "WAP"):
-                out[k] = None
+        s_share = {"R": g("H24"), "L": g("H23"), "S": g("H25")}.get(T, g("H24"))
 
-        # P RP block (reliever potential)
-        rp_P = statline(p["CON P"], p["STU P"], p["HRR P"], p["PBABIP P"], H32, RP_CFG,
-                        handed=dict(hr=blended_hr(), bab=blended_bab()))
-        for k, src in (("HBP P RP", "HBP"), ("uBB P RP", "uBB"), ("SO P RP", "SO"), ("HR P RP", "HR"),
-                       ("H-HR P RP", "HHR"), ("XBH-HR P RP", "XBH"), ("3B P RP", "T3B"), ("2B P RP", "D2B"),
-                       ("1B P RP", "S1B"), ("SBAT P RP", "SBAT"), ("SB% P RP", "SBpct"), ("SB P RP", "SB"),
-                       ("CS P RP", "CS"), ("wOBA P RP", "wOBA"), ("RA/9 P RP", "RA9")):
-            out[k] = rp_P[src]
-        out["WAP RP"] = waa(rp_P["RA9"], g("H34"), g("H42"), g("H30"))
+        def peak(pcol, rcol, lcol):
+            lean = (p[rcol] or 0) - (p[lcol] or 0)
+            return p[pcol] + (1 - s_share) * lean, p[pcol] - s_share * lean
+
+        conR, conL = peak("CON P", "CON vR", "CON vL")
+        stuR, stuL = peak("STU P", "STU vR", "STU vL")
+        hrrR, hrrL = peak("HRR P", "HRR vR", "HRR vL")
+        babR, babL = peak("PBABIP P", "PBABIP vR", "PBABIP vL")
+
+        POT_STATS = (("HBP", "HBP"), ("uBB", "uBB"), ("SO", "SO"), ("HR", "HR"),
+                     ("H-HR", "HHR"), ("XBH-HR", "XBH"), ("3B", "T3B"), ("2B", "D2B"),
+                     ("1B", "S1B"), ("SBAT", "SBAT"), ("SB%", "SBpct"), ("SB", "SB"),
+                     ("CS", "CS"))
+
+        def pot_block(cfg, anchor, suffix, role, ip_k, base_k, scale_k):
+            pR = statline(conR, stuR, hrrR, babR, anchor, cfg, handed=dict(hr=f("C11"), bab=f("C8")))
+            pL = statline(conL, stuL, hrrL, babL, anchor, cfg, handed=dict(hr=f("D11"), bab=f("D8")))
+            for k, src in POT_STATS:
+                out[f"{k}{suffix}"] = share_by_T(pR[src], pL[src])
+            woba = share_by_T(pR["wOBA"], pL["wOBA"])
+            out[f"wOBA{suffix}"] = woba
+            ra9 = (woba / g(scale_k)) ** ra9_exp[role] * g(base_k)
+            out[f"RA/9{suffix}"] = ra9
+            return waa(ra9, g(ip_k), g(base_k), g("H30"))
+
+        out["WAP"] = pot_block(SP_CFG, H31, " P", "SP", "H33", "H41", "I31")
+        if not starter:   # non-starter -> no starter-potential projection either
+            for k, _ in POT_STATS:
+                out[f"{k} P"] = None
+            out["wOBA P"] = out["RA/9 P"] = out["WAP"] = None
+
+        out["WAP RP"] = pot_block(RP_CFG, H32, " P RP", "RP", "H34", "H42", "I29")
     return out
 
 

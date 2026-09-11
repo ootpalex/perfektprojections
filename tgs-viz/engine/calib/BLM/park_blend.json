@@ -1,0 +1,17 @@
+{
+ "league": "BLM",
+ "home_team": "Tampa Bay Rays",
+ "n_parks": 30,
+ "n_road": 29,
+ "n_excluded": 0,
+ "blend": {
+  "avg_rhb": 0.982948,
+  "avg_lhb": 0.969103,
+  "avg": 0.978483,
+  "doubles": 0.972862,
+  "triples": 1.110759,
+  "hr_rhb": 0.970259,
+  "hr_lhb": 0.939552,
+  "hr": 0.959638
+ }
+}

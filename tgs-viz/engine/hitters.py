@@ -394,6 +394,33 @@ def compute(p, dp, filt, park, league="TGS", currency=None, tails=None, fielding
         vals = [out[f"{pos} WAA {suf}"] for pos in elig if elig[pos]]
         out[f"Max WAA {suf}"] = max(vals) if vals else None
 
+    # ---- Off / Def runs split (display decomposition, changes no value) ----
+    # Max WAA is (fielding + baserunning + batting + posAdj) / RPW. Splitting it the way
+    # the rest of baseball reads it: OFFENSE is bat plus legs, DEFENSE is glove plus the
+    # positional adjustment — a shortstop's defensive value includes the credit for
+    # standing there, which is what makes the number comparable across positions.
+    # Derived from the SAME terms Max WAA used, so the two can never disagree.
+    best_pos = max((pos for pos in elig if elig[pos]),
+                   key=lambda pos: out[f"{pos} WAA wtd"], default=None)
+    out["Best Pos"] = best_pos
+
+    def off_def(pos, BSR, BatR, DHBatR, wOBA):
+        """Split one position's WAA numerator into offense and defense runs.
+        Each branch uses the SAME terms that position's WAA line used, so
+        (off + def) / H30 reproduces the WAA exactly."""
+        if pos is None:
+            return None, None
+        if pos == "C":                      # catcher bats on the H32 (500 PA) basis
+            off = (BSR * (H32 / PA) + ((wOBA - g("H29")) / g("H20") * H32)
+                   + park["AB"] / PA * H32)
+            return off, rp["C"] + g("W2")
+        if pos == "DH":                     # fields nothing; his charge IS his defense
+            return BSR * 0.98 + DHBatR, g("W10")
+        return BSR + BatR, rp[pos] + g(posadj[pos])
+
+    out["Off Runs"], out["Def Runs"] = off_def(
+        best_pos, out["BSR wtd"], out["BatR wtd"], out["DH BatR wtd"], out["wOBA wtd"])
+
     # ---- POTENTIAL (prospect ceiling): split-aware line from P-ratings ----
     # OOTP publishes potential WITHOUT splits, so a P rating is one number per skill.
     # It reads on the vR basis (measured over fully-developed hitters, where potential
@@ -408,6 +435,7 @@ def compute(p, dp, filt, park, league="TGS", currency=None, tails=None, fielding
     # platoon share. Nothing is fitted or tuned here; the gap is read off his ratings.
     EYEp, POWp, Kp, HTp, GAPp = (p.get(k) for k in ("EYE P", "POW P", "K P", "HT P", "GAP P"))
     out["MAX WAA P"] = None
+    out["Off Runs P"] = None
     if None not in (EYEp, POWp, Kp, HTp, GAPp):
         def vl_of(pot, cur_vR, cur_vL):
             # Fallback to today's shapeless behaviour when a current split is missing.
@@ -447,6 +475,15 @@ def compute(p, dp, filt, park, league="TGS", currency=None, tails=None, fielding
         pvals = [out[f"{pos} WAA P"] for pos in ("C", "1B", "2B", "3B", "SS", "LF", "CF", "RF", "DH")
                  if pos in out["_eligible_pos"]]
         out["MAX WAA P"] = max(pvals) if pvals else None
+        # Offense at potential, on the SAME basis as Off Runs above so the two are
+        # comparable for the same player. There is no defensive potential to pair with
+        # it: OOTP publishes potential for the bat only — no potential range, error, arm
+        # or framing exists anywhere in the pull — so the glove is not projected at all.
+        # The legs move only through the potential contact/gap rates that set the
+        # baserunning opportunities; speed, stealing and baserunning stay as they are.
+        best_pos_p = max((pos for pos in out["_eligible_pos"]),
+                         key=lambda pos: out[f"{pos} WAA P"], default=None)
+        out["Off Runs P"] = off_def(best_pos_p, BSRp, BatRp, DHBatRp, wobaP)[0]
     return out
 
 
