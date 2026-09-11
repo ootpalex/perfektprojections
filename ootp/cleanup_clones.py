@@ -112,8 +112,13 @@ def main():
             print("  skipped (nothing deleted).")
             return
     for p, why, mb in sized:
-        rmtree_force(p)
-        print(f"  deleted {os.path.basename(p)}")
+        try:
+            rmtree_force(p)
+            print(f"  deleted {os.path.basename(p)}")
+        except OSError as e:
+            # the clone OOTP currently has LOADED is lock-protected — skip it, the
+            # next cleanup pass gets it once OOTP has moved on (grind-loop friendly)
+            print(f"  SKIPPED {os.path.basename(p)} (in use by OOTP: {e}) - next pass will get it")
     print(f"  done - freed ~{total/1000:.1f} GB, OOTP load screen decluttered.")
 
 

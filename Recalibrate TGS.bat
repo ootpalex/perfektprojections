@@ -31,16 +31,21 @@ python "tgs-viz\engine\hitter_tails_fit.py" --league TGS
 if errorlevel 1 goto :fail
 python "tgs-viz\engine\fielding_curves_fit.py" --league TGS
 if errorlevel 1 goto :fail
-
-rem D1 S-curves: refit the PREVIEW; review its gates, then promote manually:
-rem    copy /Y "tgs-viz\engine\calib\TGS\scurves-preview.json" "tgs-viz\engine\calib\TGS\scurves.json"
-python "tgs-viz\engine\scurve_fit.py" --league TGS
+rem D2/D9 currency layer (RA/9 exponents, RPW, workloads, luck SD) - refit from
+rem the same archive so the $ layer and win models track the new constants.
+rem (Keeps the existing rp_shrink block; was an orphaned manual step before.)
+python "tgs-viz\engine\currency_fit.py" --league TGS
 if errorlevel 1 goto :fail
-echo.
-echo   REVIEW the S-curve gates above, then promote scurves-preview.json to
-echo   scurves.json (copy command in this script) - the live TGS pitching
-echo   curves keep the LAST promoted fit until you do.
-echo.
+
+rem D1 S-curves: refit the preview, then gate-checked AUTO-promotion (promote_scurves.py)
+python "tgs-viz\engine\scurve_fit.py" --league TGS
+python "tgs-viz\engine\promote_scurves.py" --league TGS
+python "tgs-viz\engine\export_calibration.py" --league TGS --write
+if errorlevel 1 goto :fail
+
+rem Refresh the read-back snapshots so the drift check stays quiet.
+python "tgs-viz\engine\extract_sheet.py" TGS
+python "tgs-viz\engine\extract_pitchers.py" TGS
 
 python "tgs-viz\ingest\refresh.py" --statsplus --from-cache --league TGS --write
 if errorlevel 1 goto :fail

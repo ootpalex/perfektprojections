@@ -19,6 +19,7 @@ ENGINE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ENGINE)
 import hitters as H  # noqa: E402
 import pitchers as P  # noqa: E402
+import parklayer as PL  # noqa: E402
 from openpyxl import load_workbook  # noqa: E402
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -120,7 +121,8 @@ def prep(rec):
     return rec
 
 
-def run_hitters(records, league, currency=None, tails=None, fielding=None):
+def run_hitters(records, league, currency=None, tails=None, fielding=None,
+                park_mode="neutral"):
     """Export records -> engine -> full computed records.
 
     currency (audit D2/D9): a currency_fit.py dict — callers pass
@@ -129,9 +131,19 @@ def run_hitters(records, league, currency=None, tails=None, fielding=None):
     tails (audit D4): calib/<LG>/hitter_tails.json — callers pass
     live_hitter_tails(league). Same opt-in contract.
     fielding (audit D3): calib/<LG>/fielding_curves.json — callers pass
-    live_fielding(league). Same opt-in contract."""
+    live_fielding(league). Same opt-in contract.
+
+    park_mode (park spec 2026-08-14): "neutral" (DEFAULT — all parks equal,
+    every park factor 1 / every delta 0, the sheet's own C3="" semantics;
+    contracts and cross-team comparisons read this basis), "blend" (50% home
+    park + 50% average of the other MLB parks, calib/<LG>/park_blend.json), or
+    "sheet" (the workbook's own preset knobs — the pre-park-layer basis)."""
     hpath = os.path.join(REPO, f"The Sheets {league}", "The Sheet Hitters.xlsx")
     dp, filt, park = H.scan_consts(hpath)
+    if park_mode != "sheet":
+        blend = PL.load_blend(league) if park_mode == "blend" else None
+        park, filt_over, _aa = PL.knobs(dp, blend)
+        filt = {**filt, **filt_over}
     out = []
     for raw in records:
         rec = prep(raw)
@@ -310,7 +322,18 @@ def smoothed_pull(slug, n=3, history_dir=None):
     return out
 
 
-def run_pitchers(records, league, scurves=None, currency=None):
+_HITTER_DP = {}
+
+
+def _hitter_dp(league):
+    """Hitter workbook Data Points, cached per league (parklayer chain input)."""
+    if league not in _HITTER_DP:
+        _HITTER_DP[league] = H.scan_consts(
+            os.path.join(REPO, f"The Sheets {league}", "The Sheet Hitters.xlsx"))[0]
+    return _HITTER_DP[league]
+
+
+def run_pitchers(records, league, scurves=None, currency=None, park_mode="neutral"):
     """scurves (audit D1): a pitchers.load_scurves() dict — when given, the four
     pitching rate blocks use the fitted logistic curves instead of the
     two-segment lines. Deliberately opt-in (callers pass live_scurves(league)):
@@ -320,6 +343,12 @@ def run_pitchers(records, league, scurves=None, currency=None):
     live_currency(league); same opt-in contract."""
     ppath = os.path.join(REPO, f"The Sheets {league}", "The Sheet Pitchers.xlsx")
     dp, filt, park_aa = P.scan_consts(ppath)
+    if park_mode != "sheet":
+        # the park chain constants live in the HITTER workbook's Data Points;
+        # _hitter_dp caches the scan so both modes share one workbook load
+        blend = PL.load_blend(league) if park_mode == "blend" else None
+        _park, filt_over, park_aa = PL.knobs(_hitter_dp(league), blend)
+        filt = {**filt, **filt_over}
     out = []
     for raw in records:
         rec = dict(raw)

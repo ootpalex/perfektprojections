@@ -28,6 +28,7 @@ nul
 
 # Local caches and calibration archives — regenerable, hundreds of MB
 tgs-viz/ingest/.cache/
+tgs-viz/backtest/vintages/*/.waa_cache/
 tgs-viz/engine/calib/*/*.csv
 tgs-viz/backtest/ratings_history.db
 tgs-viz/backtest/snapshots/

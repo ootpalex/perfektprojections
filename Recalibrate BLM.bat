@@ -28,12 +28,22 @@ python "tgs-viz\engine\hitter_tails_fit.py" --league BLM
 if errorlevel 1 goto :fail
 python "tgs-viz\engine\fielding_curves_fit.py" --league BLM
 if errorlevel 1 goto :fail
+rem D2/D9 currency layer (RA/9 exponents, RPW, workloads, luck SD) - refit from
+rem the same archive so the $ layer and win models track the new constants.
+rem (Keeps the existing rp_shrink block; was an orphaned manual step before.)
+python "tgs-viz\engine\currency_fit.py" --league BLM
+if errorlevel 1 goto :fail
 
 rem D1 S-curves: PREVIEW ONLY for BLM (ratings were re-scouted mid-season after
 rem the metadata anchors; the live flip waits for the season-end rebuild - see
 rem ratings.live_scurves for the promotion procedure).
 python "tgs-viz\engine\scurve_fit.py" --league BLM
+python "tgs-viz\engine\export_calibration.py" --league BLM --write
 if errorlevel 1 goto :fail
+
+rem Refresh the read-back snapshots so the drift check stays quiet.
+python "tgs-viz\engine\extract_sheet.py" BLM
+python "tgs-viz\engine\extract_pitchers.py" BLM
 
 python "tgs-viz\ingest\refresh.py" --statsplus --from-cache --league BLM --slug blm --write
 if errorlevel 1 goto :fail

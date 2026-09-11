@@ -513,46 +513,173 @@ def movers(conn, league, window=3, top=15):
     return risers, fallers, meta
 
 
-def age_curves(conn, league):
-    """Average change-by-age per rating column, from ALL consecutive pull pairs.
-    A (player, col) pair counts when the player appears in both pulls with a
-    known age and both values are rated (>= 20; OOTP fills absent skills with
-    0). Returns ({col: {age: (mean, n)}}, meta). The mean is per PULL PAIR (not
-    per year/day) — with few vintages this measures short-horizon scout churn
-    more than true aging; it gets better automatically as pulls accumulate."""
+# Current-rating -> its potential counterpart, for GAP-CONDITIONED growth tracking
+# (user 2026-09-04: "a player 45/45 for BABIP — no need to measure that; 45/50 for
+# power — track power", and maxed players must never drag down the growth average).
+# The gap is re-read at the start of EVERY pull pair, so a re-scouted potential or
+# a caught-up current automatically switches what gets tracked for that player.
+# Hitters use the vR side — the measured basis their published potential reads on.
+GAP_PAIRS = {
+    "STU": "STU P", "HRR": "HRR P", "PBABIP": "PBABIP P", "CON": "CON P",
+    "BA vR": "HT P", "GAP vR": "GAP P", "POW vR": "POW P",
+    "EYE vR": "EYE P", "K vR": "K P",
+}
+
+
+def _personality(league):
+    """{pid: {'WE','INT','LEA'}} from the CURRENT pull (personality is ~static in
+    OOTP; history rows don't store it, so the current value stands in for the
+    whole archive — a mid-window personality change mislabels a player's older
+    pairs, rare enough to ignore)."""
+    out = {}
+    for fn in ("hitters.json", "pitchers.json"):
+        path = os.path.join(VIZ, "public", "data", league, fn)
+        try:
+            with open(path, encoding="utf-8") as fh:
+                for r in json.load(fh):
+                    out[str(r.get("ID"))] = {"WE": r.get("WrkEthic"), "INT": r.get("Int"),
+                                             "LEA": r.get("Lead")}
+        except (OSError, ValueError):
+            pass
+    return out
+
+
+def age_curves(conn, league, personality=None):
+    """Average rating gain per AGE-YEAR, per column — "how much POW does a
+    24-year-old gain before he turns 25" — from ALL consecutive pull pairs.
+
+    Method (user spec 2026-09-04; the old version averaged per PULL PAIR, which
+    is meaningless when pulls are days-to-weeks apart and irregular):
+      - a pair's IN-GAME span (years) = share of its org'd shared players whose
+        integer age ticked up (every player has exactly one birthday per
+        game-year, so the aged fraction IS the elapsed fraction of a year); a
+        pair with no in-game time (re-pull, frozen sim date) is SKIPPED — its
+        deltas are scout churn, not development
+      - a player's delta is attributed to the age he WAS: fully to his starting
+        age when he did not age up; split half/half (delta and exposure alike)
+        when his birthday crossed the pair; an age jump outside 0..1 is a merge
+        glitch and dropped
+      - per (col, age): gain/yr = total delta / total player-years observed
+        (exposure-weighted ratio of sums — irregular gaps cannot bias it),
+        plus the observation count and the player-years
+      - MLB/minors only: rows with an org attached (FA pool / draft class out)
+      - both values must be rated (>= 20) — same absent-skill guard as movers
+      - personality (from the current pull; ~static): per-trait H/N/L growth
+        splits for ages 15-25, keyed WE / INT / LEA
+    Returns (curves, traits, meta):
+      curves {col: {age: (gain_per_yr, n_obs, years)}}
+      traits {trait: {bucket: {col: {age: (gain_per_yr, n_obs, years)}}}}"""
     pulls = league_pulls(conn, league)
-    sums = {c: {} for c in TREND_COLS}
-    counts = {c: {} for c in TREND_COLS}
-    npairs = 0
+    sums, yrs, cnt = {}, {}, {}
+    gsums, gyrs, ggapyrs, gcnt = {}, {}, {}, {}      # gap-conditioned growth
+    tsums, tyrs, tgapyrs, tcnt = {}, {}, {}, {}      # personality x gap growth
+    players_by_age = {}
+    pairs_used = pairs_skipped = 0
+    span_total = 0.0
     prev = None
-    gaps = []
-    for i, (pull_id, date, _ts, _src, _n) in enumerate(pulls):
+    for pull_id, _date, _ts, _src, _n in pulls:
         cur = load_pull_map(conn, pull_id)
         if prev is not None:
-            npairs += 1
-            gaps.append((datetime.date.fromisoformat(date)
-                         - datetime.date.fromisoformat(pulls[i - 1][1])).days)
+            shared = []
             for pid, nrec in cur.items():
                 orec = prev.get(pid)
-                if not orec or orec.get("age") is None:
+                if not orec:
                     continue
-                age = int(orec["age"])
-                for c in TREND_COLS:
-                    a, b = orec.get(c), nrec.get(c)
-                    if a is None or b is None or a < 20 or b < 20:
-                        continue
-                    sums[c][age] = sums[c].get(age, 0.0) + (b - a)
-                    counts[c][age] = counts[c].get(age, 0) + 1
+                if orec.get("org") in (None, "", "0", 0):
+                    continue
+                try:
+                    a1 = int(float(orec["age"]))
+                    d = int(float(nrec["age"])) - a1
+                except (TypeError, ValueError):
+                    continue
+                if d in (0, 1):
+                    shared.append((pid, orec, nrec, a1, d))
+            span = (sum(s[4] for s in shared) / len(shared)) if shared else 0.0
+            if span <= 0:
+                pairs_skipped += 1
+            else:
+                pairs_used += 1
+                span_total += span
+                for pid, orec, nrec, a1, d in shared:
+                    parts = ((a1, 1.0),) if d == 0 else ((a1, 0.5), (a1 + 1, 0.5))
+                    pers = (personality or {}).get(pid) or {}
+                    for age, _w in parts:
+                        players_by_age.setdefault(age, set()).add(pid)
+                    for c in TREND_COLS:
+                        a, b = orec.get(c), nrec.get(c)
+                        if a is None or b is None or a < 20 or b < 20:
+                            continue
+                        delta = b - a
+                        for age, w in parts:
+                            ca = sums.setdefault(c, {})
+                            ca[age] = ca.get(age, 0.0) + delta * w
+                            ya = yrs.setdefault(c, {})
+                            ya[age] = ya.get(age, 0.0) + span * w
+                            na = cnt.setdefault(c, {})
+                            na[age] = na.get(age, 0) + 1
+                    # GAP-CONDITIONED growth (user): only spots where current sits
+                    # BELOW potential at the pair's start — a maxed rating (45/45)
+                    # contributes nothing, so it can never drag down the growth of
+                    # players who actually have room. Gap re-read every pair, so a
+                    # re-scout or a caught-up current switches tracking by itself.
+                    for c, pc in GAP_PAIRS.items():
+                        a, b, p = orec.get(c), nrec.get(c), orec.get(pc)
+                        if a is None or b is None or p is None or a < 20 or b < 20 or p < 20:
+                            continue
+                        gap = p - a
+                        if gap <= 0:
+                            continue
+                        delta = b - a
+                        for age, w in parts:
+                            g1 = gsums.setdefault(c, {})
+                            g1[age] = g1.get(age, 0.0) + delta * w
+                            g2 = gyrs.setdefault(c, {})
+                            g2[age] = g2.get(age, 0.0) + span * w
+                            g3 = ggapyrs.setdefault(c, {})
+                            g3[age] = g3.get(age, 0.0) + gap * span * w
+                            g4 = gcnt.setdefault(c, {})
+                            g4[age] = g4.get(age, 0) + 1
+                            if 15 <= age <= 25 and pers:
+                                for trait in ("WE", "INT", "LEA"):
+                                    bk = pers.get(trait)
+                                    if bk not in ("H", "N", "L"):
+                                        continue
+                                    t1 = tsums.setdefault(trait, {}).setdefault(bk, {}).setdefault(c, {})
+                                    t1[age] = t1.get(age, 0.0) + delta * w
+                                    t2 = tyrs.setdefault(trait, {}).setdefault(bk, {}).setdefault(c, {})
+                                    t2[age] = t2.get(age, 0.0) + span * w
+                                    t3 = tgapyrs.setdefault(trait, {}).setdefault(bk, {}).setdefault(c, {})
+                                    t3[age] = t3.get(age, 0.0) + gap * span * w
+                                    t4 = tcnt.setdefault(trait, {}).setdefault(bk, {}).setdefault(c, {})
+                                    t4[age] = t4.get(age, 0) + 1
         prev = cur
-    curves = {}
-    for c in TREND_COLS:
-        if counts[c]:
-            curves[c] = {age: (sums[c][age] / counts[c][age], counts[c][age])
-                         for age in sorted(counts[c])}
-    meta = {"vintages": len(pulls), "pairs": npairs,
-            "mean_gap_days": (sum(gaps) / len(gaps)) if gaps else None,
-            "observations": sum(n for c in counts for n in counts[c].values())}
-    return curves, meta
+    curves = {c: {age: (sums[c][age] / yrs[c][age], cnt[c][age], yrs[c][age])
+                  for age in sorted(sums[c]) if yrs[c][age] > 0}
+              for c in sums}
+    # gaps: (points gained per year among gap holders, share of the gap closed per
+    # year — the drafting number, exposure-and-gap weighted, n, player-years)
+    gaps = {}
+    for c in gsums:
+        for age in gsums[c]:
+            y, gy = gyrs[c][age], ggapyrs[c][age]
+            if y > 0 and gy > 0:
+                gaps.setdefault(c, {})[age] = (gsums[c][age] / y, gsums[c][age] / gy,
+                                               gcnt[c][age], y)
+    traits = {}
+    for trait in tsums:
+        for bk in tsums[trait]:
+            for c in tsums[trait][bk]:
+                for age, s in tsums[trait][bk][c].items():
+                    y = tyrs[trait][bk][c][age]
+                    gy = tgapyrs[trait][bk][c][age]
+                    if y > 0 and gy > 0:
+                        traits.setdefault(trait, {}).setdefault(bk, {}).setdefault(c, {})[age] = \
+                            (s / y, s / gy, tcnt[trait][bk][c][age], y)
+    meta = {"vintages": len(pulls), "pairs_used": pairs_used, "pairs_skipped": pairs_skipped,
+            "span_years": span_total,
+            "players": {age: len(s) for age, s in sorted(players_by_age.items())},
+            "observations": sum(n for c in cnt for n in cnt[c].values())}
+    return curves, gaps, traits, meta
 
 
 # ---------------------------------------------------------------- report
@@ -576,19 +703,28 @@ def report(db_path=DB_PATH, leagues=None, window=3, top=10):
                 age = f"{int(x['age'])}" if x["age"] is not None else "?"
                 print(f"      {x['total']:+7.1f}  {x['name']:<24} {x['pos'] or '?':<3} "
                       f"age {age:<3} {x['org'] or '?':<22} [{bd}]")
-        curves, cmeta = age_curves(conn, lg)
-        print(f"\n  Change-by-age curves: {cmeta['vintages']} vintages -> {cmeta['pairs']} "
-              f"consecutive pull pairs, {cmeta['observations']} (player,col) observations, "
-              f"mean gap {cmeta['mean_gap_days']:.1f} real days.")
-        print("  CAVEAT: per-pull-pair averages over a short archive measure scout re-grade "
-              "churn as much as true aging; treat as directional until many more vintages accumulate.")
+        curves, gaps, _traits, cmeta = age_curves(conn, lg)
+        print(f"\n  Gain-per-age-year curves: {cmeta['vintages']} vintages -> "
+              f"{cmeta['pairs_used']} pairs used ({cmeta['pairs_skipped']} skipped, no in-game "
+              f"time), {cmeta['span_years']:.2f} game-years total, "
+              f"{cmeta['observations']} (player,col) observations.")
+        print("  CAVEAT: a short archive still reflects scout re-grade churn; treat as "
+              "directional until many more game-years accumulate.")
         for c in ("POW P", "STU", "SPE", "CON"):
             if c not in curves:
                 continue
-            pts = [f"{age}:{m:+.2f}(n={n})" for age, (m, n) in curves[c].items()
+            pts = [f"{age}:{m:+.2f}/yr(n={n})" for age, (m, n, _y) in curves[c].items()
                    if n >= 50 and 17 <= age <= 38]
             if pts:
                 print(f"    {c:<7} " + "  ".join(pts[:12]))
+        print("  Gap-holder growth (current below potential only; POINTS gained/yr):")
+        for c in ("POW vR", "STU", "CON", "BA vR"):
+            if c not in gaps:
+                continue
+            pts = [f"{age}:{m:+.2f}/yr(n={n})" for age, (m, _cl, n, _y) in gaps[c].items()
+                   if n >= 50 and 16 <= age <= 26]
+            if pts:
+                print(f"    {c:<7} " + "  ".join(pts[:11]))
     conn.close()
 
 
@@ -599,6 +735,53 @@ def _jsnum(x):
     return int(x) if float(x).is_integer() else round(float(x), 2)
 
 
+def _org_name_map(lg):
+    """Numeric StatsPlus team id -> readable org name (e.g. '1064' -> 'Boston
+    Red Sox'), derived OFFLINE: the raw cached pull gives player id -> numeric
+    org, the shipped enriched app data gives the same player id -> org NAME;
+    majority-vote per numeric id. The trends DB stores the raw numeric ids
+    (pulls are archived before enrichment), which is why the Trends screens
+    showed numbers nobody can place (user, 2026-08-26). Minor-league team ids
+    resolve to the PARENT org name, same as the app. Unknown ids stay numeric."""
+    slug = {"TGS": "tgs", "BLM": "blm"}.get(lg, lg.lower())
+    raw_path = os.path.join(VIZ, "ingest", ".cache", f"statsplus_{slug}.json")
+    votes = {}
+    try:
+        raw = json.load(open(raw_path, encoding="utf-8"))
+        id2num = {}
+        for r in raw:
+            pid = str(r.get("ID") or "").strip()
+            org = str(r.get("ORG") or r.get("Org") or "").strip()
+            if pid and org.isdigit():
+                id2num[pid] = org
+        for fn in ("hitters.json", "pitchers.json"):
+            p = os.path.join(VIZ, "public", "data", lg, fn)
+            if not os.path.exists(p):
+                continue
+            for r in json.load(open(p, encoding="utf-8")):
+                n = id2num.get(str(r.get("ID") or "").strip())
+                name = str(r.get("ORG") or "").strip()
+                if n and name and not name.isdigit():
+                    votes.setdefault(n, {})
+                    votes[n][name] = votes[n].get(name, 0) + 1
+    except Exception:
+        return {}
+    out = {k: max(v.items(), key=lambda kv: kv[1])[0] for k, v in votes.items()}
+    # Best-effort fallback for team ids with NO players in the shipped app data
+    # (NPB clubs are filtered out of the app by design; defunct/renamed clubs
+    # only exist in old vintages): the public no-auth /teams endpoint names
+    # them. Vote-derived names win — they match the app's parent-org naming.
+    try:
+        sys.path.insert(0, os.path.join(VIZ, "ingest"))
+        import statsplus as S
+        for tid, name in S.team_name_map(S.fetch_teams(S.normalize_base(slug))).items():
+            if name:
+                out.setdefault(str(tid), name)
+    except Exception:
+        pass   # offline export keeps the numeric ids for those few
+    return out
+
+
 def export(db_path=DB_PATH, leagues=None, hist_pulls=6, mover_windows=(1, 3, 5), top=40):
     """Write public/data/<LG>/rating_trends.json — the app-facing trends file.
     Small by construction: only players with >= 1 changed rating inside the
@@ -607,6 +790,8 @@ def export(db_path=DB_PATH, leagues=None, hist_pulls=6, mover_windows=(1, 3, 5),
     conn = connect(db_path)
     written = []
     for lg in (leagues or LEAGUES):
+        org_names = _org_name_map(lg)
+        _org = lambda v: org_names.get(str(v), v) if v is not None and str(v).isdigit() else v
         pulls = league_pulls(conn, lg)
         out_path = os.path.join(VIZ, "public", "data", lg, "rating_trends.json")
         payload = {
@@ -639,7 +824,7 @@ def export(db_path=DB_PATH, leagues=None, hist_pulls=6, mover_windows=(1, 3, 5),
                 meta = latest.get(pid) or next(m[pid] for m in newest_first if pid in m)
                 payload["players"][pid] = {
                     "n": meta["name"], "p": meta["pos"],
-                    "o": _readable(newest_first, pid, "org"),
+                    "o": _org(_readable(newest_first, pid, "org")),
                     "a": _jsnum(meta["age"]),
                     "l": _readable(newest_first, pid, "lev"), "s": series,
                 }
@@ -651,30 +836,48 @@ def export(db_path=DB_PATH, leagues=None, hist_pulls=6, mover_windows=(1, 3, 5),
                     "from": meta["from"], "to": meta["to"],
                     "changed": meta["players_changed"],
                     "risers": [{"id": x["id"], "n": x["name"], "p": x["pos"],
-                                "a": _jsnum(x["age"]), "o": x["org"],
+                                "a": _jsnum(x["age"]), "o": _org(x["org"]),
                                 "t": round(x["total"], 1), "c": x["ncols"],
                                 "g": x["gained"], "x": x["lost"],
                                 "d": {c: _jsnum(d) for c, d in x["breakdown"].items()}}
                                for x in risers],
                     "fallers": [{"id": x["id"], "n": x["name"], "p": x["pos"],
-                                 "a": _jsnum(x["age"]), "o": x["org"],
+                                 "a": _jsnum(x["age"]), "o": _org(x["org"]),
                                  "t": round(x["total"], 1), "c": x["ncols"],
                                  "g": x["gained"], "x": x["lost"],
-                                "g": x["gained"], "x": x["lost"],
                                  "d": {c: _jsnum(d) for c, d in x["breakdown"].items()}}
                                 for x in fallers],
                 }
-            curves, cmeta = age_curves(conn, lg)
+            curves, gaps, traits, cmeta = age_curves(conn, lg, personality=_personality(lg))
             payload["age_curves"] = {
-                "vintages": cmeta["vintages"], "pairs": cmeta["pairs"],
-                "mean_gap_days": _jsnum(cmeta["mean_gap_days"]),
-                "note": (f"Mean rating change per consecutive pull pair, by age at the earlier "
-                         f"pull. Built from {cmeta['vintages']} vintages ({cmeta['pairs']} pairs, "
-                         f"mean gap {cmeta['mean_gap_days']:.0f} real days). With this few "
-                         f"vintages it reflects scout re-grades as much as true aging — it "
-                         f"sharpens automatically as pulls accumulate."),
-                "cols": {c: {str(age): [round(m, 3), n] for age, (m, n) in ages.items()}
+                "vintages": cmeta["vintages"], "pairs": cmeta["pairs_used"],
+                "pairs_skipped": cmeta["pairs_skipped"],
+                "span_years": _jsnum(cmeta["span_years"]),
+                "note": (f"Average rating GAIN PER YEAR OF AGE (how much a player at this age "
+                         f"gains before he ages up), MLB/minors only, exposure-weighted across "
+                         f"{cmeta['pairs_used']} consecutive pull pairs "
+                         f"({cmeta['span_years']:.2f} game-years; {cmeta['pairs_skipped']} "
+                         f"zero-time pairs skipped as scout churn). A short archive is still "
+                         f"directional — it sharpens automatically as game-years accumulate."),
+                "cols": {c: {str(age): [round(g, 3), n, round(y, 1)]
+                             for age, (g, n, y) in ages.items()}
                          for c, ages in curves.items()},
+                # GAP-CONDITIONED growth: only players whose current sat BELOW
+                # potential for that rating at the pair start (maxed players never
+                # dilute it). Values: [points gained/yr, share of gap closed/yr,
+                # n, player-years]. The DISPLAY unit is POINTS/yr (user 2026-09-04:
+                # %-of-gap is a ratio of two fuzzy quantities — a "5-point gap" at
+                # 45 is not a 5-point gap at 25); closure ships as a secondary
+                # field only.
+                "gaps": {c: {str(age): [round(g, 3), round(cl, 4), n, round(y, 1)]
+                             for age, (g, cl, n, y) in ages.items()}
+                         for c, ages in gaps.items()},
+                # personality growth splits (gap-conditioned too), ages 15-25
+                "traits": {t: {bk: {c: {str(age): [round(g, 3), round(cl, 4), n, round(y, 1)]
+                                        for age, (g, cl, n, y) in ages.items()}
+                                    for c, ages in cols.items()}
+                               for bk, cols in bks.items()}
+                           for t, bks in traits.items()},
             }
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))

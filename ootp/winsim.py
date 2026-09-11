@@ -641,11 +641,63 @@ def clone_master(master, dest_name, dry=False):
     print(f"  clone {master}.lg -> {dest_name}.lg   ({mb:.0f} MB)")
     if dry:
         return dst
-    shutil.copytree(src, dst)
+    # Pre-flight: the MASTER must not be the league currently loaded in OOTP —
+    # a loaded league holds locks on its db files and the copy dies partway
+    # (the 2026-08-18 run-1 failure: Baseline was loaded at 10:04, copy died at
+    # 10:11). The correct starting state is OOTP sitting INSIDE some OTHER
+    # league (live copy, old clone, ...) so FILE -> Load Game is available AND
+    # the master is closed. Probe the lock-prone files up front.
+    probes = list((src / "mp").glob("*.sqlite3*")) + list(src.glob("*.dat"))
+    for probe in probes:
+        try:
+            with open(probe, "rb") as fh:
+                fh.read(1)
+        except OSError as e:
+            raise SystemExit(
+                f"cannot read {probe.name} - the MASTER ({master}) looks like the league "
+                f"currently LOADED in OOTP. Load any OTHER league in OOTP (winsim needs "
+                f"FILE -> Load Game, so stay inside a league - just not this master), "
+                f"then rerun. ({e})")
+    done = [0]
+    def _cp(s_, d_):
+        shutil.copy2(s_, d_)
+        done[0] += 1
+        if done[0] % 20000 == 0:
+            print(f"    ... {done[0]:,} files copied - the copy is ALIVE, do not close this window")
+    try:
+        shutil.copytree(src, dst, copy_function=_cp)
+    except BaseException:
+        # never leave a half-clone behind - calibrate would skip it but the name is burned
+        print(f"  copy FAILED/interrupted after {done[0]:,} files - removing partial {dest_name}.lg")
+        shutil.rmtree(dst, ignore_errors=True)
+        raise
+    print(f"    copy complete: {done[0]:,} files")
     return dst
 
+def _names_ever_used():
+    """Clone names that must NEVER be reused, even after the save was deleted.
+    calibrate.py's archive dedups clones BY NAME (calib/<LG>/archived_clones.txt),
+    so a fresh clone that reuses an archived name is silently refused from the
+    pool - the sim runs, the data goes nowhere (bit the 2026-08-18 grind run:
+    '0tgs02' was archived in July, deleted after, then reused). Union every
+    ledger we have; unknown ledgers simply contribute nothing."""
+    used = set()
+    for txt in (HERE.parent / "tgs-viz" / "engine" / "calib").glob("*/archived_clones.txt"):
+        try:
+            used |= {ln.strip() for ln in open(txt, encoding="utf-8") if ln.strip()}
+        except OSError:
+            pass
+    try:
+        import json as _json
+        for entries in _json.load(open(HERE / "ingested.json", encoding="utf-8")).values():
+            used |= set(entries)
+    except Exception:
+        pass
+    return used
+
+
 def next_free_names(prefix, n):
-    have = set(saved_league_names())
+    have = set(saved_league_names()) | _names_ever_used()
     out, i = [], 1
     while len(out) < n:
         nm = f"{prefix}{i:02d}"

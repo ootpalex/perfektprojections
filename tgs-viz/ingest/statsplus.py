@@ -73,6 +73,11 @@ def fetch_ratings(slug_or_url, cookie=None, token=None, poll_interval=15, max_po
         low = t[:400].lower()
         return "log in" in low or "logged in" in low or "not authorized" in low
 
+    # NOTE (measured 2026-08-26): a StatsPlus login is PER-LEAGUE — the cookie
+    # pair only pulls the league the browser is signed into. Visiting the other
+    # league's page with the same cookie does NOT flip it (tried and disproven),
+    # so a run simply updates whichever league the user is on; the caller treats
+    # the other league's empty response as "not pulled", not a failure.
     for label, headers, start_url in attempts:
         init = None
         for attempt in range(3):
@@ -394,6 +399,16 @@ def attach_contract_injury(recs, cmap, pmap):
             svcdty = _to_int(p.get("mlb_service_days_this_year"))
             if svcdty is not None:
                 r["MLBSvcDaysTY"] = svcdty
+            # FA vs AMATEUR POOL (user 2026-09-04: "org 0" mixed real free agents
+            # with 14-17yo amateur-pool kids). draft_eligible marks the amateur
+            # pool; free_agent alone is useless (flags 32k of 41k players, incl.
+            # every amateur). An org-less pull row: draft-eligible -> Lev "AMA",
+            # anything else -> a real free agent (FA True). Org'd rows: FA False.
+            org0 = str(r.get("ORG", "")).strip() in ("", "0")
+            de = str(p.get("draft_eligible")) == "1"
+            r["FA"] = bool(org0 and not de)
+            if org0 and de and str(r.get("Lev", "")).upper() in ("FA", ""):
+                r["Lev"] = "AMA"
     return n_priced
 
 
