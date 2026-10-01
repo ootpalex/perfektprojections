@@ -23,6 +23,19 @@ the commish processes moves also shrinks the pool naturally (players change org)
 Reads `.cache/statsplus_<slug>.json` (left by refresh.py), so run a StatsPlus pull first.
 Without --write it writes *_engine.json side files; with --write it overwrites the live
 hitters_draft.json / pitchers_draft.json (timestamped .bak first).
+
+StatsPlus requests carry the league's saved token on their own (statsplus.py). The pick
+list (/draft), the BLM /players fallback and the dispersal reads (/teams, /contract,
+/players) are read fresh on every run. An EMPTY pick list while the saved one holds picks
+of this pool's players (a draft under way) keeps the saved list, with a WARNING: picks
+never disappear during a draft. An empty list with no saved picks from this pool (no
+draft yet, or last year's) is used as before.
+
+Exit codes:
+  0  board written, or skipped with a note (no pool export, no cached pull)
+  3  StatsPlus refused a request or sent something that is not the data. Nothing was
+     written; the saved pick list and the board stay as they were.
+  4  dispersal mode: StatsPlus could not be reached for the team names. Nothing was written.
 """
 import os, sys, json, csv, shutil, time
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -31,10 +44,38 @@ sys.path.insert(0, HERE); sys.path.insert(0, ENGINE)
 import statsplus as S
 import ratings as R
 REPO = os.path.dirname(os.path.dirname(HERE))
+EXIT_REFUSED = 3      # StatsPlus refused, or its reply was not the data; nothing written
+EXIT_NETWORK = 4      # dispersal: StatsPlus not reachable for the team names; nothing written
 
 
 def _arg(flag, default=None):
     return sys.argv[sys.argv.index(flag) + 1] if flag in sys.argv else default
+
+
+def _stop(e, league, kept):
+    """Print why StatsPlus refused and what was kept, then exit EXIT_REFUSED."""
+    print(f"  {e.user_message(league)}")
+    print(f"  {kept}")
+    raise SystemExit(EXIT_REFUSED)
+
+
+def _saved_picks(path):
+    """The saved pick list, or [] when there is none (or it does not read)."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def _save_json(path, obj):
+    """Write obj as JSON through a temp file, so a failed write keeps the old copy."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False)
+    os.replace(tmp, path)
 
 
 # OOTP draft-pool export(s), per league. Override with --csv (repeatable).
@@ -121,8 +162,13 @@ def main():
         # incl. 3,002 aged 14-17; BLM 1,940 incl. 1,020 aged 14-17). OOTP's export is the
         # only authoritative class list — see API_POOL_FALLBACK above for who may fall
         # back to the flag. TGS: export, or no board.
+        # Read fresh, like every other draft-board read: the pool must be StatsPlus's
+        # current one, not a copy saved earlier the same in-game day.
         try:
-            api_players = S.fetch_players(S.normalize_base(slug))
+            api_players = S.fetch_players(S.normalize_base(slug), fresh=True)
+            if api_players and "draft_eligible" not in api_players[0]:
+                raise S.StatsPlusRefused("not_data", "the /players reply has no draft_eligible column",
+                                         status=200, slug=slug.lower(), endpoint="players")
             by_id = {str(r["ID"]): {"ID": str(r["ID"]),
                                     "Name": f"{r.get('First Name','')} {r.get('Last Name','')}".strip(),
                                     "POS": (r.get("Pos") or "").strip(), "_isPit": None}
@@ -132,6 +178,9 @@ def main():
                       f"(no local pool export found)")
                 print("  WARNING: the API flag can include FUTURE amateur classes, not just "
                       "this year's — an OOTP pool export is more accurate if you can get one.")
+        except S.StatsPlusRefused as e:
+            _stop(e, league, "No pool export was found, so there is no draft pool. The existing "
+                             "board was left as-is.")
         except Exception as e:
             print(f"  WARNING: StatsPlus /players draft_eligible fetch failed ({type(e).__name__}: {e})")
     if not by_id:
@@ -155,9 +204,23 @@ def main():
     picks_cache = os.path.join(HERE, ".cache", f"draftpicks_{slug}.json")
     picks, picks_src = [], "live"
     try:
-        picks = S.fetch_draft(S.normalize_base(slug))
-        os.makedirs(os.path.dirname(picks_cache), exist_ok=True)
-        json.dump(picks, open(picks_cache, "w", encoding="utf-8"), ensure_ascii=False)
+        picks = S.fetch_draft(S.normalize_base(slug), fresh=True)
+        saved = _saved_picks(picks_cache) if not picks else []
+        mine = [p for p in saved if str(p.get("ID")) in by_id]
+        if mine:
+            # An empty reply while this pool's players are already drafted is not "no picks":
+            # keep the saved list, so drafted players do not come back onto the board.
+            picks = saved
+            age_h = (time.time() - os.path.getmtime(picks_cache)) / 3600.0
+            picks_src = f"saved, {age_h:.1f}h old"
+            print(f"  WARNING: StatsPlus /draft sent an empty pick list, but the saved list has {len(mine)} "
+                  f"picks of this pool - using the saved pick list ({picks_src}); rerun later for newer picks")
+        else:
+            _save_json(picks_cache, picks)
+    except S.StatsPlusRefused as e:
+        # A refusal is not a busy server: stop, so the board is never rebuilt from an
+        # old pick list without a word. The saved pick list is kept for the next run.
+        _stop(e, league, "The saved pick list and the board were left as they were.")
     except Exception as e:
         # Draft day hammers StatsPlus (503s) — fall back to the last successful pick
         # list so the board doesn't resurrect players drafted an hour ago.
@@ -208,6 +271,19 @@ def main():
         json.dump(records, open(target, "w", encoding="utf-8"), ensure_ascii=False)
         print(f"  {name if write else os.path.basename(target)}: {len(records)}")
 
+    # The real draft structure, in pick order (round, pick-in-round, overall, club),
+    # supplemental picks included — the Mock Draft slots our board into THESE picks
+    # instead of a fixed rounds x picks-per-round grid (user 2026-09-12). One file,
+    # no park basis. `Name` is the drafted player so the app's row filter keeps it.
+    pick_rows = sorted(
+        [{"Overall": int(p.get("Overall") or 0), "Round": int(p.get("Round") or 0),
+          "Pick": int(p.get("Pick In Round") or 0), "Team": p.get("Team"),
+          "ID": str(p.get("ID")), "Name": p.get("Player Name") or "-"}
+         for p in picks if str(p.get("Overall") or "").strip().lstrip("-").isdigit()],
+        key=lambda r: r["Overall"])
+    if pick_rows:
+        out(pick_rows, "draft_picks.json")
+
     # BOTH park bases, same as refresh.py builds the league population ("we have to
     # draft for our park"): neutral files + *_park (50% home / 50% other-MLB blend).
     # The app's Park Basis toggle swaps draft datasets exactly like hitters/pitchers.
@@ -224,7 +300,8 @@ def main():
                                    tails=tails, fielding=fielding, park_mode=park_mode)
         # audit D1: same live curve model as refresh.py (S-curves TGS / two-line BLM)
         precs_full = R.run_pitchers(trows, league, scurves=scurves,
-                                    currency=currency, park_mode=park_mode)
+                                    currency=currency, park_mode=park_mode,
+                                    role_stuff=R.live_role_stuff(league))
         hrecs = [r for r in hrecs_full if str(r.get("ID")) in hit_ids]
         precs = [r for r in precs_full if str(r.get("ID")) not in hit_ids]
         # Two-way flag — GENUINE threats only (user 2026-09-04): BOTH sides must clear
@@ -293,7 +370,14 @@ def dispersal_main():
 
     # Team names are required here (org matching is by name) — fail loudly, not numerically.
     base = S.normalize_base(slug)
-    names = S.team_name_map(S.fetch_teams(base))
+    try:
+        names = S.team_name_map(S.fetch_teams(base, fresh=True))
+    except S.StatsPlusRefused as e:
+        _stop(e, league, "Nothing was written; the board was left as it was.")
+    except Exception as e:
+        print(f"  StatsPlus team names could not be read ({type(e).__name__}: {e}). The orgs are "
+              f"matched by name, so nothing was written. Try again in a minute.")
+        raise SystemExit(EXIT_NETWORK)
     S.enrich_org_lev(rows, names, league=league)
 
     orgset = {o.lower() for o in orgs}
@@ -327,9 +411,13 @@ def dispersal_main():
         print(f"  {name if write else os.path.basename(target)}: {len(records)}")
 
     # Contract/DL maps once; attached to every basis (inheriting real contracts).
-    cmap = pmap = None
+    cmap = pmap = cols = None
     try:
-        cmap, pmap = S.build_contract_injury_maps(S.fetch_contracts(base), S.fetch_players(base))
+        contracts, players = S.fetch_contracts(base, fresh=True), S.fetch_players(base, fresh=True)
+        cmap, pmap = S.build_contract_injury_maps(contracts, players)
+        cols = S.reply_columns(contracts, players)
+    except S.StatsPlusRefused as e:
+        _stop(e, league, "Nothing was written; the board was left as it was.")
     except Exception as e:
         print(f"  WARNING: couldn't fetch contracts/injury ({type(e).__name__}: {e})")
 
@@ -345,10 +433,12 @@ def dispersal_main():
                               tails=tails, fielding=fielding, park_mode=park_mode)
         # audit D1: same live curve model as refresh.py (S-curves TGS / two-line BLM)
         precs = R.run_pitchers(pit_rows, league, scurves=scurves,
-                               currency=currency, park_mode=park_mode)
+                               currency=currency, park_mode=park_mode,
+                               role_stuff=R.live_role_stuff(league))
         print(f"projected ({park_mode}): {len(hrecs)} hitters, {len(precs)} pitchers")
         if cmap is not None:
-            n = S.attach_contract_injury(hrecs, cmap, pmap) + S.attach_contract_injury(precs, cmap, pmap)
+            n = (S.attach_contract_injury(hrecs, cmap, pmap, columns=cols)
+                 + S.attach_contract_injury(precs, cmap, pmap, columns=cols))
             print(f"  attached contracts + injury status ({n} with a salary)")
         out(hrecs, f"hitters_draft{suffix}.json")
         out(precs, f"pitchers_draft{suffix}.json")

@@ -14,6 +14,11 @@ in-game date).
 
 Usage:
   python tgs-viz/backtest/snapshot_projections.py --league TGS [--slug tgs] --write
+
+StatsPlus requests carry the league's saved token on their own (statsplus.py).
+Exit codes: 3 = StatsPlus refused /date or sent something that is not a date;
+4 = StatsPlus could not be reached. In both cases nothing is snapped (the folder
+name needs the in-game date).
 """
 import argparse, datetime, json, os, re, shutil, sys
 
@@ -22,6 +27,8 @@ sys.path.insert(0, os.path.join(HERE, "..", "ingest"))
 import statsplus as sp  # noqa: E402
 
 VIZ = os.path.dirname(HERE)  # tgs-viz/
+EXIT_REFUSED = 3      # StatsPlus refused /date, or the reply was not a date
+EXIT_NETWORK = 4      # StatsPlus could not be reached
 
 
 def snapshot_dir(league, game_date):
@@ -46,7 +53,15 @@ def main():
     league = a.league.upper()
     slug = (a.slug or league.lower()).strip("/")
     base = sp.normalize_base(slug)
-    game_date = sp.fetch_date(base)
+    try:
+        game_date = sp.fetch_date(base)
+    except (sp.StatsPlusRefused, OSError) as e:
+        refused = isinstance(e, sp.StatsPlusRefused)
+        why = (e.user_message(league) if refused else
+               f"StatsPlus could not be reached ({type(e).__name__}: {e}). Try again in a minute.")
+        print(f"[{league}] {why}")
+        print("  Nothing was snapped: the snapshot folder is named for the in-game date.")
+        sys.exit(EXIT_REFUSED if refused else EXIT_NETWORK)
 
     ratings_cache = os.path.join(VIZ, "ingest", ".cache", f"statsplus_{slug}.json")
     sources = [

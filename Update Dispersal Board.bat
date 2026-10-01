@@ -17,7 +17,13 @@ echo ============================================================
 echo.
 
 python "tgs-viz\ingest\draft.py" --league TGS --orgs "Atlanta Hammers,Detroit Tigers,San Francisco Giants,Seattle Mariners" --write
+if errorlevel 1 goto :notdone
 
 echo.
 echo   Done. Reload the webapp - the Draft tab is now the dispersal pool.
+goto :end
+:notdone
+echo.
+echo   NOT updated. The reason is above. Fix that, then run this again.
+:end
 pause

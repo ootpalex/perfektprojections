@@ -37,10 +37,54 @@ NPB = {"Fukuoka Vipers", "Hiroshima Phoenix", "Kansai Cubs", "Kyoto Aces",
        "Nagoya Dolphins", "Osaka Bulls", "Saitama Panthers", "Sapporo Bruisers",
        "Sendai Woodpeckers", "Tokyo Golden Kites", "Tokyo Jaguars", "Yokohama Astrals"}
 
+REPO = os.path.dirname(VIZ)
 LEAGUES = {
-    "TGS": {"home": "Chicago Cubs", "exclude": NPB},
+    # "workbook": the league's park sheet the user keeps (gitignored folder). Sheet
+    # "Current": cols A-B = Team / MLB Park (assignments; blank rows = folded clubs),
+    # col D = Park (the park list). Its factor columns are NOT used (user: they are
+    # not accurate) - factors always come from the StatsPlus export, per club. When
+    # the workbook exists, park_list.csv + park_assignments.csv in calib/<LG>/ are
+    # refreshed from it, so the tracked copies stay current.
+    "TGS": {"home": "Chicago Cubs", "exclude": NPB,
+            "workbook": os.path.join(REPO, "perfekt filters and views", "TGS Park Factors.xlsx")},
     "BLM": {"home": "Tampa Bay Rays", "exclude": set()},
 }
+
+
+def refresh_park_csvs(league, cfg):
+    """Regenerate calib/<LG>/park_list.csv + park_assignments.csv from the league
+    workbook (sheet 'Current'). Silent no-op without a workbook or openpyxl."""
+    wbp = cfg.get("workbook")
+    if not wbp or not os.path.exists(wbp):
+        return
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        print("  (openpyxl missing - park CSVs not refreshed from the workbook)")
+        return
+    wb = load_workbook(wbp, read_only=True, data_only=True)
+    ws = wb["Current"] if "Current" in wb.sheetnames else wb.worksheets[0]
+    assignments, parks = [], []
+    for i, row in enumerate(ws.iter_rows(values_only=True)):
+        if i == 0:
+            continue
+        team, park = (row[0] or ""), (row[1] or "")
+        if str(team).strip() and str(park).strip():
+            assignments.append((str(team).strip(), str(park).strip()))
+        if len(row) > 3 and row[3] and str(row[3]).strip():
+            parks.append([str(row[3]).strip()])
+    cal = os.path.join(VIZ, "engine", "calib", league)
+    os.makedirs(cal, exist_ok=True)
+    with open(os.path.join(cal, "park_list.csv"), "w", encoding="utf-8", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["Park"])
+        w.writerows(parks)
+    with open(os.path.join(cal, "park_assignments.csv"), "w", encoding="utf-8", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["Team", "MLB Park"])
+        w.writerows(assignments)
+    print(f"  refreshed park_list.csv ({len(parks)} parks) + park_assignments.csv "
+          f"({len(assignments)} clubs) from {os.path.basename(wbp)}")
 
 # CSV column -> output key. Handedness is the BATTER's side.
 COLS = {
@@ -52,6 +96,7 @@ COLS = {
 
 def build(league, write=False):
     cfg = LEAGUES[league]
+    refresh_park_csvs(league, cfg)
     src = os.path.join(VIZ, "engine", "calib", league, "park_factors.csv")
     with open(src, encoding="utf-8-sig", newline="") as fh:
         rows = [r for r in csv.DictReader(fh) if (r.get("Team") or "").strip()]
@@ -92,6 +137,112 @@ def build(league, write=False):
         print(f"  wrote {os.path.relpath(dst, VIZ)}")
     else:
         print(f"  (dry run) would write {os.path.relpath(dst, VIZ)} — pass --write")
+
+    # Parks page datasets (user 2026-09-12). Two sources the user keeps in
+    # calib/<LG>/ (pasted from the league):
+    #   park_list.csv         Park   (the park names; the league sheet's Copies and
+    #                         factor columns are NOT used - occupancy is recounted and
+    #                         factors come from the StatsPlus export per club)
+    #   park_assignments.csv  Team, MLB Park   (which park each club plays in)
+    # Occupancy = assigned clubs still in the league (an org with players in the
+    # current pull) - folded clubs drop out on their own. League rule: a park can be
+    # used by at most MAX_TEAMS_PER_PARK clubs; `open` = slots left to switch into.
+    # Without those files (BLM) a stadium is the set of clubs with identical factor
+    # rows, as before. Each club also ships its OWN factors: a club can run its own
+    # version of a park.
+    MAX_TEAMS_PER_PARK = 3
+    cal = os.path.join(VIZ, "engine", "calib", league)
+    lst_path = os.path.join(cal, "park_list.csv")
+    asg_path = os.path.join(cal, "park_assignments.csv")
+    park_list = []
+    assignment = {}
+    if os.path.exists(lst_path) and os.path.exists(asg_path):
+        with open(lst_path, encoding="utf-8-sig", newline="") as fh:
+            for r in csv.DictReader(fh):
+                if not (r.get("Park") or "").strip():
+                    continue
+                park_list.append({"Name": r["Park"].strip()})
+        with open(asg_path, encoding="utf-8-sig", newline="") as fh:
+            for r in csv.DictReader(fh):
+                if (r.get("Team") or "").strip():
+                    assignment[r["Team"].strip()] = (r.get("MLB Park") or "").strip()
+        active = set()
+        for fn in ("hitters.json", "pitchers.json"):
+            fp = os.path.join(VIZ, "public", "data", league, fn)
+            if os.path.exists(fp):
+                with open(fp, encoding="utf-8") as fh:
+                    for rec in json.load(fh):
+                        o = str(rec.get("ORG") or "").strip()
+                        # skip the FA pool, bare numeric ids, and folded "(PWBL)" orgs
+                        if o and o != "0" and not o.isdigit() and "(PWBL)" not in o:
+                            active.add(o)
+        park_names = {p["Name"] for p in park_list}
+        bad = sorted(v for v in set(assignment.values()) if v not in park_names)
+        if bad:
+            print(f"  WARNING park_assignments.csv names parks not in park_list.csv: {bad}")
+        gone = sorted(t for t in assignment if t not in active)
+        if gone:
+            print(f"  park_assignments.csv clubs no longer in the league (ignored): {gone}")
+        occupants = {}
+        for team, park in assignment.items():
+            if team in active:
+                occupants.setdefault(park, []).append(team)
+        for p in park_list:
+            occ = sorted(occupants.get(p["Name"], []))
+            p["occupants"] = occ
+            p["copies"] = len(occ)
+            p["open"] = max(0, MAX_TEAMS_PER_PARK - len(occ))
+            p["is_home"] = cfg["home"] in occ
+        unassigned = sorted(t for t in active if t not in assignment)
+        if unassigned:
+            print(f"  WARNING active clubs with no park assignment: {unassigned}")
+    else:
+        print("  (no park_list.csv / park_assignments.csv - grouping clubs by identical factor rows)")
+
+    # per-club rows: own factors + park
+    if assignment:
+        counted = {t for p in park_list for t in p["occupants"]}
+        park_of = {t: pk for t, pk in assignment.items() if t in counted}
+        rows_src = [r for r in mlb if r["Team"].strip() in park_of]
+    else:
+        park_of = {}
+        auto = {}
+        for r in mlb:
+            sig = tuple((r.get(c) or "").strip() for c in list(COLS) + ["Capacity", "Stadium Type", "Surface"])
+            auto.setdefault(sig, []).append(r["Team"].strip())
+        for teams in auto.values():
+            label = " / ".join(sorted(teams)) + " park"
+            for t in teams:
+                park_of[t] = label
+        rows_src = mlb
+    occ_by_park = {}
+    for t, pk in park_of.items():
+        occ_by_park[pk] = occ_by_park.get(pk, 0) + 1
+    parks = []
+    for r in rows_src:
+        team = r["Team"].strip()
+        pk = park_of[team]
+        n = occ_by_park.get(pk, 0)
+        row = {"Name": team, "park": pk, "stadium": pk,
+               "n_teams": n, "open": max(0, MAX_TEAMS_PER_PARK - n),
+               "is_home": team == cfg["home"],
+               "capacity": (r.get("Capacity") or "").strip(),
+               "type": (r.get("Stadium Type") or "").strip(),
+               "surface": (r.get("Surface") or "").strip()}
+        for col, key in COLS.items():
+            row[key] = float(r[col])
+        parks.append(row)
+    parks.sort(key=lambda p: (p["park"], p["Name"]))
+    if write:
+        ddir = os.path.join(VIZ, "public", "data", league)
+        os.makedirs(ddir, exist_ok=True)
+        with open(os.path.join(ddir, "parks.json"), "w", encoding="utf-8") as fh:
+            json.dump(parks, fh, ensure_ascii=False)
+        with open(os.path.join(ddir, "park_list.json"), "w", encoding="utf-8") as fh:
+            json.dump(park_list, fh, ensure_ascii=False)
+        n_open = sum(1 for p in park_list if p["open"] > 0)
+        print(f"  wrote public/data/{league}/parks.json ({len(parks)} clubs) + park_list.json "
+              f"({len(park_list)} parks, {n_open} with an open slot)")
     return out
 
 

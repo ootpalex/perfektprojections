@@ -121,8 +121,29 @@ def prep(rec):
     return rec
 
 
+PARK_FACTOR_KEYS = ("avg_rhb", "avg_lhb", "avg", "doubles", "triples",
+                    "hr_rhb", "hr_lhb", "hr")
+
+
+_CONSTS_CACHE = {}
+
+
+def _scan_consts_cached(hpath):
+    """H.scan_consts(hpath), loaded once per version of the workbook (path + mtime
+    + size). park_values.py calls run_hitters once per park, and each call used
+    to re-open the 47 MB workbook. Copies are returned so no caller can change
+    the cached constants."""
+    st = os.stat(hpath)
+    key = (hpath, st.st_mtime_ns, st.st_size)
+    hit = _CONSTS_CACHE.get(hpath)
+    if not hit or hit[0] != key:
+        _CONSTS_CACHE[hpath] = hit = (key, H.scan_consts(hpath))
+    dp, filt, park = hit[1]
+    return dict(dp), dict(filt), dict(park)
+
+
 def run_hitters(records, league, currency=None, tails=None, fielding=None,
-                park_mode="neutral"):
+                park_mode="neutral", park_blend=None):
     """Export records -> engine -> full computed records.
 
     currency (audit D2/D9): a currency_fit.py dict — callers pass
@@ -137,10 +158,27 @@ def run_hitters(records, league, currency=None, tails=None, fielding=None,
     every park factor 1 / every delta 0, the sheet's own C3="" semantics;
     contracts and cross-team comparisons read this basis), "blend" (50% home
     park + 50% average of the other MLB parks, calib/<LG>/park_blend.json), or
-    "sheet" (the workbook's own preset knobs — the pre-park-layer basis)."""
+    "sheet" (the workbook's own preset knobs — the pre-park-layer basis).
+
+    park_blend (series lineups 2026-09-18): an explicit park-factor dict with
+    the eight PARK_FACTOR_KEYS. When given, it replaces the park_blend.json
+    file and park_mode is not read. One club's raw factors from
+    public/data/<LG>/parks.json project the hitters FULLY in that park.
+    Default None: every existing call behaves exactly as before."""
     hpath = os.path.join(REPO, f"The Sheets {league}", "The Sheet Hitters.xlsx")
-    dp, filt, park = H.scan_consts(hpath)
-    if park_mode != "sheet":
+    dp, filt, park = _scan_consts_cached(hpath)
+    if park_blend is not None:
+        missing = [k for k in PARK_FACTOR_KEYS if k not in park_blend]
+        if missing:
+            raise ValueError(f"park_blend is missing factor(s): {', '.join(missing)}")
+        blend = {k: float(park_blend[k]) for k in PARK_FACTOR_KEYS}
+        park, filt_over, _aa = PL.knobs(dp, blend)
+        # The engine gives a sub-50 BA split the park AVG factor only while the
+        # workbook's Filters!C3 (the selected team) is non-blank. An explicit park
+        # is always "a park is selected", so a blank C3 must not silently strip
+        # that factor from these projections. Existing callers never reach here.
+        filt = {**filt, **filt_over, "C3": filt.get("C3") or "park_blend"}
+    elif park_mode != "sheet":
         blend = PL.load_blend(league) if park_mode == "blend" else None
         park, filt_over, _aa = PL.knobs(dp, blend)
         filt = {**filt, **filt_over}
@@ -179,18 +217,40 @@ def live_scurves(league):
     and pass the result into run_pitchers; run_pitchers itself stays opt-in so
     the sheet-fidelity validators keep producing two-segment numbers.
 
-    BLM: None — the two-segment lines stay live.
-    TODO(D1 BLM — DO NOT FLIP YET): BLM's ratings were re-scouted mid-season
-    AFTER its 25 Metadata.xlsx anchors were computed, so the S-curve live
-    transport (fitted against those anchors) can't be trusted until BLM's
-    season-end rebuild. When that rebuild lands: re-run scurve_fit.py --league
-    BLM, verify the D1 gates, promote calib/BLM/scurves-preview.json ->
-    scurves.json, and delete the league gate below.
+    BLM: live once calib/BLM/scurves.json exists. It does not exist until
+    Recalibrate BLM refreshes the metadata anchors from the real season and
+    promote_scurves.py writes it. Until then the two-segment lines stay live.
+    The gate is the file, not the league name.
+
+    Since 2026-10-01 promote_scurves.py chooses PER BLOCK on the real season:
+    scurves.json holds only the S-curve blocks, and pitchers.compute runs the
+    two-segment line, moved to the live league's level by the file's
+    "twoline_offsets", for every other block. scurve_summary() says which.
     """
-    if league != "TGS":
-        return None
     path = os.path.join(REPO, "tgs-viz", "engine", "calib", league, "scurves.json")
     return P.load_scurves(path) if os.path.exists(path) else None
+
+
+def scurve_summary(scurves):
+    """Which rate curve each pitching block runs, for log lines, e.g.
+    'SP: two-line (level-matched) SO uBB HR HHR | RP: S-curve uBB HR; two-line
+    (level-matched) SO HHR'. scurves: a live_scurves() dict or None."""
+    if not scurves:
+        return "two-segment lines for every block (no scurves.json)"
+    blocks = ("SO", "uBB", "HR", "HHR")
+    parts = []
+    for role in ("SP", "RP"):
+        sc = scurves.get(role) or {}
+        lvl = bool(((scurves.get("_twoline") or {}).get(role)))
+        s = [b for b in blocks if b in sc]
+        t = [b for b in blocks if b not in sc]
+        bits = []
+        if s:
+            bits.append("S-curve " + " ".join(s))
+        if t:
+            bits.append(("two-line (level-matched) " if lvl else "two-line ") + " ".join(t))
+        parts.append(f"{role}: " + "; ".join(bits))
+    return " | ".join(parts)
 
 
 def live_hitter_tails(league):
@@ -212,6 +272,17 @@ def live_fielding(league):
     linear PM%) when missing."""
     path = os.path.join(REPO, "tgs-viz", "engine", "calib", league, "fielding_curves.json")
     return json.load(open(path, encoding="utf-8")) if os.path.exists(path) else None
+
+
+def live_role_stuff(league):
+    """2026-09-26 — the measured SP <-> RP stuff change per pitcher
+    (engine/role_stuff_fit.py -> calib/<LEAGUE>/role_stuff.json), LIVE for both
+    leagues, each from its own archive. The sheet moves every pitcher's stuff
+    a flat 5 for the other role; OOTP moves about half of them one notch (user,
+    2026-09-26: "as a starter ragel doesnt drop to 40 though he stays 45").
+    Returns None (sheet behavior) when missing."""
+    path = os.path.join(REPO, "tgs-viz", "engine", "calib", league, "role_stuff.json")
+    return P.load_role_stuff(path) if os.path.exists(path) else None
 
 
 def live_currency(league):
@@ -333,14 +404,24 @@ def _hitter_dp(league):
     return _HITTER_DP[league]
 
 
-def run_pitchers(records, league, scurves=None, currency=None, park_mode="neutral"):
+def run_pitchers(records, league, scurves=None, currency=None, park_mode="neutral", role_stuff=None,
+                 observed=True):
     """scurves (audit D1): a pitchers.load_scurves() dict — when given, the four
     pitching rate blocks use the fitted logistic curves instead of the
     two-segment lines. Deliberately opt-in (callers pass live_scurves(league)):
     the validators in this file and engine/pitchers.py must keep matching the
     workbook's cached two-segment values.
     currency (audit D2/D9): a currency_fit.py dict — callers pass
-    live_currency(league); same opt-in contract."""
+    live_currency(league); same opt-in contract.
+    role_stuff (2026-09-26): a pitchers.load_role_stuff() dict — callers pass
+    live_role_stuff(league); same opt-in contract. The pitch grades and the
+    overall stuff ride along on p ("_grades", "_pot_grades", "_stu"), with the
+    id and name ("_id", "_name") for the pitcher's own archived switch.
+    observed=False drops that per-pitcher table: pass it when the records are
+    NOT this league's players (DEV priced with a borrowed calibration), whose
+    ids could collide with the league's."""
+    if role_stuff and not observed and role_stuff.get("observed"):
+        role_stuff = {k: v for k, v in role_stuff.items() if k != "observed"}
     ppath = os.path.join(REPO, f"The Sheets {league}", "The Sheet Pitchers.xlsx")
     dp, filt, park_aa = P.scan_consts(ppath)
     if park_mode != "sheet":
@@ -365,8 +446,14 @@ def run_pitchers(records, league, scurves=None, currency=None, park_mode="neutra
                     ok = False
         if not ok:
             continue
+        p["_grades"] = {k: _grade(rec, k) for k, _w in _SP_CUR}
+        p["_pot_grades"] = {k[:-1]: _grade(rec, k) for k, _w in _POT}
+        p["_stu"] = _grade(rec, "STU")
+        p["_id"] = None if rec.get("ID") is None else str(rec.get("ID")).strip()
+        p["_name"] = rec.get("Name")
         try:
-            comp = P.compute(p, dp, filt, park_aa, scurves=scurves, currency=currency)
+            comp = P.compute(p, dp, filt, park_aa, scurves=scurves, currency=currency,
+                             role_stuff=role_stuff)
         except Exception:
             continue
         merged = dict(rec)
@@ -406,7 +493,7 @@ def _selftest(league, kind="hitters"):
     # the JSON legitimately diverges from the workbook by exactly those layers.
     if kind == "pitchers":
         computed = run_pitchers(records, league, scurves=live_scurves(league),
-                                currency=live_currency(league))
+                                currency=live_currency(league), role_stuff=live_role_stuff(league))
         jname, cols = "pitchers.json", ["WAA wtd", "WAA wtd RP", "WAP", "RA/9 wtd"]
     else:
         computed = run_hitters(records, league, currency=live_currency(league),

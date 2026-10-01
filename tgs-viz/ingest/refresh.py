@@ -13,6 +13,31 @@ opened for this (constants were already lifted by the engine).
   .bak is made first). The app then shows engine-generated data.
 
 By default it writes SIDE files so you can diff/verify before switching over.
+
+StatsPlus mode (what the bats run):
+  python tgs-viz/ingest/refresh.py --statsplus --league TGS --write
+      pulls the ratings live, then the team names, contracts and injury status,
+      and writes the app's JSON. statsplus.py sends the league's saved StatsPlus
+      token (StatsPlus Tokens.txt); the browser cookie in STATSPLUS_COOKIE
+      is the fallback for a league with no token.
+  add --from-cache to rebuild from the last saved pull (.cache/statsplus_<slug>.json)
+      with no new ratings job. The team names, contracts and injury status then
+      reuse the StatsPlus replies saved earlier while the league's in-game date
+      has not moved (at most 6 hours old). A live pull always reads them fresh.
+
+Exit codes in StatsPlus mode. On every code but 0, nothing is written to the app data:
+  0  done
+  2  not pulled: no StatsPlus token is saved for this league and no browser cookie was given
+  3  not pulled: the browser cookie did not open this league (a login is per-league)
+  4  the ratings mapping produced 0 players (the raw pull is saved)
+  5  the team names, contracts or injury status could not be read (network or server error)
+  6  wrong-league safety net: the pulled ratings do not match this league
+  7  StatsPlus refused a request (token expired or unknown, login needed, too soon,
+     not switched on, blocked, or not the data). The message says why and what to do.
+  8  StatsPlus could not be reached for the ratings (network, timed out, or an
+     address on another site)
+When a live pull's ratings arrive but a later step stops (4, 5, 7), the raw
+pull and its archive copy are still saved: the ratings themselves are good.
 """
 import os, sys, json, shutil, time
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -120,13 +145,48 @@ def drift_check(league):
         print(f"  (note: {stale_snap} dev-snapshot cell(s) in engine/extracted/ are behind the "
               f"workbook. Projections are NOT affected - the snapshots are developer read-backs. "
               f"Refresh: python tgs-viz/engine/extract_sheet.py {league} and extract_pitchers.py {league})")
-    # audit D1 status note (league policy): TGS runs the fitted S-curves
-    # (calib/TGS/scurves.json); BLM stays on the two-segment lines until its
-    # season-end rebuild (ratings re-scouted mid-season after the metadata
-    # anchors). See ratings.live_scurves() for the flip procedure.
-    if league == "BLM":
-        print("  [D1 note] BLM pitching still uses the TWO-SEGMENT curves - the "
-              "S-curve flip is TGS-only until BLM's season-end recalibration.")
+    # audit D1 status note: promote_scurves.py picks the pitching rate curve
+    # per block on the real season and writes calib/<LG>/scurves.json (only
+    # the S-curve blocks + the level offsets of the two-segment lines). See
+    # ratings.live_scurves().
+    sc_p = os.path.join(eng, "calib", league, "scurves.json")
+    if os.path.exists(sc_p):
+        try:
+            with open(sc_p, encoding="utf-8") as fh:
+                when = json.load(fh).get("promoted_at")
+        except (OSError, ValueError):
+            when = None
+        when = when or time.strftime("%Y-%m-%d", time.localtime(os.path.getmtime(sc_p)))
+        print(f"  [D1 note] {league} pitching curves per block (scurves.json, {when}): "
+              f"{R.scurve_summary(R.live_scurves(league))}. Recalibrate {league} checks each "
+              f"block again on the real season.")
+    else:
+        prev_p = os.path.join(eng, "calib", league, "scurves-preview.json")
+        worse = total = 0
+        try:
+            with open(prev_p, encoding="utf-8") as fh:
+                prev = json.load(fh)
+            for rd in (prev.get("roles") or {}).values():
+                for blk in (rd.get("blocks") or {}).values():
+                    total += 1
+                    g = blk.get("live_gate")
+                    if g:   # the real-season gate (promote_scurves.py rule)
+                        sig, two = g.get("rmse_sigmoid"), g.get("rmse_twoline")
+                        lost = sig is not None and two is not None and not sig < two * 0.95
+                    else:   # older preview: archive-frame RMSE only
+                        sig, two = blk.get("bucket_rmse_sigmoid"), blk.get("bucket_rmse_twoline")
+                        lost = sig is not None and two is not None and sig > two * 1.05
+                    worse += int(blk.get("monotone_ok") is not True or lost)
+            tried = time.strftime("%Y-%m-%d", time.localtime(os.path.getmtime(prev_p)))
+        except (OSError, ValueError):
+            tried = None
+        if tried and worse:
+            print(f"  [D1 note] {league} pitching uses the two-segment curves for every block: no "
+                  f"scurves.json yet. The last S-curve refit ({tried}) did not beat them on {worse} of "
+                  f"{total} blocks. Recalibrate {league} picks the curve per block.")
+        else:
+            print(f"  [D1 note] {league} pitching uses the two-segment curves for every block (no "
+                  f"scurves.json yet); Recalibrate {league} picks the curve per block.")
     # audit D2/D9 status note: the fitted currency layer (RA/9 exponents + RPW)
     # is league-policy LIVE for BOTH leagues (it is archive-fitted, not
     # anchor-dependent, so BLM's mid-season re-scout does not gate it).
@@ -143,6 +203,40 @@ def drift_check(league):
         if not os.path.exists(os.path.join(eng, "calib", league, fn)):
             print(f"  !! [{fn.split('.')[0]} note] {league}: calib/{league}/{fn} missing - "
                   f"hitters fall back to {what}. Run {tool}.")
+
+
+def _stop(code, *lines):
+    """Print why the StatsPlus refresh stops, then exit with code (see the docstring)."""
+    for ln in lines:
+        print(ln)
+    sys.exit(code)
+
+
+def _not_pulled(S, league, slug):
+    """The live ratings pull returned nothing: print why and exit 2, 3, 7 or 8.
+    Nothing has been saved at this point."""
+    f = S.ratings_failure()
+    kind = f.kind if f else "not_data"
+    keeps = f"The app keeps the last successful {league} pull - its date is in the report below."
+    if kind == "no_login":
+        _stop(2, f"{league} was not pulled this run - no StatsPlus token is saved for {league} "
+                 "and no browser cookie was given.",
+              f"(To update {league}: paste its token into StatsPlus Tokens.txt, then run this bat again.)",
+              keeps)
+    login_kinds = ("login_required", "token_invalid", "token_expired", "not_data")
+    if f and f.method == "cookie" and not f.started and (
+            kind in login_kinds or (kind == "blocked" and f.status in (401, 403))):
+        # Not an error: a StatsPlus browser login is per-league, so the cookie
+        # only pulls the league the browser is signed into. The other league
+        # simply keeps its last data.
+        _stop(3, f"{league} was not pulled this run - the browser login is not signed in to {league}.",
+              f"(A browser login only pulls the league it is signed into. To update {league}: paste its token",
+              f" into StatsPlus Tokens.txt, or open statsplus.net/{slug} in your browser, then run",
+              " this bat again.)",
+              keeps)
+    why = f.user_message(league) if f else f"StatsPlus sent no {league} ratings rows."
+    _stop(7 if (f is None or f.refused) else 8, f"!!!! {why}",
+          "     Nothing was saved or overwritten. " + keeps)
 
 
 def write_json(records, path, overwrite):
@@ -165,28 +259,25 @@ def main():
         import statsplus as S
         slug = _arg("--slug") or {"TGS": "tgs"}.get(league, league.lower())
         raw_path = os.path.join(HERE, ".cache", f"statsplus_{slug}.json")
-        if "--from-cache" in sys.argv:    # reprocess the saved raw pull — no auth, no re-fetch
+        if "--from-cache" in sys.argv:    # reprocess the saved raw pull: no new ratings job
             rows = json.load(open(raw_path, encoding="utf-8"))
             method = "cache"
         else:
-            token = os.environ.get("STATSPLUS_TOKEN")
-            cookie = os.environ.get("STATSPLUS_COOKIE")
-            if not (token or cookie):
-                print("Set your StatsPlus browser cookies first (PowerShell):")
-                print('  $env:STATSPLUS_COOKIE="sessionid=<...>;csrftoken=<...>"; python tgs-viz\\ingest\\refresh.py --statsplus --league TGS')
-                # a missing cookie is a FAILED pull, not a quiet no-op — exit nonzero
-                # so the calling bat can report the league as not refreshed
-                sys.exit(2)
-            rows, method = S.fetch_ratings(slug, cookie=cookie, token=token)
+            # statsplus.py sends the league's saved token on its own. The browser
+            # cookie (sessionid=...;csrftoken=...) is the fallback. A cookie with
+            # blank values (Enter at both bat prompts) counts as no cookie.
+            cookie = os.environ.get("STATSPLUS_COOKIE", "").strip() or None
+            if cookie and not any(p.partition("=")[2].strip() for p in cookie.split(";")):
+                cookie = None
+            # With no token and no cookie, fetch_ratings sends nothing and returns
+            # (None, None). Every failure exits nonzero, so the calling bat lists
+            # the league as not refreshed; _not_pulled says why.
+            rows, method = S.fetch_ratings(slug, cookie=cookie)
             if not rows:
-                # Not an error: a StatsPlus login is per-league, so a run only
-                # pulls the league the browser is signed into. The other league
-                # simply keeps its last data until the user runs from its page.
-                print(f"{league} was not pulled this run - your StatsPlus login is on the other league's site.")
-                print(f"(A login only pulls the league it is signed into. To update {league}: open")
-                print(f" statsplus.net/{slug} in your browser, then run this bat again.)")
-                print(f"The app keeps the last successful {league} pull - its date is in the report below.")
-                sys.exit(3)
+                _not_pulled(S, league, slug)
+            if method == "cookie" and S.has_token(slug):
+                print(f"  WARNING: the saved {league} StatsPlus token did not work (the browser cookie did). "
+                      "Check the token in StatsPlus Tokens.txt.")
             # --- league-identity guard (runs BEFORE anything is saved) ---
             # A StatsPlus session serves whichever league it is pointed at. If the
             # flip ever fails, the site could hand back the OTHER league's ratings,
@@ -240,8 +331,22 @@ def main():
                 spec = importlib.util.spec_from_file_location("ratings_db", _rdb)
                 rdb = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(rdb)
+                # in-game date of this pull: /date right now. The archive sorts
+                # its pulls by it (backtest/pull_order.py). If /date fails, the
+                # next trends export measures it from birth dates.
+                game_date = None
+                try:
+                    import datetime as _dt
+                    gd = S.fetch_date(S.normalize_base(slug), fresh=True).strip()[:10]
+                    game_date = _dt.date.fromisoformat(gd).isoformat()
+                except S.StatsPlusRefused as e:
+                    print(f"  note: in-game date not read. {e}")
+                    print("  (the trends export dates this pull from birth dates)")
+                except Exception as e:
+                    print(f"  note: in-game date not read from StatsPlus /date ({type(e).__name__}); "
+                          "the trends export dates this pull from birth dates")
                 rdb.append_pull(league, rows, source="live",
-                                files=[os.path.relpath(hist_path, REPO)])
+                                files=[os.path.relpath(hist_path, REPO)], game_date=game_date)
                 print("  ratings-history DB: appended pull -> tgs-viz/backtest/ratings_history.db")
                 # The .db is gitignored (92 MB binary) and StatsPlus serves no
                 # rating history, so a lost pull is unrecoverable. Mirror each
@@ -261,11 +366,29 @@ def main():
         rows = S.drop_foreign(rows, league=league)   # TGS: NPB/KBO; BLM: none
         print(f"  filtered out {before - len(rows)} foreign players; {len(rows)} remain")
 
+        # --- team names, contracts, injury/service status (read here, attached below) ---
+        # A live pull reads them fresh and saves the replies; --from-cache reuses
+        # the saved replies while the league's in-game date has not moved. When
+        # StatsPlus refuses or cannot be reached, stop now: app data without team
+        # names or salaries is worse than the last good copy.
+        base = S.normalize_base(slug)
+        reuse = {"cache": True} if "--from-cache" in sys.argv else {"fresh": True}
+        what = "team names"
         try:
-            names = S.team_name_map(S.fetch_teams(S.normalize_base(slug)))
-            S.enrich_org_lev(rows, names, league=league)   # readable ORG + Lev for the app/org-builder
+            teams = S.fetch_teams(base, **reuse)
+            what = "contracts and injury status"
+            contracts, players = S.fetch_contracts(base, **reuse), S.fetch_players(base, **reuse)
+        except S.StatsPlusRefused as e:
+            _stop(7, f"!!!! {league} not updated. {e.user_message(league)}",
+                  f"     Nothing was written to the app data; it keeps the last successful {league} data.")
         except Exception as e:
-            print(f"  WARNING: couldn't fetch team names ({type(e).__name__}); ORG stays numeric")
+            detail = (S.redact(str(e)).splitlines() or [""])[0][:200]
+            _stop(5, f"!!!! {league} not updated: could not read the {what} from StatsPlus "
+                     f"({type(e).__name__}{': ' + detail if detail else ''}).",
+                  f"     Nothing was written to the app data; it keeps the last successful {league} data. "
+                  "Try again in a minute.")
+        names = S.team_name_map(teams)
+        S.enrich_org_lev(rows, names, league=league)   # readable ORG + Lev for the app/org-builder
 
         trows = S.translate_rows(rows)
 
@@ -287,10 +410,14 @@ def main():
                               tails=tails, fielding=fielding, park_mode="neutral")
         hrecs_park = R.run_hitters(hit_rows, league, currency=currency,
                                    tails=tails, fielding=fielding, park_mode="blend")
-        scurves = R.live_scurves(league)   # audit D1: fitted S-curves (TGS) / None (BLM)
-        print(f"  pitching curves: {'fitted S-curves (D1, calib/' + league + '/scurves.json)' if scurves else 'two-segment lines'}")
-        precs = R.run_pitchers(pit_rows, league, scurves=scurves, currency=currency, park_mode="neutral")
-        precs_park = R.run_pitchers(pit_rows, league, scurves=scurves, currency=currency, park_mode="blend")
+        scurves = R.live_scurves(league)   # audit D1: per-block curves from calib/<LG>/scurves.json, or None
+        print(f"  pitching curves: {R.scurve_summary(scurves)}")
+        role_stuff = R.live_role_stuff(league)   # 2026-09-26: measured SP <-> RP stuff change
+        print(f"  role stuff: {'MEASURED (calib/' + league + '/role_stuff.json)' if role_stuff else 'sheet flat 5 (no role_stuff.json)'}")
+        precs = R.run_pitchers(pit_rows, league, scurves=scurves, currency=currency, park_mode="neutral",
+                               role_stuff=role_stuff)
+        precs_park = R.run_pitchers(pit_rows, league, scurves=scurves, currency=currency, park_mode="blend",
+                                    role_stuff=role_stuff)
         print(f"  park layer: neutral default + blend variant "
               f"({len(hrecs_park)} hitters / {len(precs_park)} pitchers on the My-Park basis)")
         if not hrecs and not precs:
@@ -300,19 +427,22 @@ def main():
             sys.exit(4)
 
         # --- attach contracts (salary) + injury/service status ---
-        # Public endpoints (no auth). Market Value needs Price; this also adds the
-        # per-year salary schedule, current DL status, and MLB service time.
-        attach_failed = None
+        # /contract and /players were read above with the team names. Market
+        # Value needs Price; this also adds the per-year salary schedule,
+        # current DL status, and MLB service time.
         try:
-            base = S.normalize_base(slug)
-            cmap, pmap = S.build_contract_injury_maps(S.fetch_contracts(base), S.fetch_players(base))
-            n = S.attach_contract_injury(hrecs, cmap, pmap) + S.attach_contract_injury(precs, cmap, pmap)
-            S.attach_contract_injury(hrecs_park, cmap, pmap)
-            S.attach_contract_injury(precs_park, cmap, pmap)
+            cmap, pmap = S.build_contract_injury_maps(contracts, players)
+            # a yes/no field whose column the reply lacks stays unset (not False)
+            cols = S.reply_columns(contracts, players)
+            n = (S.attach_contract_injury(hrecs, cmap, pmap, columns=cols)
+                 + S.attach_contract_injury(precs, cmap, pmap, columns=cols))
+            S.attach_contract_injury(hrecs_park, cmap, pmap, columns=cols)
+            S.attach_contract_injury(precs_park, cmap, pmap, columns=cols)
             print(f"  attached contracts + injury status: {n} players now carry a salary (Price)")
         except Exception as e:
-            attach_failed = f"{type(e).__name__}: {e}"
-            print(f"  WARNING: couldn't attach contracts/injury ({attach_failed}); Market Value will be blank")
+            _stop(5, f"!!!! {league} not updated: contracts/injury did NOT attach ({type(e).__name__}: "
+                     f"{S.redact(e)}).",
+                  f"     Nothing was written to the app data; it keeps the last successful {league} data.")
 
         # Validate the mapping: compare to the sheet's existing hitters.json (same players).
         try:
@@ -354,13 +484,19 @@ def main():
         if precs_park:
             t = write_json(precs_park, os.path.join(out_dir, "pitchers_park.json"), overwrite)
             print(f"pitchers (My Park): {len(precs_park)} -> {os.path.relpath(t, REPO)}")
-        if attach_failed:
-            # ratings were written, but salaries/DL/service are missing for this
-            # vintage — flag the leg so the bat's FAILS list tells the user to
-            # simply run the pull again (a transient endpoint failure heals).
-            print(f"!!!! {league}: ratings updated, but contracts/injury did NOT attach ({attach_failed}).")
-            print("     Market Value, Owed, Status and DL info are blank until the next successful pull.")
-            sys.exit(5)
+        # Series lineup tool: hitter values in every club park
+        # (park_lineup_values.json), rebuilt from the hitters just written.
+        # Additive. It can never fail or block a pull.
+        if overwrite and hrecs:
+            try:
+                import park_values as PV
+                rep = PV.build(league, records=hrecs, write=True, quiet=True)
+                print(f"park lineup values: {rep['hitters']} hitters x {rep['parks']} parks -> "
+                      f"{os.path.relpath(rep['written'], REPO)} ({rep['bytes'] / 1e6:.1f} MB)")
+            except (Exception, SystemExit) as e:
+                print(f"  park lineup values not rebuilt this run ({type(e).__name__}: "
+                      f"{str(e).splitlines()[0] if str(e) else 'no detail'}). The pull is fine; "
+                      f"the series lineup tool keeps its last file.")
         print("done." + ("" if overwrite else "  (side files — add --write to go live)"))
         return
 
@@ -376,7 +512,7 @@ def main():
         print(f"hitters: {len(recs)} players -> {os.path.relpath(t, REPO)}")
     if pit_f:
         recs = R.run_pitchers(R.read_export(pit_f), league, scurves=R.live_scurves(league),
-                              currency=R.live_currency(league))
+                              currency=R.live_currency(league), role_stuff=R.live_role_stuff(league))
         t = write_json(recs, os.path.join(out_dir, "pitchers.json"), overwrite)
         print(f"pitchers: {len(recs)} players -> {os.path.relpath(t, REPO)}")
     print("done." + ("" if overwrite else "  (side files — add --write to make them live)"))

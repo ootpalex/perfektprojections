@@ -310,20 +310,30 @@ def force_recalc_on_load(wbpath):
     zout.close(); zin.close(); os.replace(tmp, wbpath)
 
 
-def sync_league(league_dir, write=False, yes=False, calib=None):
+def sync_league(league_dir, write=False, yes=False, calib=None, metadata=None):
     base = os.path.join(REPO, league_dir)
     hpath = os.path.join(base, 'The Sheet Hitters.xlsx')
     ppath = os.path.join(base, 'The Sheet Pitchers.xlsx')
     regpath = os.path.join(base, '25 Regressions.xlsx')
     metpath = os.path.join(base, '25 Metadata.xlsx')
-    for p in (hpath, ppath, regpath, metpath):
+    needed = (hpath, ppath, regpath) + (() if metadata else (metpath,))
+    for p in needed:
         if not os.path.exists(p):
             print(f'  [{league_dir}] MISSING {os.path.basename(p)} - skipping league'); return
 
     H = load_vals(hpath, 'Data Points')
     P = load_vals(ppath, 'Data Points')
     REG = load_vals(regpath, 'Data Points')
-    MET = load_vals(metpath, 'Data Points')
+    if metadata:
+        # --metadata-calib: the metadata Data Points come from metadata_calibrate.py's
+        # JSON ({"cells": {coord: value-or-label}}) — the same coordinates and labels
+        # as 25 Metadata.xlsx 'Data Points', computed in Python from the season's
+        # StatsPlus stats + the ratings pull (ingest/metadata_inputs.py). The workbook
+        # is not opened at all, so no Excel recalc is needed.
+        MET = {k: v for k, v in metadata['cells'].items() if v is not None and v != ''}
+        print(f'  [metadata] Data Points taken from JSON ({len(MET)} cells) - 25 Metadata.xlsx not used')
+    else:
+        MET = load_vals(metpath, 'Data Points')
     if calib:
         n = override_reg_values(REG, calib)
         print(f'  [calib] regression values overridden from JSON ({n} cells) - workbook used for layout only')
@@ -391,16 +401,24 @@ def main():
     ap.add_argument('--yes', action='store_true', help='skip the per-league confirmation prompt')
     ap.add_argument('--calib', help='calibrate.py constants JSON: use ITS regression values '
                     '(the 25 Regressions workbook is then only read for label layout)')
+    ap.add_argument('--metadata-calib', help='metadata_calibrate.py JSON: use ITS metadata '
+                    'Data Points (25 Metadata.xlsx is then not opened at all)')
     a = ap.parse_args()
     calib = json.load(open(a.calib)) if a.calib else None
-    if calib and a.league == 'both':
-        ap.error('--calib is per-league; pass --league TGS or --league BLM with it')
+    metadata = json.load(open(a.metadata_calib, encoding='utf-8')) if a.metadata_calib else None
+    if (calib or metadata) and a.league == 'both':
+        ap.error('--calib / --metadata-calib are per-league; pass --league TGS or --league BLM')
+    if metadata and 'cells' not in metadata:
+        ap.error('--metadata-calib JSON has no "cells" map (write it with metadata_calibrate.py --json)')
     leagues = ['BLM', 'TGS'] if a.league == 'both' else [a.league]
     for lg in leagues:
-        sync_league(LEAGUE_DIRS[lg], write=a.write, yes=a.yes, calib=calib)
+        sync_league(LEAGUE_DIRS[lg], write=a.write, yes=a.yes, calib=calib, metadata=metadata)
     if not a.write:
-        print('\nDry-run only. Recalculate 25 Regressions.xlsx + 25 Metadata.xlsx in Excel first,')
-        print('then re-run with --write to apply.')
+        if metadata:
+            print('\nDry-run only. Re-run with --write to apply (metadata from the JSON, no Excel step).')
+        else:
+            print('\nDry-run only. Recalculate 25 Regressions.xlsx + 25 Metadata.xlsx in Excel first,')
+            print('then re-run with --write to apply.')
 
 
 if __name__ == '__main__':

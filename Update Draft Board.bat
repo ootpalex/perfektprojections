@@ -18,14 +18,23 @@ echo   No Excel needed.
 echo ============================================================
 echo.
 
+set "FAILS="
 echo  --- TGS ---
 python "tgs-viz\ingest\draft.py" --league TGS --write
+if errorlevel 1 set "FAILS=%FAILS% TGS"
 echo.
 echo  --- BLM ---
 python "tgs-viz\ingest\draft.py" --league BLM --slug blm --write
+if errorlevel 1 set "FAILS=%FAILS% BLM"
 
 echo.
 echo ============================================================
+if defined FAILS goto :notdone
 echo   Done. Reload the webapp (switch leagues to see each board).
+goto :end
+:notdone
+echo   NOT updated:%FAILS%
+echo   Each one says why above. Fix that, then run this again.
+:end
 echo ============================================================
 pause
