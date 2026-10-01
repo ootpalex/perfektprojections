@@ -1,0 +1,2 @@
+pull_id,league,real_date,real_ts,source,source_files,n_players,content_hash,ingested_at,game_date
+560,RG,2025-11-20,2025-11-20T00:00:00,live,"[""tgs-viz\\ingest\\.cache\\history\\export_rg_2025-11-20.json""]",11566,c9abf3160ec87793d5273787da8996a72de311e6,2026-09-27T00:38:13,2025-11-20

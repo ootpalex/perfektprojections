@@ -1,0 +1,256 @@
+{
+ "league": "DEV",
+ "calibration": "BLM",
+ "window": [
+  "2026-01-01_p74.csv.gz",
+  "2508-01-01_p558.csv.gz"
+ ],
+ "span_years": 482.0,
+ "pairs": {
+  "used": 482,
+  "zero_time": 0,
+  "contaminated": 0
+ },
+ "players": 831608,
+ "curve": {
+  "16": {
+   "n": 217503,
+   "players": 217503,
+   "years": 108751.5,
+   "mean": 0.0535,
+   "closure": 0.0096,
+   "n_gap": 217503
+  },
+  "17": {
+   "n": 700646,
+   "players": 497129,
+   "years": 350323.0,
+   "mean": 0.1062,
+   "closure": 0.0193,
+   "n_gap": 700646
+  },
+  "18": {
+   "n": 1031631,
+   "players": 578205,
+   "years": 515815.5,
+   "mean": 0.2032,
+   "closure": 0.0391,
+   "n_gap": 1031616
+  },
+  "19": {
+   "n": 1138147,
+   "players": 621933,
+   "years": 569073.5,
+   "mean": 0.3035,
+   "closure": 0.0644,
+   "n_gap": 1137978
+  },
+  "20": {
+   "n": 1121079,
+   "players": 596895,
+   "years": 560539.5,
+   "mean": 0.3467,
+   "closure": 0.085,
+   "n_gap": 1120430
+  },
+  "21": {
+   "n": 1023403,
+   "players": 579181,
+   "years": 511701.5,
+   "mean": 0.3526,
+   "closure": 0.107,
+   "n_gap": 1021164
+  },
+  "22": {
+   "n": 1008859,
+   "players": 594584,
+   "years": 504429.5,
+   "mean": 0.3373,
+   "closure": 0.1304,
+   "n_gap": 1001256
+  },
+  "23": {
+   "n": 970690,
+   "players": 562323,
+   "years": 485345.0,
+   "mean": 0.2941,
+   "closure": 0.1379,
+   "n_gap": 951739
+  },
+  "24": {
+   "n": 830574,
+   "players": 474185,
+   "years": 415287.0,
+   "mean": 0.2131,
+   "closure": 0.1188,
+   "n_gap": 795632
+  },
+  "25": {
+   "n": 684696,
+   "players": 390529,
+   "years": 342348.0,
+   "mean": 0.1263,
+   "closure": 0.0796,
+   "n_gap": 636023
+  },
+  "26": {
+   "n": 488676,
+   "players": 317997,
+   "years": 244338.0,
+   "mean": 0.0624,
+   "closure": 0.042,
+   "n_gap": 437708
+  },
+  "27": {
+   "n": 276029,
+   "players": 186539,
+   "years": 138014.5,
+   "mean": 0.0128,
+   "closure": 0.0102,
+   "n_gap": 232882
+  },
+  "28": {
+   "n": 165206,
+   "players": 100163,
+   "years": 82603.0,
+   "mean": -0.0278,
+   "closure": -0.021,
+   "n_gap": 129178
+  },
+  "29": {
+   "n": 125719,
+   "players": 75892,
+   "years": 62859.5,
+   "mean": -0.0558,
+   "closure": -0.0447,
+   "n_gap": 92680
+  },
+  "30": {
+   "n": 100054,
+   "players": 62041,
+   "years": 50027.0,
+   "mean": -0.0888,
+   "closure": -0.0568,
+   "n_gap": 41537
+  },
+  "31": {
+   "n": 80989,
+   "players": 51072,
+   "years": 40494.5,
+   "mean": -0.1286,
+   "closure": -0.0618,
+   "n_gap": 3181
+  },
+  "32": {
+   "n": 68137,
+   "players": 43650,
+   "years": 34068.5,
+   "mean": -0.162,
+   "closure": -0.1242,
+   "n_gap": 2590
+  },
+  "33": {
+   "n": 58329,
+   "players": 37831,
+   "years": 29164.5,
+   "mean": -0.1877,
+   "closure": -0.1806,
+   "n_gap": 2185
+  },
+  "34": {
+   "n": 42144,
+   "players": 29994,
+   "years": 21072.0,
+   "mean": -0.2087,
+   "closure": -0.2501,
+   "n_gap": 1608
+  },
+  "35": {
+   "n": 23252,
+   "players": 16440,
+   "years": 11626.0,
+   "mean": -0.2272,
+   "closure": -0.3215,
+   "n_gap": 903
+  },
+  "36": {
+   "n": 13142,
+   "players": 9059,
+   "years": 6571.0,
+   "mean": -0.233,
+   "closure": -0.3327,
+   "n_gap": 516
+  },
+  "37": {
+   "n": 7966,
+   "players": 5783,
+   "years": 3983.0,
+   "mean": -0.2282,
+   "closure": -0.3346,
+   "n_gap": 285
+  },
+  "38": {
+   "n": 4465,
+   "players": 3392,
+   "years": 2232.5,
+   "mean": -0.2158,
+   "closure": -0.4074,
+   "n_gap": 148
+  },
+  "39": {
+   "n": 2515,
+   "players": 1921,
+   "years": 1257.5,
+   "mean": -0.2054,
+   "closure": -0.3732,
+   "n_gap": 74
+  },
+  "40": {
+   "n": 1436,
+   "players": 1086,
+   "years": 718.0,
+   "mean": -0.2025,
+   "closure": -0.2354,
+   "n_gap": 32
+  },
+  "41": {
+   "n": 770,
+   "players": 606,
+   "years": 385.0,
+   "mean": -0.1933,
+   "closure": null,
+   "n_gap": 24
+  },
+  "42": {
+   "n": 341,
+   "players": 265,
+   "years": 170.5,
+   "mean": -0.1923,
+   "closure": null,
+   "n_gap": 13
+  },
+  "43": {
+   "n": 137,
+   "players": 110,
+   "years": 68.5,
+   "mean": -0.2174,
+   "closure": null,
+   "n_gap": 6
+  },
+  "44": {
+   "n": 46,
+   "players": 42,
+   "years": 23.0,
+   "mean": -0.2231,
+   "closure": null,
+   "n_gap": 3
+  }
+ },
+ "notes": [
+  "gain per AGE-YEAR: adjacent-pair deltas attributed to the age the player was (split on birthday crossings), exposure-weighted ratio of sums",
+  "dWAA/yr on the neutral-park basis; MLB/minors only",
+  "closure = share of the (ceiling - current) gap closed per game-year",
+  "contaminated pairs (re-scout/adjusted-ratings inside the pair) are skipped individually; clean pairs keep accumulating",
+  "ratings priced with the BLM engine calibration (the league has none of its own)"
+ ]
+}

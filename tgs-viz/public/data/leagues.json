@@ -11,10 +11,44 @@
         "pitchers_draft"
       ],
       "features": {
+        "players": true,
+        "trends": true,
         "draft": true,
         "fa": false,
         "contracts": true
       }
+    },
+    {
+      "id": "DEV",
+      "name": "Dev test (all-AI sim)",
+      "datasets": [],
+      "features": {
+        "players": false,
+        "trends": true,
+        "draft": false,
+        "fa": false,
+        "contracts": false
+      }
+    },
+    {
+      "id": "RG",
+      "name": "Regular Game",
+      "datasets": [
+        "hitters",
+        "pitchers",
+        "hitters_draft",
+        "pitchers_draft"
+      ],
+      "features": {
+        "players": true,
+        "trends": true,
+        "draft": true,
+        "fa": false,
+        "contracts": true
+      },
+      "basis": "BLM",
+      "source": "OOTP database export",
+      "save": "Regular Game"
     },
     {
       "id": "TGS",
@@ -29,6 +63,8 @@
         "pitchers_fa"
       ],
       "features": {
+        "players": true,
+        "trends": true,
         "draft": true,
         "fa": true,
         "contracts": true
