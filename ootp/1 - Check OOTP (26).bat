@@ -1,26 +1,18 @@
 @echo off
 title winsim - step 1 - check OOTP 26
 cd /d "%~dp0.."
-
-echo ============================================================
-echo   STEP 1  -  can the tool see your OOTP window?
-echo ------------------------------------------------------------
-echo   Before you run this:
-echo     - open OOTP 26
-echo     - leave it on the MAIN MENU (or in a loaded league)
-echo ============================================================
+set "TGS_PY=python"
+python -c "" >nul 2>nul && goto tgs_run
+set "TGS_PY=py -3"
+py -3 -c "" >nul 2>nul && goto tgs_run
 echo.
-
-echo --- windows the tool can see (look for "Out of the Park Baseball 26") ---
-python "ootp\winsim.py" --game 26 --list-windows
-echo.
-
-echo --- taking a screenshot of the OOTP window ---
-python "ootp\winsim.py" --game 26 --grab
-echo.
-echo ============================================================
-echo   If you saw the OOTP 26 window listed above and it said
-echo   "saved ...winsim_grab.png", you're good. Send that result
-echo   (and the ootp\winsim_grab.png file) back to Claude.
-echo ============================================================
+echo   Python is not installed, or it is not on PATH.
+echo   Install Python 3.13 from python.org and tick "Add python.exe to PATH".
+echo   Then start this again.
 pause
+exit /b 9009
+:tgs_run
+%TGS_PY% "tgs-viz\tools\run_task.py" ootp_check_26 %*
+set "RC=%errorlevel%"
+pause
+exit /b %RC%

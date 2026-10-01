@@ -1,0 +1,1005 @@
+[
+ {
+  "name": "no_token: TGS has a token",
+  "condition": {
+   "no_token": "TGS"
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": true
+   }
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": false,
+  "python_only": false
+ },
+ {
+  "name": "no_token: TGS has no token",
+  "condition": {
+   "no_token": "TGS"
+  },
+  "state": {
+   "tokens": {
+    "TGS": false,
+    "BLM": true
+   }
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "no_token: league missing from state",
+  "condition": {
+   "no_token": "XY"
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": true
+   }
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "no_token_input: league TGS, token True",
+  "condition": {
+   "no_token_input": "league"
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": false
+   }
+  },
+  "inputs": {
+   "league": "TGS"
+  },
+  "flags": {},
+  "expect": false,
+  "python_only": false
+ },
+ {
+  "name": "no_token_input: league TGS, token False",
+  "condition": {
+   "no_token_input": "league"
+  },
+  "state": {
+   "tokens": {
+    "TGS": false,
+    "BLM": true
+   }
+  },
+  "inputs": {
+   "league": "TGS"
+  },
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "no_token_input: league BLM, token True",
+  "condition": {
+   "no_token_input": "league"
+  },
+  "state": {
+   "tokens": {
+    "BLM": true,
+    "TGS": false
+   }
+  },
+  "inputs": {
+   "league": "BLM"
+  },
+  "flags": {},
+  "expect": false,
+  "python_only": false
+ },
+ {
+  "name": "no_token_input: league BLM, token False",
+  "condition": {
+   "no_token_input": "league"
+  },
+  "state": {
+   "tokens": {
+    "BLM": false,
+    "TGS": true
+   }
+  },
+  "inputs": {
+   "league": "BLM"
+  },
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "no_token_input: no league chosen yet",
+  "condition": {
+   "no_token_input": "league"
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": true
+   }
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "no_token_input: blank league",
+  "condition": {
+   "no_token_input": "league"
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": true
+   }
+  },
+  "inputs": {
+   "league": ""
+  },
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "input_nonblank: given",
+  "condition": {
+   "input_nonblank": "sessionid"
+  },
+  "state": {
+   "tokens": {}
+  },
+  "inputs": {
+   "sessionid": "abcdefgh12"
+  },
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "input_nonblank: blank",
+  "condition": {
+   "input_nonblank": "sessionid"
+  },
+  "state": {
+   "tokens": {}
+  },
+  "inputs": {
+   "sessionid": ""
+  },
+  "flags": {},
+  "expect": false,
+  "python_only": false
+ },
+ {
+  "name": "input_nonblank: spaces only",
+  "condition": {
+   "input_nonblank": "sessionid"
+  },
+  "state": {
+   "tokens": {}
+  },
+  "inputs": {
+   "sessionid": "   "
+  },
+  "flags": {},
+  "expect": false,
+  "python_only": false
+ },
+ {
+  "name": "input_nonblank: missing",
+  "condition": {
+   "input_nonblank": "sessionid"
+  },
+  "state": {
+   "tokens": {}
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": false,
+  "python_only": false
+ },
+ {
+  "name": "exists: a file in the repo",
+  "condition": {
+   "exists": "tgs-viz\\tools\\conditions.py"
+  },
+  "state": {
+   "tokens": {}
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": true,
+  "python_only": true
+ },
+ {
+  "name": "exists: a missing file",
+  "condition": {
+   "exists": "tgs-viz\\tools\\no_such_file.txt"
+  },
+  "state": {
+   "tokens": {}
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": false,
+  "python_only": true
+ },
+ {
+  "name": "flag: set",
+  "condition": {
+   "flag": "stopafter"
+  },
+  "state": {
+   "tokens": {}
+  },
+  "inputs": {},
+  "flags": {
+   "stopafter": true
+  },
+  "expect": true,
+  "python_only": true
+ },
+ {
+  "name": "flag: not set",
+  "condition": {
+   "flag": "stopafter"
+  },
+  "state": {
+   "tokens": {}
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": false,
+  "python_only": true
+ },
+ {
+  "name": "all: both true",
+  "condition": {
+   "all": [
+    {
+     "no_token": "TGS"
+    },
+    {
+     "no_token": "BLM"
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": false,
+    "BLM": false
+   }
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "all: one false",
+  "condition": {
+   "all": [
+    {
+     "no_token": "TGS"
+    },
+    {
+     "no_token": "BLM"
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": false
+   }
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": false,
+  "python_only": false
+ },
+ {
+  "name": "all: empty list",
+  "condition": {
+   "all": []
+  },
+  "state": {
+   "tokens": {}
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "any: one true",
+  "condition": {
+   "any": [
+    {
+     "no_token": "TGS"
+    },
+    {
+     "no_token": "BLM"
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": false
+   }
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "any: none true",
+  "condition": {
+   "any": [
+    {
+     "no_token": "TGS"
+    },
+    {
+     "no_token": "BLM"
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": true
+   }
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": false,
+  "python_only": false
+ },
+ {
+  "name": "any: empty list",
+  "condition": {
+   "any": []
+  },
+  "state": {
+   "tokens": {}
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": false,
+  "python_only": false
+ },
+ {
+  "name": "not: of true",
+  "condition": {
+   "not": {
+    "no_token": "TGS"
+   }
+  },
+  "state": {
+   "tokens": {
+    "TGS": false,
+    "BLM": false
+   }
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": false,
+  "python_only": false
+ },
+ {
+  "name": "not: of false",
+  "condition": {
+   "not": {
+    "no_token": "TGS"
+   }
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": true
+   }
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "not: of python-only",
+  "condition": {
+   "not": {
+    "exists": "tgs-viz\\tools\\no_such_file.txt"
+   }
+  },
+  "state": {
+   "tokens": {}
+  },
+  "inputs": {},
+  "flags": {},
+  "expect": true,
+  "python_only": true
+ },
+ {
+  "name": "get_ratings sessionid ask: tokens both, sessionid blank",
+  "condition": {
+   "any": [
+    {
+     "no_token": "TGS"
+    },
+    {
+     "no_token": "BLM"
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": true
+   }
+  },
+  "inputs": {
+   "sessionid": ""
+  },
+  "flags": {},
+  "expect": false,
+  "python_only": false
+ },
+ {
+  "name": "get_ratings csrftoken ask: tokens both, sessionid blank",
+  "condition": {
+   "all": [
+    {
+     "any": [
+      {
+       "no_token": "TGS"
+      },
+      {
+       "no_token": "BLM"
+      }
+     ]
+    },
+    {
+     "any": [
+      {
+       "all": [
+        {
+         "no_token": "TGS"
+        },
+        {
+         "no_token": "BLM"
+        }
+       ]
+      },
+      {
+       "input_nonblank": "sessionid"
+      }
+     ]
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": true
+   }
+  },
+  "inputs": {
+   "sessionid": ""
+  },
+  "flags": {},
+  "expect": false,
+  "python_only": false
+ },
+ {
+  "name": "get_ratings sessionid ask: tokens both, sessionid given",
+  "condition": {
+   "any": [
+    {
+     "no_token": "TGS"
+    },
+    {
+     "no_token": "BLM"
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": true
+   }
+  },
+  "inputs": {
+   "sessionid": "abcdefgh12"
+  },
+  "flags": {},
+  "expect": false,
+  "python_only": false
+ },
+ {
+  "name": "get_ratings csrftoken ask: tokens both, sessionid given",
+  "condition": {
+   "all": [
+    {
+     "any": [
+      {
+       "no_token": "TGS"
+      },
+      {
+       "no_token": "BLM"
+      }
+     ]
+    },
+    {
+     "any": [
+      {
+       "all": [
+        {
+         "no_token": "TGS"
+        },
+        {
+         "no_token": "BLM"
+        }
+       ]
+      },
+      {
+       "input_nonblank": "sessionid"
+      }
+     ]
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": true
+   }
+  },
+  "inputs": {
+   "sessionid": "abcdefgh12"
+  },
+  "flags": {},
+  "expect": false,
+  "python_only": false
+ },
+ {
+  "name": "get_ratings sessionid ask: tokens TGS only, sessionid blank",
+  "condition": {
+   "any": [
+    {
+     "no_token": "TGS"
+    },
+    {
+     "no_token": "BLM"
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": false
+   }
+  },
+  "inputs": {
+   "sessionid": ""
+  },
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "get_ratings csrftoken ask: tokens TGS only, sessionid blank",
+  "condition": {
+   "all": [
+    {
+     "any": [
+      {
+       "no_token": "TGS"
+      },
+      {
+       "no_token": "BLM"
+      }
+     ]
+    },
+    {
+     "any": [
+      {
+       "all": [
+        {
+         "no_token": "TGS"
+        },
+        {
+         "no_token": "BLM"
+        }
+       ]
+      },
+      {
+       "input_nonblank": "sessionid"
+      }
+     ]
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": false
+   }
+  },
+  "inputs": {
+   "sessionid": ""
+  },
+  "flags": {},
+  "expect": false,
+  "python_only": false
+ },
+ {
+  "name": "get_ratings sessionid ask: tokens TGS only, sessionid given",
+  "condition": {
+   "any": [
+    {
+     "no_token": "TGS"
+    },
+    {
+     "no_token": "BLM"
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": false
+   }
+  },
+  "inputs": {
+   "sessionid": "abcdefgh12"
+  },
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "get_ratings csrftoken ask: tokens TGS only, sessionid given",
+  "condition": {
+   "all": [
+    {
+     "any": [
+      {
+       "no_token": "TGS"
+      },
+      {
+       "no_token": "BLM"
+      }
+     ]
+    },
+    {
+     "any": [
+      {
+       "all": [
+        {
+         "no_token": "TGS"
+        },
+        {
+         "no_token": "BLM"
+        }
+       ]
+      },
+      {
+       "input_nonblank": "sessionid"
+      }
+     ]
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": true,
+    "BLM": false
+   }
+  },
+  "inputs": {
+   "sessionid": "abcdefgh12"
+  },
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "get_ratings sessionid ask: tokens BLM only, sessionid blank",
+  "condition": {
+   "any": [
+    {
+     "no_token": "TGS"
+    },
+    {
+     "no_token": "BLM"
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": false,
+    "BLM": true
+   }
+  },
+  "inputs": {
+   "sessionid": ""
+  },
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "get_ratings csrftoken ask: tokens BLM only, sessionid blank",
+  "condition": {
+   "all": [
+    {
+     "any": [
+      {
+       "no_token": "TGS"
+      },
+      {
+       "no_token": "BLM"
+      }
+     ]
+    },
+    {
+     "any": [
+      {
+       "all": [
+        {
+         "no_token": "TGS"
+        },
+        {
+         "no_token": "BLM"
+        }
+       ]
+      },
+      {
+       "input_nonblank": "sessionid"
+      }
+     ]
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": false,
+    "BLM": true
+   }
+  },
+  "inputs": {
+   "sessionid": ""
+  },
+  "flags": {},
+  "expect": false,
+  "python_only": false
+ },
+ {
+  "name": "get_ratings sessionid ask: tokens BLM only, sessionid given",
+  "condition": {
+   "any": [
+    {
+     "no_token": "TGS"
+    },
+    {
+     "no_token": "BLM"
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": false,
+    "BLM": true
+   }
+  },
+  "inputs": {
+   "sessionid": "abcdefgh12"
+  },
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "get_ratings csrftoken ask: tokens BLM only, sessionid given",
+  "condition": {
+   "all": [
+    {
+     "any": [
+      {
+       "no_token": "TGS"
+      },
+      {
+       "no_token": "BLM"
+      }
+     ]
+    },
+    {
+     "any": [
+      {
+       "all": [
+        {
+         "no_token": "TGS"
+        },
+        {
+         "no_token": "BLM"
+        }
+       ]
+      },
+      {
+       "input_nonblank": "sessionid"
+      }
+     ]
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": false,
+    "BLM": true
+   }
+  },
+  "inputs": {
+   "sessionid": "abcdefgh12"
+  },
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "get_ratings sessionid ask: tokens none, sessionid blank",
+  "condition": {
+   "any": [
+    {
+     "no_token": "TGS"
+    },
+    {
+     "no_token": "BLM"
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": false,
+    "BLM": false
+   }
+  },
+  "inputs": {
+   "sessionid": ""
+  },
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "get_ratings csrftoken ask: tokens none, sessionid blank",
+  "condition": {
+   "all": [
+    {
+     "any": [
+      {
+       "no_token": "TGS"
+      },
+      {
+       "no_token": "BLM"
+      }
+     ]
+    },
+    {
+     "any": [
+      {
+       "all": [
+        {
+         "no_token": "TGS"
+        },
+        {
+         "no_token": "BLM"
+        }
+       ]
+      },
+      {
+       "input_nonblank": "sessionid"
+      }
+     ]
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": false,
+    "BLM": false
+   }
+  },
+  "inputs": {
+   "sessionid": ""
+  },
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "get_ratings sessionid ask: tokens none, sessionid given",
+  "condition": {
+   "any": [
+    {
+     "no_token": "TGS"
+    },
+    {
+     "no_token": "BLM"
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": false,
+    "BLM": false
+   }
+  },
+  "inputs": {
+   "sessionid": "abcdefgh12"
+  },
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ },
+ {
+  "name": "get_ratings csrftoken ask: tokens none, sessionid given",
+  "condition": {
+   "all": [
+    {
+     "any": [
+      {
+       "no_token": "TGS"
+      },
+      {
+       "no_token": "BLM"
+      }
+     ]
+    },
+    {
+     "any": [
+      {
+       "all": [
+        {
+         "no_token": "TGS"
+        },
+        {
+         "no_token": "BLM"
+        }
+       ]
+      },
+      {
+       "input_nonblank": "sessionid"
+      }
+     ]
+    }
+   ]
+  },
+  "state": {
+   "tokens": {
+    "TGS": false,
+    "BLM": false
+   }
+  },
+  "inputs": {
+   "sessionid": "abcdefgh12"
+  },
+  "flags": {},
+  "expect": true,
+  "python_only": false
+ }
+]

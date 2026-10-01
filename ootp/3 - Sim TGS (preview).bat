@@ -1,14 +1,18 @@
 @echo off
 title winsim - TGS preview (no changes)
 cd /d "%~dp0.."
-
-echo ============================================================
-echo   PREVIEW  -  shows the plan, clones nothing, clicks nothing
-echo ============================================================
+set "TGS_PY=python"
+python -c "" >nul 2>nul && goto tgs_run
+set "TGS_PY=py -3"
+py -3 -c "" >nul 2>nul && goto tgs_run
 echo.
-python "ootp\winsim.py" --league TGS --runs 1 --dry-run
-echo.
-echo ============================================================
-echo   If that looks right, run "4 - Sim TGS.bat" to do it for real.
-echo ============================================================
+echo   Python is not installed, or it is not on PATH.
+echo   Install Python 3.13 from python.org and tick "Add python.exe to PATH".
+echo   Then start this again.
 pause
+exit /b 9009
+:tgs_run
+%TGS_PY% "tgs-viz\tools\run_task.py" sim_tgs_preview %*
+set "RC=%errorlevel%"
+pause
+exit /b %RC%

@@ -1,26 +1,18 @@
 @echo off
 title winsim - TGS  (real run)
 cd /d "%~dp0.."
-
-echo ============================================================
-echo   SIM TGS  -  clones your Baseline league and auto-plays it
-echo ------------------------------------------------------------
-echo   * Have OOTP 26 open INSIDE a league (any league EXCEPT the
-echo     Baseline master - the tool needs FILE-^>Load Game, and the
-echo     master must be closed so its files can be copied),
-echo     and NOT running as administrator
-echo     (if it is, the tool can't click it - see Claude's note).
-echo   * Runs 10 clones back-to-back (~10 seasons each, ~7-8 min
-echo     per clone with the new Baseline). Edit --runs to change.
-echo   * ABORT any time: slam the mouse into a screen corner.
-echo   * Do not touch the mouse/keyboard once it starts clicking.
-echo ============================================================
+set "TGS_PY=python"
+python -c "" >nul 2>nul && goto tgs_run
+set "TGS_PY=py -3"
+py -3 -c "" >nul 2>nul && goto tgs_run
 echo.
+echo   Python is not installed, or it is not on PATH.
+echo   Install Python 3.13 from python.org and tick "Add python.exe to PATH".
+echo   Then start this again.
 pause
-python "ootp\winsim.py" --league TGS --runs 10
-echo.
-echo ============================================================
-echo   Done. Next: "Recalibrate TGS.bat" (repo root) pools the new
-echo   clones into the constants and rebuilds the app data.
-echo ============================================================
+exit /b 9009
+:tgs_run
+%TGS_PY% "tgs-viz\tools\run_task.py" sim_tgs %*
+set "RC=%errorlevel%"
 pause
+exit /b %RC%

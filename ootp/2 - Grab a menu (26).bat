@@ -1,22 +1,18 @@
 @echo off
 title winsim - grab a menu (OOTP 26)
 cd /d "%~dp0.."
-
-echo ============================================================
-echo   GRAB A MENU  (OOTP 26)
-echo ------------------------------------------------------------
-echo   This brings OOTP to the front, then counts down 6 seconds.
-echo   DURING the countdown, open the menu Claude asked for
-echo   (e.g. click FILE, or click PLAY) and LEAVE it open.
-echo   It screenshots while the menu is still showing.
-echo ============================================================
+set "TGS_PY=python"
+python -c "" >nul 2>nul && goto tgs_run
+set "TGS_PY=py -3"
+py -3 -c "" >nul 2>nul && goto tgs_run
 echo.
+echo   Python is not installed, or it is not on PATH.
+echo   Install Python 3.13 from python.org and tick "Add python.exe to PATH".
+echo   Then start this again.
 pause
-
-python "ootp\winsim.py" --game 26 --grab --delay 6
-
-echo.
-echo ============================================================
-echo   Saved to ootp\winsim_grab.png  -  send it to Claude.
-echo ============================================================
+exit /b 9009
+:tgs_run
+%TGS_PY% "tgs-viz\tools\run_task.py" ootp_grab_menu_26 %*
+set "RC=%errorlevel%"
 pause
+exit /b %RC%

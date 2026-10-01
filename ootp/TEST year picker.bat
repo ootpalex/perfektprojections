@@ -1,22 +1,18 @@
 @echo off
 title winsim - TEST the year picker (no clone, no sim)
 cd /d "%~dp0.."
-
-echo ============================================================
-echo   TEST YEAR PICKER  (diagnostic - safe)
-echo ------------------------------------------------------------
-echo   Have OOTP 26 open with ANY league loaded (Baseline is fine
-echo   to just LOOK at - this never sims or clicks AUTO-PLAY).
-echo   It opens Play -^> Specified Date and tries to set the year,
-echo   then STOPS and saves screenshots for Claude.
-echo   Keep hands off once it starts. Corner-slam to abort.
-echo ============================================================
+set "TGS_PY=python"
+python -c "" >nul 2>nul && goto tgs_run
+set "TGS_PY=py -3"
+py -3 -c "" >nul 2>nul && goto tgs_run
 echo.
+echo   Python is not installed, or it is not on PATH.
+echo   Install Python 3.13 from python.org and tick "Add python.exe to PATH".
+echo   Then start this again.
 pause
-python "ootp\winsim.py" --league TGS --test-year
-echo.
-echo ============================================================
-echo   Done. Send Claude the text above, or just say "done" and
-echo   Claude will read the ootp\_diag_*.png snapshots.
-echo ============================================================
+exit /b 9009
+:tgs_run
+%TGS_PY% "tgs-viz\tools\run_task.py" ootp_test_year_26 %*
+set "RC=%errorlevel%"
 pause
+exit /b %RC%
