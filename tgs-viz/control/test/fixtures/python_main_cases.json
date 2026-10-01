@@ -1,0 +1,53 @@
+[
+  {
+    "name": "no local file",
+    "defaults": null,
+    "local": null,
+    "expect": ["python"]
+  },
+  {
+    "name": "local file without python",
+    "defaults": null,
+    "local": "{\"schema\": 1}",
+    "expect": ["python"]
+  },
+  {
+    "name": "local python.ml only keeps the default main",
+    "defaults": null,
+    "local": "{\"python\": {\"ml\": [\"py\", \"-3.14\"]}}",
+    "expect": ["python"]
+  },
+  {
+    "name": "local python.main valid",
+    "defaults": null,
+    "local": "{\"python\": {\"main\": [\"py\", \"-3.13\"]}}",
+    "expect": ["py", "-3.13"]
+  },
+  {
+    "name": "local python.main an empty list",
+    "defaults": null,
+    "local": "{\"python\": {\"main\": []}}",
+    "expect": ["python"],
+    "expect_python": "SettingsError"
+  },
+  {
+    "name": "local python.main a string",
+    "defaults": null,
+    "local": "{\"python\": {\"main\": \"python3\"}}",
+    "expect": ["python"],
+    "expect_python": "SettingsError"
+  },
+  {
+    "name": "local file not valid JSON",
+    "defaults": null,
+    "local": "{bad",
+    "expect": ["python"],
+    "expect_python": "SettingsError"
+  },
+  {
+    "name": "a value holding %USERPROFILE% is kept as written",
+    "defaults": null,
+    "local": "{\"python\": {\"main\": [\"%USERPROFILE%\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\"]}}",
+    "expect": ["%USERPROFILE%\\AppData\\Local\\Programs\\Python\\Python313\\python.exe"]
+  }
+]
