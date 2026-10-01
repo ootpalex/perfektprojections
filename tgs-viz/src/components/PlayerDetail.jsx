@@ -5,6 +5,7 @@ import { controlWindow, formatControl } from '../lib/serviceTime';
 import { formatCellValue, getCellColorClass } from '../lib/columns';
 import { loadRatingTrends, playerHistory } from '../lib/ratingTrends';
 import { loadAgeCurve } from '../lib/ageCurve';
+import { useDataVersion } from '../lib/dataVersion';
 import { devSummary, devPeakText, devBasisText, devMlWords, fmtWaa } from '../lib/devSignals';
 import { trainingNotes, TRAIN_PEAK_BAR } from '../lib/orgBuilder';
 import { X } from 'lucide-react';
@@ -184,11 +185,13 @@ function Sparkline({ values, delta }) {
  */
 function RatingHistory({ player }) {
   const [trends, setTrends] = useState(undefined); // undefined=loading, null=unavailable
+  // Live refresh: loads again when the league's trends file changes.
+  const trendsVersion = useDataVersion(player._appLeague || null, 'trends');
   useEffect(() => {
     let on = true;
-    loadRatingTrends(player._appLeague).then(t => { if (on) setTrends(t); });
+    loadRatingTrends(player._appLeague).then(t => { if (on) setTrends(prev => (t == null && prev ? prev : t)); });
     return () => { on = false; };
-  }, [player._appLeague]);
+  }, [player._appLeague, trendsVersion]);
 
   if (trends === undefined) return null;           // still loading — stay quiet
   if (trends === null) return null;                // no trends file — feature hidden
@@ -265,11 +268,13 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
 
   // Measured league dev curve (null until loaded / absent for the league)
   const [ageCurve, setAgeCurve] = useState(null);
+  // Live refresh: loads again when DEV's curve or the league's own curve changes.
+  const curveVersion = useDataVersion(player._appLeague || null, 'age_curve');
   useEffect(() => {
     let on = true;
-    loadAgeCurve(player._appLeague).then(c => { if (on) setAgeCurve(c); });
+    loadAgeCurve(player._appLeague).then(c => { if (on) setAgeCurve(prev => c ?? prev); });
     return () => { on = false; };
-  }, [player._appLeague]);
+  }, [player._appLeague, curveVersion]);
 
   // valueYears: control is what you keep, valueYears is what is worth counting (a free
   // agent controls 0 seasons but is not worth 0). See serviceTime.controlWindow.

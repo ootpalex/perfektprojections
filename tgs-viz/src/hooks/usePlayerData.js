@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { calculateFutureValue } from '../lib/futureValue';
 import { controlWindow } from '../lib/serviceTime';
 import { buildAgeGroups, calculateDraftFV } from '../lib/draftFV';
@@ -11,6 +11,8 @@ import { loadRatingTrends } from '../lib/ratingTrends';
 import { applyDevSignals, fetchDevSignals } from '../lib/devSignals';
 import { applyDevMl, fetchDevMl, devMlStaleReason } from '../lib/devMl';
 import { loadAgeCurve, MEASURED_CURVE_LEAGUE } from '../lib/ageCurve';
+import { useDataVersion, useAnyDataVersion, registerInvalidator, changedFilesSince, currentTick } from '../lib/dataVersion';
+import { keysToFetch, mergeRaw } from '../lib/softMerge';
 
 export { DEFAULT_FEATURES };
 
@@ -68,6 +70,18 @@ function getDataFiles(league, parkMode = 'neutral') {
   };
 }
 
+function emptyData() {
+  return {
+    hitters: [], pitchers: [],
+    hitters_draft: [], pitchers_draft: [],
+    hitters_draft_all: [], pitchers_draft_all: [],
+    draft_picks: [], parks: [], park_list: [],
+    hitters_fa: [], pitchers_fa: [], iafa: [], r5: [],
+    metadata: null,
+    marketBank: null,
+  };
+}
+
 // Per-league feature flags, manifest schemas and the built-in TGS/BLM fallback
 // live in lib/leagues.js (a pure module, so a node check can load it).
 
@@ -78,12 +92,18 @@ function getDataFiles(league, parkMode = 'neutral') {
  * A trends-only league (features.players false) is listed only when its
  * rating_trends.json exists; the probe is the same cached fetch the Rating
  * Trends page reuses, so the file is downloaded once.
+ * It loads again when leagues.json or any league's trends file changes (live
+ * refresh). A reload that fails keeps the list it had.
  */
 export function useLeagues() {
   const [leagues, setLeagues] = useState([]);
   const [loading, setLoading] = useState(true);
+  const leaguesVersion = useDataVersion(null, 'leagues');
+  const trendsVersion = useAnyDataVersion('trends');
 
   useEffect(() => {
+    let on = true;
+    const keepOrFallback = (prev) => (prev.length ? prev : FALLBACK_LEAGUES);
     fetch('/data/leagues.json')
       .then(res => {
         // Non-JSON = dev-server SPA fallback for a missing file — same as 404.
@@ -98,19 +118,118 @@ export function useLeagues() {
         const present = await Promise.all(normalized.map(lg => (
           isTrendsOnly(lg) ? loadRatingTrends(lg.id).then(t => t != null) : Promise.resolve(true)
         )));
-        const shown = normalized.filter((_, i) => present[i]);
-        setLeagues(shown.length ? shown : FALLBACK_LEAGUES);
+        if (!on) return;
+        setLeagues(prev => {
+          // On a reload, a failed probe keeps a trends-only league that was listed
+          // (a file read mid-write): only leagues.json takes a league away (9.4).
+          const had = new Set(prev.map(lg => lg.id));
+          const shown = normalized.filter((lg, i) => present[i] || had.has(lg.id));
+          return shown.length ? shown : keepOrFallback(prev);
+        });
         setLoading(false);
       })
       .catch(e => {
-        console.warn('leagues.json unavailable — using built-in TGS/BLM fallback:', e);
-        setLeagues(FALLBACK_LEAGUES);
+        if (!on) return;
+        console.warn('leagues.json did not load; keeping the current list, or the built-in TGS/BLM list on the first load:', e);
+        setLeagues(keepOrFallback);
         setLoading(false);
       });
-  }, []);
+    return () => { on = false; };
+  }, [leaguesVersion, trendsVersion]);
 
   return { leagues, loading };
 }
+
+// One player list. A missing *_park draft file falls back to the neutral
+// one; a 404 or a non-JSON answer (the dev server's SPA fallback) is
+// 'missing'. Rows with no Name are dropped and every row is stamped with the
+// app league. A body that does not parse throws.
+async function fetchPlayerList(url, league) {
+  let res = await fetch(url);
+  // Dev server SPA-fallback returns index.html (200, text/html) for
+  // missing files — treat non-JSON responses as missing, same as a 404.
+  let ctype = res.headers.get('content-type') || '';
+  // A missing *_park draft file (league's last board build predates the
+  // park variants) falls back to the neutral draft file rather than an
+  // empty board.
+  if ((!res.ok || !ctype.includes('json')) && url.includes('_draft') && url.includes('_park')) {
+    res = await fetch(url.replace('_park', ''));
+    ctype = res.headers.get('content-type') || '';
+  }
+  if (!res.ok || !ctype.includes('json')) return { status: 'missing', rows: [] };
+  const json = await res.json();
+  // Filter out blank/empty rows (no Name) that come from empty sheet rows.
+  // Stamp the app's league id (M5): the raw 'League' field is StatsPlus's
+  // NUMERIC OOTP id (e.g. 112), useless for keying leagueCalib — the
+  // per-league replacement offsets in futureValue/draftFV read _appLeague.
+  const rows = json
+    .filter(p => p.Name && String(p.Name).trim() !== '' && String(p.Name).trim() !== '-')
+    .map(p => ({ ...p, _appLeague: league || 'TGS' }));
+  return { status: 'loaded', rows };
+}
+
+// An object file (metadata, market_fit). { ok, value }: value null when it is missing.
+async function fetchObjectFile(url) {
+  try {
+    const res = await fetch(url);
+    const ctype = res.headers.get('content-type') || '';
+    if (!res.ok || !ctype.includes('json')) return { ok: false, value: null };
+    return { ok: true, value: await res.json() };
+  } catch {
+    return { ok: false, value: null };
+  }
+}
+
+/**
+ * The app's lists from the raw inputs: dev signals onto the raw lists, then
+ * the dev ML numbers with the same-pull guard. The raw lists are never
+ * enriched in place, so a live refresh can build again from them.
+ */
+function buildFromRaw(raw, listKeys, league) {
+  const results = {};
+  for (const key of listKeys) results[key] = raw[key] || [];
+  // Per-league metadata (matchup shares etc.) — an object, not a player array.
+  results.metadata = raw.metadata ?? null;
+  // Banked FA market fit (scripts/bank_market_fit.mjs). Optional: a league
+  // that has never been banked just prices off its live fit.
+  results.marketBank = raw.marketBank ?? null;
+
+  // Dev signals (growth, Pot direction, DEV-league odds of becoming a
+  // regular) for players aged 16-22 at the latest pull. Absent file = no
+  // Dev_* fields on any row. The park variants carry the same IDs, so one
+  // file serves both bases.
+  const devSignals = raw.devSignals || null;
+  if (devSignals) {
+    for (const key of DEV_SIGNAL_LISTS) {
+      results[key] = applyDevSignals(results[key], devSignals);
+    }
+  }
+  // ML numbers (backtest/ml/score.py; user, 2026-09-24: "is there any way
+  // you can make a machine learning model to help with figuring out this
+  // dev stuff") replace the cell method right after the signals, so Proj
+  // Potential, the Org Builder, the columns, the card and the draft boards
+  // all read them. Stale guard: only when dev_ml.json is on the same pull
+  // as dev_signals.json; otherwise the cell method stays.
+  const devMl = raw.devMl || null;
+  if (devMl) {
+    const stale = devMlStaleReason(devMl, devSignals);
+    if (stale) {
+      const line = `dev_ml.json not used for ${league || 'default'}: ${stale}; the cell method stays`;
+      if (!devMlStaleLogged.has(line)) {
+        devMlStaleLogged.add(line);
+        console.info(line);
+      }
+    } else {
+      for (const key of DEV_SIGNAL_LISTS) {
+        results[key] = applyDevMl(results[key], devMl, devSignals);
+      }
+    }
+  }
+  return results;
+}
+
+const REFRESH_IDLE = { refreshing: false, refreshedAt: null, refreshFailed: false };
+const RETRY_MS = 5000;
 
 /**
  * Main data loading hook.
@@ -118,141 +237,147 @@ export function useLeagues() {
  * Re-fetches when league changes.
  * wantPlayers false (a trends-only league) skips every fetch and resolves at
  * once with empty lists, so no "missing file" error can come from it.
+ *
+ * Live refresh (DESIGN 9.4): when the dev server says this league's player
+ * files changed, only the changed files the current view uses are fetched
+ * again, with no loading screen. A file that fails to load keeps its previous
+ * rows (refreshFailed), and the failed files are tried once more after 5 s.
  */
 export function usePlayerData(league, parkMode = 'neutral', wantPlayers = true) {
-  const [data, setData] = useState({
-    hitters: [],
-    pitchers: [],
-    hitters_draft: [],
-    pitchers_draft: [],
-    hitters_draft_all: [],
-    pitchers_draft_all: [],
-    draft_picks: [], parks: [], park_list: [],
-    hitters_fa: [], iafa: [], r5: [],
-    pitchers_fa: [],
-    metadata: null,
-    marketBank: null,
-  });
+  const [data, setData] = useState(emptyData);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [loadProgress, setLoadProgress] = useState({});
+  const [refresh, setRefresh] = useState(REFRESH_IDLE);
+  const [retry, setRetry] = useState(0);
+  const version = useDataVersion(league, 'players');
+  // The last good load: which view it was for, its raw inputs, and the store
+  // step it reflects. Failed keys wait for the next refresh or the retry.
+  const ref = useRef({ ident: null, raw: null, tick: 0, failedKeys: [], retryTimer: null, retried: false });
+
+  useEffect(() => () => clearTimeout(ref.current.retryTimer), []);
 
   useEffect(() => {
     let cancelled = false;
+    const r = ref.current;
+    const ident = `${league}|${parkMode}|${wantPlayers}`;
+    const dataFiles = getDataFiles(league, parkMode);
+    const listKeys = Object.keys(dataFiles);
+    const base = league ? `/data/${league}` : '/data';
+
+    // ---- soft path: same view, the data version moved ------------------
+    if (r.ident === ident) {
+      if (!wantPlayers || !r.raw) return () => { cancelled = true; };
+      const tickNow = currentTick();
+      const changed = changedFilesSince(league, 'players', r.tick);
+      const keys = [...new Set([...keysToFetch(changed, dataFiles, parkMode), ...r.failedKeys])];
+      if (!keys.length) {
+        r.tick = tickNow;
+        setRefresh(prev => (prev.refreshing ? { ...prev, refreshing: false } : prev));
+        return () => { cancelled = true; };
+      }
+      setRefresh(prev => ({ ...prev, refreshing: true }));
+
+      (async () => {
+        const fetched = {};
+        const failed = [];
+        await Promise.all(keys.map(async (key) => {
+          try {
+            if (dataFiles[key]) {
+              const res = await fetchPlayerList(dataFiles[key], league);
+              if (res.status === 'loaded') fetched[key] = res.rows;
+              else failed.push(key);
+            } else if (key === 'metadata' || key === 'marketBank') {
+              const res = await fetchObjectFile(`${base}/${key === 'metadata' ? 'metadata' : 'market_fit'}.json`);
+              if (res.ok) fetched[key] = res.value;
+              else failed.push(key);
+            } else if (key === 'devSignals' || key === 'devMl') {
+              const v = key === 'devSignals' ? await fetchDevSignals(base) : await fetchDevMl(base);
+              if (v) fetched[key] = v;
+              else failed.push(key);
+            }
+          } catch (e) {
+            console.warn(`Live refresh of ${key} failed; keeping the previous data:`, e);
+            failed.push(key);
+          }
+        }));
+        if (cancelled) return;
+        const merged = mergeRaw(r.raw, fetched, failed);
+        const results = buildFromRaw(merged, listKeys, league);
+        r.raw = merged;
+        r.tick = tickNow;
+        r.failedKeys = failed;
+        setData(results);
+        setRefresh({ refreshing: false, refreshedAt: Date.now(), refreshFailed: failed.length > 0 });
+        clearTimeout(r.retryTimer);
+        if (failed.length && !r.retried) {
+          r.retried = true;
+          r.retryTimer = setTimeout(() => setRetry(n => n + 1), RETRY_MS);
+        } else if (!failed.length) {
+          r.retried = false;
+        }
+      })().catch(e => {
+        if (cancelled) return;
+        console.warn('Live refresh failed; keeping the previous data:', e);
+        setRefresh(prev => ({ ...prev, refreshing: false, refreshFailed: true }));
+      });
+      return () => { cancelled = true; };
+    }
+
+    // ---- hard path: a new league, park basis or player switch -----------
+    clearTimeout(r.retryTimer);
+    r.ident = null;
+    r.raw = null;
+    r.failedKeys = [];
+    r.retried = false;
+    const tickAtStart = currentTick();
 
     // Reset state when league changes
     setLoading(true);
     setError(null);
     setLoadProgress({});
-    setData({
-      hitters: [], pitchers: [],
-      hitters_draft: [], pitchers_draft: [],
-      hitters_draft_all: [], pitchers_draft_all: [],
-      draft_picks: [], parks: [], park_list: [],
-      hitters_fa: [], pitchers_fa: [], iafa: [], r5: [],
-      metadata: null,
-      marketBank: null,
-    });
+    setRefresh(REFRESH_IDLE);
+    setData(emptyData());
 
     if (!wantPlayers) {
+      r.ident = ident;
       setLoading(false);
       return () => { cancelled = true; };
     }
 
-    const dataFiles = getDataFiles(league, parkMode);
-
     async function loadAll() {
-      const results = {};
+      const raw = {};
 
-      for (const [key, url] of Object.entries(dataFiles)) {
+      // The files load in parallel; each keeps its own progress line.
+      await Promise.all(listKeys.map(async (key) => {
         try {
           setLoadProgress(prev => ({ ...prev, [key]: 'loading' }));
-          let res = await fetch(url);
-          // Dev server SPA-fallback returns index.html (200, text/html) for
-          // missing files — treat non-JSON responses as missing, same as a 404.
-          let ctype = res.headers.get('content-type') || '';
-          // A missing *_park draft file (league's last board build predates the
-          // park variants) falls back to the neutral draft file rather than an
-          // empty board.
-          if ((!res.ok || !ctype.includes('json')) && url.includes('_draft') && url.includes('_park')) {
-            res = await fetch(url.replace('_park', ''));
-            ctype = res.headers.get('content-type') || '';
-          }
-          if (!res.ok || !ctype.includes('json')) {
-            setLoadProgress(prev => ({ ...prev, [key]: 'missing' }));
-            results[key] = [];
-            continue;
-          }
-          const json = await res.json();
-          // Filter out blank/empty rows (no Name) that come from empty sheet rows.
-          // Stamp the app's league id (M5): the raw 'League' field is StatsPlus's
-          // NUMERIC OOTP id (e.g. 112), useless for keying leagueCalib — the
-          // per-league replacement offsets in futureValue/draftFV read _appLeague.
-          results[key] = json
-            .filter(p => p.Name && String(p.Name).trim() !== '' && String(p.Name).trim() !== '-')
-            .map(p => ({ ...p, _appLeague: league || 'TGS' }));
-          setLoadProgress(prev => ({ ...prev, [key]: 'loaded' }));
+          const res = await fetchPlayerList(dataFiles[key], league);
+          raw[key] = res.rows;
+          if (!cancelled) setLoadProgress(prev => ({ ...prev, [key]: res.status }));
         } catch (e) {
           console.warn(`Failed to load ${key}:`, e);
-          setLoadProgress(prev => ({ ...prev, [key]: 'error' }));
-          results[key] = [];
+          if (!cancelled) setLoadProgress(prev => ({ ...prev, [key]: 'error' }));
+          raw[key] = [];
         }
-      }
+      }));
 
-      const base = league ? `/data/${league}` : '/data';
-
-      // Per-league metadata (matchup shares etc.) — an object, not a player array.
-      try {
-        const mres = await fetch(`${base}/metadata.json`);
-        const mtype = mres.headers.get('content-type') || '';
-        results.metadata = (mres.ok && mtype.includes('json')) ? await mres.json() : null;
-      } catch {
-        results.metadata = null;
-      }
-
-      // Banked FA market fit (scripts/bank_market_fit.mjs). Optional: a league
-      // that has never been banked just prices off its live fit.
-      try {
-        const bres = await fetch(`${base}/market_fit.json`);
-        const btype = bres.headers.get('content-type') || '';
-        results.marketBank = (bres.ok && btype.includes('json')) ? await bres.json() : null;
-      } catch {
-        results.marketBank = null;
-      }
-
-      // Dev signals (growth, Pot direction, DEV-league odds of becoming a
-      // regular) for players aged 16-22 at the latest pull. Absent file = no
-      // Dev_* fields on any row. The park variants carry the same IDs, so one
-      // file serves both bases.
-      const devSignals = await fetchDevSignals(base);
-      if (devSignals) {
-        for (const key of DEV_SIGNAL_LISTS) {
-          results[key] = applyDevSignals(results[key], devSignals);
-        }
-      }
-      // ML numbers (backtest/ml/score.py; user, 2026-09-24: "is there any way
-      // you can make a machine learning model to help with figuring out this
-      // dev stuff") replace the cell method right after the signals, so Proj
-      // Potential, the Org Builder, the columns, the card and the draft boards
-      // all read them. Stale guard: only when dev_ml.json is on the same pull
-      // as dev_signals.json; otherwise the cell method stays.
-      const devMl = await fetchDevMl(base);
-      if (devMl) {
-        const stale = devMlStaleReason(devMl, devSignals);
-        if (stale) {
-          const line = `dev_ml.json not used for ${league || 'default'}: ${stale}; the cell method stays`;
-          if (!devMlStaleLogged.has(line)) {
-            devMlStaleLogged.add(line);
-            console.info(line);
-          }
-        } else {
-          for (const key of DEV_SIGNAL_LISTS) {
-            results[key] = applyDevMl(results[key], devMl, devSignals);
-          }
-        }
-      }
+      const [metadata, marketBank, devSignals, devMl] = await Promise.all([
+        fetchObjectFile(`${base}/metadata.json`),
+        fetchObjectFile(`${base}/market_fit.json`),
+        fetchDevSignals(base),
+        fetchDevMl(base),
+      ]);
+      raw.metadata = metadata.value;
+      raw.marketBank = marketBank.value;
+      raw.devSignals = devSignals;
+      raw.devMl = devMl;
 
       if (!cancelled) {
+        const results = buildFromRaw(raw, listKeys, league);
+        r.ident = ident;
+        r.raw = raw;
+        r.tick = tickAtStart;
         setData(results);
         setLoading(false);
       }
@@ -266,9 +391,9 @@ export function usePlayerData(league, parkMode = 'neutral', wantPlayers = true) 
     });
 
     return () => { cancelled = true; };
-  }, [league, parkMode, wantPlayers]);
+  }, [league, parkMode, wantPlayers, version, retry]);
 
-  return { data, loading, error, loadProgress };
+  return { data, loading, error, loadProgress, ...refresh };
 }
 
 /**
@@ -311,18 +436,33 @@ function fetchJsonShared(url) {
   return promise;
 }
 
+// A live refresh of player or series files must never answer from the shared copy.
+function clearRecent() {
+  _recent.clear();
+}
+registerInvalidator('players', clearRecent);
+registerInvalidator('series', clearRecent);
+
 /**
  * Series Planner data for one league.
  * `hitters` is the app's loaded list: it IS the neutral file when the park
  * toggle is on Neutral, so it is reused. On My Park the neutral file is fetched.
  * status: 'loading' | 'ready' | 'missing' (no park values file yet) | 'error'.
+ * A reload after a data change keeps the ready state on screen: it swaps on
+ * success and keeps the old state on failure.
  */
 export function useSeriesPlannerData(league, parkMode, hitters) {
   const [state, setState] = useState({ status: 'loading', parkValues: null, neutralHitters: [], error: null });
+  const version = useDataVersion(league, 'series');
+  const last = useRef({ ident: null, status: 'loading' });
+  last.current.status = state.status;
 
   useEffect(() => {
     let cancelled = false;
-    setState({ status: 'loading', parkValues: null, neutralHitters: [], error: null });
+    const ident = `${league}|${parkMode}`;
+    const soft = last.current.ident === ident && last.current.status === 'ready';
+    last.current.ident = ident;
+    if (!soft) setState({ status: 'loading', parkValues: null, neutralHitters: [], error: null });
     const files = getSeriesFiles(league);
 
     async function load() {
@@ -344,10 +484,17 @@ export function useSeriesPlannerData(league, parkMode, hitters) {
     }
 
     load()
-      .then(next => { if (!cancelled) setState(next); })
-      .catch(e => { if (!cancelled) setState({ status: 'error', parkValues: null, neutralHitters: [], error: e.message }); });
+      .then(next => {
+        if (cancelled) return;
+        if (soft && next.status !== 'ready') return;   // keep the old state
+        setState(next);
+      })
+      .catch(e => {
+        if (cancelled || soft) return;
+        setState({ status: 'error', parkValues: null, neutralHitters: [], error: e.message });
+      });
     return () => { cancelled = true; };
-  }, [league, parkMode, hitters]);
+  }, [league, parkMode, hitters, version]);
 
   return state;
 }
@@ -508,18 +655,24 @@ const LEAGUE_MIN_SALARY = 750000;
 // The measured DEV curve, loaded once. With it, calculateFutureValue runs
 // the measured year-by-year path for every player (futureValue.js); until
 // it arrives (or when the file is missing) the assumed model runs.
-function useMeasuredCurve() {
+// It loads again when DEV's curve or the league's own curve changes (live
+// refresh); a reload that finds no file keeps the curve it had.
+function useMeasuredCurve(league) {
   const [curve, setCurve] = useState(null);
+  const version = useDataVersion(league || null, 'age_curve');
   useEffect(() => {
     let on = true;
-    loadAgeCurve(MEASURED_CURVE_LEAGUE).then(c => { if (on) setCurve(c); });
+    loadAgeCurve(MEASURED_CURVE_LEAGUE).then(c => { if (on) setCurve(prev => c ?? prev); });
     return () => { on = false; };
-  }, []);
+  }, [version]);
   return curve;
 }
 
+// The app league of a row list (every row carries the same stamp).
+const listLeague = (rows) => (Array.isArray(rows) && rows.length ? rows[0]._appLeague || null : null);
+
 export function usePlayersWithFV(players) {
-  const curve = useMeasuredCurve();
+  const curve = useMeasuredCurve(listLeague(players));
   return useMemo(() => {
     // League minimum salary, measured from THIS league's own rows: the modal
     // single-year salary among org-attached players (TGS 750k, BLM 700k — the
@@ -818,7 +971,7 @@ export function useHittersWithMarketValue(players, marketFit) {
   // The measured DEV curve: contract and offer paths run on the row's
   // measured path (marketValue.agedWARPath) and the curve extends it past
   // its last age.
-  const curve = useMeasuredCurve();
+  const curve = useMeasuredCurve(listLeague(players));
   return useMemo(() => {
     if (!players || players.length === 0 || !marketFit || !marketFit.pooled) return players;
     const rate = resolveRate(marketFit, 'hitter');
@@ -835,7 +988,7 @@ export function useHittersWithMarketValue(players, marketFit) {
  * Same fitted line resolution; shows SP/RP role for reference.
  */
 export function usePitchersWithMarketValue(players, marketFit) {
-  const curve = useMeasuredCurve();
+  const curve = useMeasuredCurve(listLeague(players));
   return useMemo(() => {
     if (!players || players.length === 0 || !marketFit || !marketFit.pooled) return players;
     const rate = resolveRate(marketFit, 'pitcher');

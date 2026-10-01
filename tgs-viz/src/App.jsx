@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Routes, Route, NavLink, Navigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Routes, Route, NavLink, Navigate, Link, useLocation } from 'react-router-dom';
 import { usePlayerData, useLeagues, useMarketRate, DEFAULT_FEATURES } from './hooks/usePlayerData';
 import HittersPage from './pages/HittersPage';
 import PitchersPage from './pages/PitchersPage';
@@ -16,9 +16,40 @@ import TrendsPage from './pages/TrendsPage';
 import WaiverClaimPage from './pages/WaiverClaimPage';
 import ParksPage from './pages/ParksPage';
 import MakeItOddsPage from './pages/MakeItOddsPage';
-import { Users, Zap, Target, Trophy, Loader2, AlertCircle, BarChart3, TrendingUp, ChevronDown, DollarSign, TableProperties, Building2, Activity, ClipboardList, Swords, Percent } from 'lucide-react';
+import ControlPage from './pages/ControlPage';
+import { useActiveJobs, useControlStatus } from './lib/controlApi';
+import { Users, Zap, Target, Trophy, Loader2, AlertCircle, BarChart3, TrendingUp, ChevronDown, DollarSign, TableProperties, Building2, Activity, ClipboardList, Swords, Percent, SquareTerminal } from 'lucide-react';
 
-function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeChange, features, iafaCount = 0, r5Count = 0 }) {
+// The dot next to Control: the most urgent active job. Amber = a job waits for
+// an answer, blue = one runs, slate = one only waits for its turn.
+function controlDot(jobs) {
+  if (!jobs || !jobs.length) return null;
+  if (jobs.some(j => j.status === 'waiting' || j.prompt === true)) return { cls: 'bg-amber-400 animate-pulse', title: 'A task needs your answer' };
+  if (jobs.some(j => j.status === 'running' || j.status === 'starting')) return { cls: 'bg-blue-400 animate-pulse', title: 'A task is running' };
+  if (jobs.some(j => j.status === 'queued')) return { cls: 'bg-slate-500', title: 'A task is waiting for its turn' };
+  return null;
+}
+
+// The footer line about live refresh (DESIGN 9.5).
+function RefreshLine({ refresh, liveRefresh }) {
+  if (!liveRefresh) {
+    return <p className="text-amber-400/80 mb-1">Live refresh is off. Press F5 after an update.</p>;
+  }
+  if (!refresh) return null;
+  if (refresh.refreshing) return <p className="text-blue-400 mb-1">Updating...</p>;
+  if (refresh.refreshFailed) return <p className="text-amber-400 mb-1">Update failed; showing the previous data</p>;
+  if (refresh.refreshedAt) {
+    const t = new Date(refresh.refreshedAt);
+    const hhmm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    return <p className="text-slate-500 mb-1">Updated {hhmm}</p>;
+  }
+  return null;
+}
+
+function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeChange, features, iafaCount = 0, r5Count = 0, refresh = null }) {
+  const activeJobs = useActiveJobs();
+  const { liveRefresh } = useControlStatus();
+  const dot = controlDot(activeJobs);
   const linkClass = ({ isActive }) =>
     `flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
       isActive
@@ -201,16 +232,24 @@ function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeC
         </NavLink>
         )}
       </div>
-      <div className="p-3 border-t border-slate-800 text-[10px] text-slate-600">
+      {/* Control: always here, for every league and every data state. */}
+      <div className="px-2 pt-2 border-t border-slate-800">
+        <NavLink to="/control" className={linkClass}>
+          <SquareTerminal size={16} /> Control
+          {dot && <span className={`ml-auto w-2 h-2 rounded-full ${dot.cls}`} title={dot.title} />}
+        </NavLink>
+      </div>
+      <div className="p-3 border-t border-slate-800 text-[10px] text-slate-600 mt-2">
+        <RefreshLine refresh={refresh} liveRefresh={liveRefresh} />
         OOTP 26 Analytics
       </div>
     </nav>
   );
 }
 
-function LoadingScreen({ progress, league }) {
+function LoadingScreen({ progress, league, full = true }) {
   return (
-    <div className="flex items-center justify-center h-screen bg-slate-950">
+    <div className={`flex items-center justify-center ${full ? 'h-screen' : 'h-full'} bg-slate-950`}>
       <div className="text-center space-y-4">
         <Loader2 size={48} className="animate-spin text-blue-500 mx-auto" />
         <div>
@@ -238,21 +277,23 @@ function LoadingScreen({ progress, league }) {
   );
 }
 
-function ErrorScreen({ error }) {
+// Shown inside the app shell, so the league menu and Control stay usable.
+function ErrorPanel({ error }) {
   return (
-    <div className="flex items-center justify-center h-screen bg-slate-950">
+    <div className="flex items-center justify-center h-full bg-slate-950 p-6">
       <div className="text-center space-y-4 max-w-md">
         <AlertCircle size={48} className="text-red-400 mx-auto" />
         <div>
-          <h2 className="text-xl font-bold text-white">Error Loading Data</h2>
+          <h2 className="text-xl font-bold text-white">This league's data could not be loaded</h2>
           <p className="text-sm text-red-400 mt-2">{error}</p>
         </div>
-        <div className="text-sm text-slate-400 bg-slate-900 rounded-lg p-4 text-left">
-          <p className="font-semibold text-slate-300 mb-2">Make sure you've run the data extractor:</p>
-          <code className="text-blue-400 text-xs block bg-slate-800 p-2 rounded">
-            cd tgs-viz && python extract_data.py
-          </code>
-          <p className="mt-2 text-xs">This extracts data from all "The Sheets *" folders into JSON files that the web app reads.</p>
+        <div className="text-sm text-slate-400 bg-slate-900 border border-slate-800 rounded-lg p-4 text-left">
+          <p>
+            Pick another league in the menu on the left, or open Control, then Setup check, to see what is missing.
+          </p>
+          <Link to="/control/setup" className="inline-block mt-3 text-blue-400 hover:text-blue-300 font-semibold">
+            Open Setup check
+          </Link>
         </div>
       </div>
     </div>
@@ -260,6 +301,9 @@ function ErrorScreen({ error }) {
 }
 
 export default function App() {
+  const location = useLocation();
+  const onControl = location.pathname === '/control' || location.pathname.startsWith('/control/');
+
   // Load the leagues manifest (falls back to built-in TGS/BLM if missing)
   const { leagues, loading: leaguesLoading } = useLeagues();
 
@@ -268,18 +312,27 @@ export default function App() {
     return localStorage.getItem('tgs-league') || '';
   });
 
-  // When leagues load, ensure we have a valid selection
+  // When leagues load, ensure we have a valid selection. On the first load an
+  // unknown saved league is replaced, as always. A later list (live refresh)
+  // that no longer holds the open league only switches the view: the saved
+  // choice stays, so it comes back if the league returns.
+  const firstLeagues = useRef(true);
   useEffect(() => {
     if (leagues.length > 0) {
-      const saved = localStorage.getItem('tgs-league');
-      const isValid = leagues.some(lg => lg.id === saved);
-      if (!isValid) {
-        // Default to first league
+      if (firstLeagues.current) {
+        firstLeagues.current = false;
+        const saved = localStorage.getItem('tgs-league');
+        const isValid = leagues.some(lg => lg.id === saved);
+        if (!isValid) {
+          // Default to first league
+          setCurrentLeague(leagues[0].id);
+          localStorage.setItem('tgs-league', leagues[0].id);
+        }
+      } else if (!leagues.some(lg => lg.id === currentLeague)) {
         setCurrentLeague(leagues[0].id);
-        localStorage.setItem('tgs-league', leagues[0].id);
       }
     }
-  }, [leagues]);
+  }, [leagues]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLeagueChange = (leagueId) => {
     setCurrentLeague(leagueId);
@@ -305,7 +358,8 @@ export default function App() {
   const wantPlayers = leaguesLoading || showPlayers;
 
   // Load player data for the selected league
-  const { data, loading, error, loadProgress } = usePlayerData(currentLeague, parkMode, wantPlayers);
+  const { data, loading, error, loadProgress, refreshing, refreshedAt, refreshFailed } = usePlayerData(currentLeague, parkMode, wantPlayers);
+  const refresh = { refreshing, refreshedAt, refreshFailed };
 
   // Compute league-wide $/WAA rate (must be before early returns — React hooks rule)
   const marketRate = useMarketRate(data.hitters, data.pitchers, data.marketBank);
@@ -357,21 +411,9 @@ export default function App() {
     };
   }, [data.hitters, data.pitchers]);
 
-  // Show loading while leagues manifest loads
-  if (leaguesLoading) return <LoadingScreen progress={{}} league="" />;
-  if (leagues.length === 0) return <ErrorScreen error="No leagues found. Run python extract_data.py first." />;
-
-  // Show loading while player data loads
-  if (loading) return <LoadingScreen progress={loadProgress} league={currentLeague} />;
-  if (error) return <ErrorScreen error={error} />;
-
-  const hasData = data.hitters.length > 0 || data.pitchers.length > 0;
-
-  if (!hasData && showPlayers) {
-    return <ErrorScreen error={`No player data found for league "${currentLeague}". Run python extract_data.py first.`} />;
-  }
-
-  return (
+  // Today's layout: the sidebar and the page. Every state below the first
+  // manifest load keeps the sidebar, so the league menu and Control stay usable.
+  const shell = (content) => (
     <div className="flex h-screen bg-slate-950">
       <Sidebar
         leagues={leagues}
@@ -382,11 +424,38 @@ export default function App() {
         features={features}
         iafaCount={iafa.count}
         r5Count={r5.count}
+        refresh={refresh}
       />
       <main className="flex-1 overflow-hidden">
         <div className="gradient-bar" />
         <div className="h-[calc(100%-3px)]">
-          {!showPlayers ? (
+          {content}
+        </div>
+      </main>
+    </div>
+  );
+
+  // Show loading while leagues manifest loads (first load only)
+  if (leaguesLoading) return <LoadingScreen progress={{}} league="" />;
+
+  // The Control page works whatever state the league data is in; the player
+  // data keeps loading underneath.
+  if (onControl) return shell(<ControlPage league={currentLeague} />);
+
+  if (leagues.length === 0) return shell(<ErrorPanel error="No leagues found." />);
+
+  // Show loading while player data loads
+  if (loading) return shell(<LoadingScreen progress={loadProgress} league={currentLeague} full={false} />);
+  if (error) return shell(<ErrorPanel error={error} />);
+
+  const hasData = data.hitters.length > 0 || data.pitchers.length > 0;
+
+  if (!hasData && showPlayers) {
+    return shell(<ErrorPanel error={`No player data found for league "${currentLeague}".`} />);
+  }
+
+  return shell(
+          !showPlayers ? (
           // Trends-only league: one page. Any other path (a player page left
           // open from the previous league) lands on it.
           <Routes>
@@ -431,7 +500,7 @@ export default function App() {
             } />
             <Route path="/parks" element={<ParksPage parks={data.parks} parkList={data.park_list} league={currentLeague} />} />
             <Route path="/organization" element={
-              <OrganizationPage hitters={data.hitters} pitchers={data.pitchers} metadata={data.metadata} league={currentLeague} />
+              <OrganizationPage hitters={data.hitters} pitchers={data.pitchers} metadata={data.metadata} league={currentLeague} parkMode={parkMode} />
             } />
             <Route path="/waivers" element={
               <WaiverClaimPage hitters={data.hitters} pitchers={data.pitchers} league={currentLeague} />
@@ -450,9 +519,6 @@ export default function App() {
             <Route path="/trends" element={<TrendsPage league={currentLeague} />} />
             <Route path="/odds" element={<MakeItOddsPage />} />
           </Routes>
-          )}
-        </div>
-      </main>
-    </div>
+          )
   );
 }

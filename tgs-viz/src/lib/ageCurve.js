@@ -33,13 +33,23 @@ async function fetchCurve(league) {
   return null;
 }
 
-export async function loadAgeCurve(league) {
+// The cache holds the load promise, so the many hooks that ask at once after
+// an invalidation share one fetch.
+export function loadAgeCurve(league) {
   if (cache.has(league)) return cache.get(league);
-  let curve = await fetchCurve(MEASURED_CURVE_LEAGUE);
-  if (curve) curve = { ...curve, source_league: MEASURED_CURVE_LEAGUE };
-  else curve = await fetchCurve(league);
-  cache.set(league, curve);
-  return curve;
+  const p = (async () => {
+    let curve = await fetchCurve(MEASURED_CURVE_LEAGUE);
+    if (curve) curve = { ...curve, source_league: MEASURED_CURVE_LEAGUE };
+    else curve = await fetchCurve(league);
+    return curve;
+  })();
+  cache.set(league, p);
+  return p;
+}
+
+/** Forget every cached curve, so the next load fetches again (live refresh). */
+export function invalidateAgeCurves() {
+  cache.clear();
 }
 
 // ---------------------------------------------------------------------------

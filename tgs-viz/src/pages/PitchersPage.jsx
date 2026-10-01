@@ -1,15 +1,12 @@
-import React, { useState } from 'react';
+import React from 'react';
 import PlayerTable from '../components/PlayerTable';
 import PlayerDetail from '../components/PlayerDetail';
 import { PITCHER_COLUMN_GROUPS } from '../lib/columns';
 import { usePlayersWithFV, usePlayersWithDraftFV, usePlayersWithG5FV, usePlayersWithHybridFV, usePitchersWithMarketValue } from '../hooks/usePlayerData';
 import { formatMoney } from '../lib/marketValue';
+import { useSelectedById } from '../hooks/useSelectedById';
 
 export default function PitchersPage({ players, isDraft = false, isFA = false, isIAFA = false, isR5 = false, allPlayers, marketRate }) {
-  const [selectedPlayer, setSelectedPlayer] = useState(null);
-  // A dataset swap (league or park-basis change) replaces every row object;
-  // an open detail panel would keep showing the OLD basis next to new numbers.
-  React.useEffect(() => { setSelectedPlayer(null); }, [players]);
   const playersWithFV = usePlayersWithFV(players);
 
   // Compute Draft FV for all players when allPlayers is available
@@ -28,6 +25,9 @@ export default function PitchersPage({ players, isDraft = false, isFA = false, i
 
   // Compute market value (fitted FA line, offer range, surplus)
   const finalPlayers = usePitchersWithMarketValue(playersWithHybrid, marketRate);
+  // The open card is kept by player ID and found again in the current rows, so
+  // a data refresh or a park-basis switch shows the new numbers in the card.
+  const { selected: selectedPlayer, select, clear } = useSelectedById({ pitcher: finalPlayers });
   const fit = marketRate?.pooled;
   const lowConfidence = marketRate?.lowConfidence;
   // A banked fit carries lowConfidence:false, so without this the stale line would show
@@ -78,7 +78,7 @@ export default function PitchersPage({ players, isDraft = false, isFA = false, i
           players={finalPlayers}
           columnGroups={PITCHER_COLUMN_GROUPS}
           defaultActiveGroups={defaultGroups}
-          onPlayerClick={setSelectedPlayer}
+          onPlayerClick={(row) => select(row, 'pitcher')}
           selectedPlayerId={selectedPlayer?.ID}
           maxRows={1000}
           storageKey={isIAFA ? 'iafa-pitchers' : isR5 ? 'r5-pitchers' : isFA ? 'fa-pitchers' : isDraft ? 'draft-pitchers' : 'pitchers'}
@@ -88,7 +88,7 @@ export default function PitchersPage({ players, isDraft = false, isFA = false, i
       {selectedPlayer && (
         <PlayerDetail
           player={selectedPlayer}
-          onClose={() => setSelectedPlayer(null)}
+          onClose={clear}
           type="pitcher"
         />
       )}

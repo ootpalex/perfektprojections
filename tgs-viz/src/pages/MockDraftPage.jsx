@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { usePlayersWithFV, usePlayersWithDraftFV } from '../hooks/usePlayerData';
 import PlayerDetail from '../components/PlayerDetail';
+import { useSelectedById } from '../hooks/useSelectedById';
 import { formatCellValue, getCellColorClass } from '../lib/columns';
 
 /**
@@ -14,8 +15,6 @@ import { formatCellValue, getCellColorClass } from '../lib/columns';
  * page works for any league size or draft format.
  */
 export default function MockDraftPage({ hitters, pitchers, fullHitters, fullPitchers, picks, allHitters, allPitchers }) {
-  const [selectedPlayer, setSelectedPlayer] = useState(null);
-  const [playerType, setPlayerType] = useState(null);
   const [picksPerRound, setPicksPerRound] = useState(28);
   const [rounds, setRounds] = useState(35);
   const [viewRound, setViewRound] = useState('all'); // 'all' | round number | 'und'
@@ -45,6 +44,9 @@ export default function MockDraftPage({ hitters, pitchers, fullHitters, fullPitc
   const pitchersWithFV = usePlayersWithFV(srcPitchers);
   const hittersWithDraftFV = usePlayersWithDraftFV(hittersWithFV, allHitters || [], 'hitter');
   const pitchersWithDraftFV = usePlayersWithDraftFV(pitchersWithFV, allPitchers || [], 'pitcher');
+  // The open card is kept by player ID and found again in the current rows.
+  const rowsByKind = useMemo(() => ({ hitter: hittersWithDraftFV, pitcher: pitchersWithDraftFV }), [hittersWithDraftFV, pitchersWithDraftFV]);
+  const { selected: selectedPlayer, kind: playerType, select, clear } = useSelectedById(rowsByKind);
 
   const slotted = useMemo(() => {
     const players = [
@@ -333,7 +335,7 @@ export default function MockDraftPage({ hitters, pitchers, fullHitters, fullPitc
               {visible.map((player) => (
                 <tr key={player.ID || `${player.Name}-${player._overall}`}
                   className={`cursor-pointer hover:bg-slate-800 ${player._wrecked ? 'opacity-40' : ''} ${player._pick === 1 && viewRound === 'all' ? 'border-t-2 border-slate-600' : ''}`}
-                  onClick={() => { setSelectedPlayer(player); setPlayerType(player._type === 'H' ? 'hitter' : 'pitcher'); }}>
+                  onClick={() => select(player, player._type === 'H' ? 'hitter' : 'pitcher')}>
                   <td className="font-mono font-bold text-slate-200">{player._slot}</td>
                   {hasReal && <td className="text-xs text-slate-400 whitespace-nowrap">{player._mockTeam || ''}</td>}
                   <td>
@@ -380,7 +382,7 @@ export default function MockDraftPage({ hitters, pitchers, fullHitters, fullPitc
       {selectedPlayer && (
         <PlayerDetail
           player={selectedPlayer}
-          onClose={() => setSelectedPlayer(null)}
+          onClose={clear}
           type={playerType}
         />
       )}

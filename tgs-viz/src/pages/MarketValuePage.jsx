@@ -3,6 +3,7 @@ import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Responsive
 import { analyzeMarket, calculatePlayerValue, resolveRate, getPlayerRole, formatMoney } from '../lib/marketValue';
 import { formatControl } from '../lib/serviceTime';
 import { usePlayersWithFV } from '../hooks/usePlayerData';
+import { useSelectedById } from '../hooks/useSelectedById';
 import { Search, ChevronDown, ChevronUp, DollarSign, TrendingUp, Info } from 'lucide-react';
 
 /**
@@ -20,7 +21,6 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
   const [filterType, setFilterType] = useState('ALL'); // ALL, IFA, MLB, PROSPECT, CONTRACT
   const [sortKey, setSortKey] = useState('_ctrSurplus');
   const [sortDir, setSortDir] = useState('desc');
-  const [selectedPlayer, setSelectedPlayer] = useState(null);
   // Manual override knobs (in $M) — blank = use the fitted values
   const [slopeOverride, setSlopeOverride] = useState('');
   const [floorOverride, setFloorOverride] = useState('');
@@ -77,13 +77,16 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
     });
   }, [hittersWithFV, pitchersWithFV, hitterRate, pitcherRate]);
 
-  // The detail card must track the CURRENT enrichment (override changes re-run
-  // the valuation) — a click-time snapshot would go stale when the user edits
-  // the slope/floor override while a player is open.
-  const selectedCurrent = useMemo(() => {
-    if (!selectedPlayer) return null;
-    return allPlayers.find(x => x.ID === selectedPlayer.ID) ?? selectedPlayer;
-  }, [allPlayers, selectedPlayer]);
+  // The detail card must track the CURRENT enrichment: override changes re-run
+  // the valuation, and a data refresh brings new rows, so a click-time snapshot
+  // would go stale. The shared hook keeps the pick by ID and finds the row again.
+  const rowsByKind = useMemo(() => ({
+    hitter: allPlayers.filter(p => p._playerType !== 'Pitcher'),
+    pitcher: allPlayers.filter(p => p._playerType === 'Pitcher'),
+  }), [allPlayers]);
+  const { selected: selectedCurrent, select, clear } = useSelectedById(rowsByKind);
+  const selectedPlayer = selectedCurrent;
+  const kindOf = (p) => (p._playerType === 'Pitcher' ? 'pitcher' : 'hitter');
 
   // Filter and sort
   const filteredPlayers = useMemo(() => {
@@ -468,7 +471,7 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
                 {filteredPlayers.slice(0, 500).map((p, i) => (
                   <tr
                     key={p.ID || i}
-                    onClick={() => setSelectedPlayer(selectedPlayer?.ID === p.ID ? null : p)}
+                    onClick={() => (selectedPlayer?.ID === p.ID && selectedPlayer?._playerType === p._playerType ? clear() : select(p, kindOf(p)))}
                     className={`border-b border-slate-800/50 hover:bg-slate-800/50 cursor-pointer transition-colors ${
                       selectedPlayer?.ID === p.ID ? 'bg-blue-900/20' : ''
                     }`}

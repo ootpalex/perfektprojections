@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   LEVELS, LEVEL_RANK, buildRosters, listOrgs, chanceOf,
   isFillerBat, trainingNotes, TRAIN_PEAK_BAR, keepCmp,
@@ -7,6 +7,7 @@ import { devAlreadyThere, devShareBasisWords, devIsMl, devMlWords, devMlRangeNot
 import { PositionalStrengthCard } from '../components/PositionalStrength';
 import { LEAGUE_TEAMS } from './TeamStandingsPage';
 import { usePlayerData, usePlayersWithFV } from '../hooks/usePlayerData';
+import { useAppConfig } from '../lib/controlApi';
 import { Building2, ArrowUpCircle, ArrowDownCircle, AlertTriangle, ChevronDown, Zap, Users } from 'lucide-react';
 
 const fmt = (v) => (v === null || v === undefined ? '—' : Number(v).toFixed(1));
@@ -277,15 +278,16 @@ function SummaryCard({ title, icon, children }) {
   );
 }
 
-export default function OrganizationPage({ hitters: hittersIn = [], pitchers: pitchersIn = [], metadata, league }) {
+export default function OrganizationPage({ hitters: hittersIn = [], pitchers: pitchersIn = [], metadata, league, parkMode = 'neutral' }) {
   // The Org Builder ALWAYS reads the NEUTRAL park basis. Farm placement is a
   // normalized development question — the kid plays in minor-league parks, not
   // Wrigley — and a knife-edge player must not change LEVELS when the MLB park
   // lens flips (James Barbera cleared the AA bar by 0.01 neutral and missed by
   // 0.01 on My Park). Park-lens MLB context lives on the Roster Optimizer and
-  // Team Projections pages. When the app toggle is already Neutral the files
-  // are identical (and cached), so this costs nothing.
-  const { data: neutralData } = usePlayerData(league, 'neutral');
+  // Team Projections pages. When the app toggle is already Neutral the app's
+  // own lists ARE the neutral files, so this hook loads nothing and the page
+  // uses the lists it was given.
+  const { data: neutralData } = usePlayerData(league, 'neutral', parkMode !== 'neutral');
   const hittersNeutral = neutralData.hitters.length ? neutralData.hitters : hittersIn;
   const pitchersNeutral = neutralData.pitchers.length ? neutralData.pitchers : pitchersIn;
   // Proj Potential on every row (user, 2026-09-24: the Org tab must use what
@@ -298,7 +300,17 @@ export default function OrganizationPage({ hitters: hittersIn = [], pitchers: pi
 
   const orgs = useMemo(() => listOrgs(hitters, pitchers), [hitters, pitchers]);
   const [org, setOrg] = useState('');
-  useEffect(() => { if (orgs.length && !orgs.includes(org)) setOrg(orgs.find((o) => /cub/i.test(o)) || orgs[0]); }, [orgs]); // eslint-disable-line
+  // Default org: the league's my_org from the settings (app config), else the
+  // first org matching /cub/i, else the first org. The config may arrive after
+  // the rows. Once the user picks an org, only an org that left the list is fixed.
+  const myOrg = useAppConfig()?.leagues?.[league]?.my_org;
+  const pickedOrg = useRef(false);
+  useEffect(() => {
+    if (!orgs.length) return;
+    if (pickedOrg.current && orgs.includes(org)) return;
+    const want = orgs.find((o) => o === myOrg) || orgs.find((o) => /cub/i.test(o)) || orgs[0];
+    if (want !== org) setOrg(want);
+  }, [orgs, myOrg]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Same platoon-weight basis as the Roster Optimizer + Team Projections, so
   // the MLB card is the SAME roster those screens show.
@@ -346,7 +358,7 @@ export default function OrganizationPage({ hitters: hittersIn = [], pitchers: pi
           </div>
         </div>
         <div className="relative">
-          <select value={org} onChange={(e) => setOrg(e.target.value)}
+          <select value={org} onChange={(e) => { pickedOrg.current = true; setOrg(e.target.value); }}
             className="appearance-none bg-slate-800 text-white text-sm font-semibold rounded-lg px-3 py-2 pr-8 border border-slate-700 hover:border-blue-500 focus:outline-none cursor-pointer min-w-[200px]">
             {orgs.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>

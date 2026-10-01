@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useDataVersion } from '../lib/dataVersion';
 import {
   ComposedChart, Line, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
@@ -152,10 +153,16 @@ function Block({ b, showSheet }) {
 export default function CalibrationPage({ league }) {
   const [cal, setCal] = useState(undefined);   // undefined = loading, null = absent
   const [tab, setTab] = useState('hitters');
+  // Live refresh: the file loads again when it changes. Only a league change
+  // shows the loading line, and a reload that fails keeps the table on screen.
+  const version = useDataVersion(league, 'calibration');
+  const shownLeague = useRef(null);
 
   useEffect(() => {
     let on = true;
-    setCal(undefined);
+    const refresh = shownLeague.current === league;
+    shownLeague.current = league;
+    if (!refresh) setCal(undefined);
     fetch('/data/' + league + '/calibration.json')
       .then((res) => {
         const ct = res.headers.get('content-type') || '';
@@ -163,9 +170,9 @@ export default function CalibrationPage({ league }) {
         return res.json();
       })
       .then((j) => { if (on) setCal(j); })
-      .catch(() => { if (on) setCal(null); });
+      .catch(() => { if (on) setCal(prev => (refresh && prev ? prev : null)); });
     return () => { on = false; };
-  }, [league]);
+  }, [league, version]);
 
   if (cal === undefined) {
     return <div className="p-6 text-slate-400">Loading calibration…</div>;

@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { buildClaimBoard } from '../lib/waivers';
 import { listOrgs } from '../lib/orgBuilder';
 import { formatMoney } from '../lib/marketValue';
+import { useAppConfig } from '../lib/controlApi';
 import { ClipboardList, ChevronDown, ArrowUpCircle, AlertTriangle, Users } from 'lucide-react';
 
 const fmt = (v) => (v === null || v === undefined ? '—' : Number(v).toFixed(2));
@@ -52,7 +53,17 @@ function FitCell({ e }) {
 export default function WaiverClaimPage({ hitters, pitchers, league }) {
   const orgs = useMemo(() => listOrgs(hitters, pitchers), [hitters, pitchers]);
   const [org, setOrg] = useState('');
-  useEffect(() => { if (orgs.length && !orgs.includes(org)) setOrg(orgs.find((o) => /cub/i.test(o)) || orgs[0]); }, [orgs]); // eslint-disable-line
+  // Default org: the league's my_org from the settings (app config), else the
+  // first org matching /cub/i, else the first org. The config may arrive after
+  // the rows. Once the user picks an org, only an org that left the list is fixed.
+  const myOrg = useAppConfig()?.leagues?.[league]?.my_org;
+  const pickedOrg = useRef(false);
+  useEffect(() => {
+    if (!orgs.length) return;
+    if (pickedOrg.current && orgs.includes(org)) return;
+    const want = orgs.find((o) => o === myOrg) || orgs.find((o) => /cub/i.test(o)) || orgs[0];
+    if (want !== org) setOrg(want);
+  }, [orgs, myOrg]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [onlyUpgrades, setOnlyUpgrades] = useState(false);
 
@@ -81,7 +92,7 @@ export default function WaiverClaimPage({ hitters, pitchers, league }) {
           </div>
         </div>
         <div className="relative">
-          <select value={org} onChange={(e) => setOrg(e.target.value)}
+          <select value={org} onChange={(e) => { pickedOrg.current = true; setOrg(e.target.value); }}
             className="appearance-none bg-slate-800 text-white text-sm font-semibold rounded-lg px-3 py-2 pr-8 border border-slate-700 hover:border-blue-500 focus:outline-none cursor-pointer min-w-[200px]">
             {orgs.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>

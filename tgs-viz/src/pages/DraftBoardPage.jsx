@@ -1,13 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { usePlayersWithFV, usePlayersWithDraftFV, usePlayersWithG5FV, usePlayersWithHybridFV } from '../hooks/usePlayerData';
 import PlayerDetail from '../components/PlayerDetail';
+import { useSelectedById } from '../hooks/useSelectedById';
 import { formatCellValue, getCellColorClass } from '../lib/columns';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ScatterChart, Scatter, ZAxis } from 'recharts';
 import { TrendingUp, Users, Zap, Download } from 'lucide-react';
 
 export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitchers }) {
-  const [selectedPlayer, setSelectedPlayer] = useState(null);
-  const [playerType, setPlayerType] = useState(null);
   const [viewMode, setViewMode] = useState('combined'); // combined, hitters, pitchers
   const [sortBy, setSortBy] = useState('_draftRawFV'); // default to Draft FV Raw
   const [maxAge, setMaxAge] = useState(30);
@@ -24,6 +23,9 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
   const pitchersWithG5 = usePlayersWithG5FV(pitchersWithDraftFV, allPitchers || [], 'pitcher');
   const hittersWithHybrid = usePlayersWithHybridFV(hittersWithG5);
   const pitchersWithHybrid = usePlayersWithHybridFV(pitchersWithG5);
+  // The open card is kept by player ID and found again in the current rows.
+  const rowsByKind = useMemo(() => ({ hitter: hittersWithHybrid, pitcher: pitchersWithHybrid }), [hittersWithHybrid, pitchersWithHybrid]);
+  const { selected: selectedPlayer, kind: playerType, select, clear } = useSelectedById(rowsByKind);
 
   // Combined and sorted draft board
   const draftBoard = useMemo(() => {
@@ -256,7 +258,7 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
               {draftBoard.map((player, idx) => (
                 <tr key={player.ID || player.Name || idx}
                   className={`cursor-pointer hover:bg-slate-800 ${player._wrecked ? 'opacity-40 line-through' : ''}`}
-                  onClick={() => { setSelectedPlayer(player); setPlayerType(player._type === 'H' ? 'hitter' : 'pitcher'); }}>
+                  onClick={() => select(player, player._type === 'H' ? 'hitter' : 'pitcher')}>
                   <td className="text-slate-600 font-mono text-xs">{player.ID}</td>
                   <td className="text-slate-500 font-mono">{idx + 1}</td>
                   <td>
@@ -338,7 +340,7 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
       {selectedPlayer && (
         <PlayerDetail
           player={selectedPlayer}
-          onClose={() => setSelectedPlayer(null)}
+          onClose={clear}
           type={playerType}
         />
       )}

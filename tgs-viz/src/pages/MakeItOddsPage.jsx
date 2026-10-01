@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, Info } from 'lucide-react';
 import { getCellColorClass } from '../lib/columns';
+import { registerInvalidator, useDataVersion } from '../lib/dataVersion';
 
 /**
  * MakeItOddsPage: the odds that a young player with one given rating turns
@@ -56,6 +57,12 @@ function loadOdds() {
   }
   return oddsPromise;
 }
+
+// Live refresh: forget the loaded file, so the next load reads it again.
+function resetOdds() {
+  oddsPromise = null;
+}
+registerInvalidator('odds', resetOdds);
 
 const has = (list, v) => list.some(([k]) => k === v);
 function readChoices() {
@@ -156,11 +163,17 @@ function OddsTable({ attr, table, ages, bands, outcome, thinN, roleWord, outcome
 export default function MakeItOddsPage() {
   const [odds, setOdds] = useState(undefined);
   const [choices, setChoices] = useState(readChoices);
+  const version = useDataVersion(null, 'odds');
   useEffect(() => {
     let on = true;
-    loadOdds().then(d => { if (on) setOdds(d); });
+    loadOdds().then(d => {
+      if (!on) return;
+      // A reload that finds nothing keeps the old tables and tries again next time.
+      if (d === null) resetOdds();
+      setOdds(prev => (d === null && prev ? prev : d));
+    });
     return () => { on = false; };
-  }, []);
+  }, [version]);
   const choose = patch => setChoices(prev => {
     const next = { ...prev, ...patch };
     saveChoices(next);

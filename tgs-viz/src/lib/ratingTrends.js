@@ -23,6 +23,18 @@ export function ratingScale(ageCurves) {
   return DISPLAY_UNIT[s] ? s : '20-80';
 }
 
+/**
+ * Forget the cached trends of one league, so the next load fetches the file
+ * again (live refresh, lib/dataVersion.js). No league: forget every league.
+ */
+export function invalidateRatingTrends(league) {
+  if (league === undefined || league === null) {
+    for (const k of Object.keys(cache)) delete cache[k];
+    return;
+  }
+  delete cache[league];
+}
+
 /** Fetch (once per league) the trends file. Resolves to null when missing. */
 export function loadRatingTrends(league) {
   const lg = league || 'TGS';

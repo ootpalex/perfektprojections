@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
-import { loadRatingTrends, ratingScale, DISPLAY_UNIT } from '../lib/ratingTrends';
+import { loadRatingTrends, ratingScale, DISPLAY_UNIT, invalidateRatingTrends } from '../lib/ratingTrends';
+import { useDataVersion } from '../lib/dataVersion';
 import { TrendingUp, TrendingDown, Info, Loader2 } from 'lucide-react';
 
 /**
@@ -966,12 +967,23 @@ function DevSummary({ ageCurves }) {
 
 export default function TrendsPage({ league }) {
   const [trends, setTrends] = useState(undefined);
+  // Live refresh: the file loads again when it changes. Only a league change
+  // shows the loading line; a reload that finds nothing keeps the old trends
+  // and lets the next load try again.
+  const version = useDataVersion(league, 'trends');
+  const shownLeague = useRef(null);
   useEffect(() => {
-    setTrends(undefined);
+    const refresh = shownLeague.current === league;
+    shownLeague.current = league;
+    if (!refresh) setTrends(undefined);
     let on = true;
-    loadRatingTrends(league).then(t => { if (on) setTrends(t); });
+    loadRatingTrends(league).then(t => {
+      if (!on) return;
+      if (t == null && refresh) { invalidateRatingTrends(league); setTrends(prev => (prev ?? t)); return; }
+      setTrends(t);
+    });
     return () => { on = false; };
-  }, [league]);
+  }, [league, version]);
 
   const windows = useMemo(() => Object.keys(trends?.movers || {}).map(Number).sort((a, b) => a - b), [trends]);
   const [win, setWin] = useState(null);

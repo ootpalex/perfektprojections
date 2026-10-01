@@ -3,6 +3,7 @@ import { optimizeRoster, getMaxWAA, leagueWinOffset, isInjured, leagueHasInjuryD
 import { LEAGUE_TEAMS } from './TeamStandingsPage';
 import { formatCellValue, getCellColorClass } from '../lib/columns';
 import PlayerDetail from '../components/PlayerDetail';
+import { useSelectedById } from '../hooks/useSelectedById';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
 import { Trophy, Users, Zap, Shield, Target, ArrowLeftRight, Calculator, Sigma, Dices, HeartPulse, TrendingUp, Cross } from 'lucide-react';
 
@@ -31,8 +32,10 @@ function Metric({ label, value, sub, tone = 'text-white' }) {
 }
 
 export default function RosterOptimizerPage({ hitters, pitchers, metadata, league }) {
-  const [selectedPlayer, setSelectedPlayer] = useState(null);
-  const [playerType, setPlayerType] = useState(null);
+  // The open card is kept by player ID and found again in the page's current
+  // rows, so a data refresh shows the new numbers in the card.
+  const rowsByKind = useMemo(() => ({ hitter: hitters, pitcher: pitchers }), [hitters, pitchers]);
+  const { selected: selectedPlayer, kind: playerType, select, clear } = useSelectedById(rowsByKind);
   const [orgFilter, setOrgFilter] = useState('ALL');
   const [levelFilter, setLevelFilter] = useState('ALL');
   const [activeLineup, setActiveLineup] = useState('vR'); // 'vR' or 'vL'
@@ -238,7 +241,7 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
     const waa = player._maxWAA || 0;
     return (
       <tr className="cursor-pointer hover:bg-slate-800/50"
-        onClick={() => { setSelectedPlayer(player); setPlayerType('hitter'); }}>
+        onClick={() => select(player, 'hitter')}>
         <td className="font-bold text-green-400">{role}</td>
         <td className="font-medium text-white">{player.Name}</td>
         <td className="text-slate-400">{player.POS}</td>
@@ -653,7 +656,7 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
                 if (!entry) return null;
                 return (
                   <tr key={idx} className="cursor-pointer hover:bg-slate-800/50"
-                    onClick={() => { setSelectedPlayer(entry.player); setPlayerType('hitter'); }}>
+                    onClick={() => select(entry.player, 'hitter')}>
                     <td className="font-bold text-blue-400">{entry.slot}</td>
                     <td className="font-bold text-amber-400">{entry.position}</td>
                     <td className="font-medium text-white">{entry.player.Name}</td>
@@ -730,7 +733,7 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
             <tbody>
               {roster.startingPitchers?.map((p, i) => (
                 <tr key={i} className="cursor-pointer hover:bg-slate-800/50"
-                  onClick={() => { setSelectedPlayer(p); setPlayerType('pitcher'); }}>
+                  onClick={() => select(p, 'pitcher')}>
                   <td className="font-bold text-amber-400">SP{i + 1}</td>
                   <td className="font-medium text-white">{p.Name}</td>
                   <td>{Math.round(parseFloat(p.Age) || 0)}</td>
@@ -766,7 +769,7 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
             <tbody>
               {roster.reliefPitchers?.map((p, i) => (
                 <tr key={i} className="cursor-pointer hover:bg-slate-800/50"
-                  onClick={() => { setSelectedPlayer(p); setPlayerType('pitcher'); }}>
+                  onClick={() => select(p, 'pitcher')}>
                   <td className="font-bold text-purple-400">RP{i + 1}</td>
                   <td className="font-medium text-white">{p.Name}</td>
                   <td>{Math.round(parseFloat(p.Age) || 0)}</td>
@@ -831,7 +834,7 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
       {selectedPlayer && (
         <PlayerDetail
           player={selectedPlayer}
-          onClose={() => setSelectedPlayer(null)}
+          onClose={clear}
           type={playerType}
         />
       )}
