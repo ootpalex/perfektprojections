@@ -239,7 +239,14 @@ def main(argv=None):
     tmp = dst + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         fh.write(text)
-    os.replace(tmp, dst)
+    for attempt in range(10):          # the app may be reading dev_ml.json: retry the move
+        try:
+            os.replace(tmp, dst)
+            break
+        except PermissionError:
+            if attempt == 9:
+                raise
+            time.sleep(0.2)
     log(f"wrote {dst} [{time.time() - t0:.0f}s]")
 
 

@@ -1,0 +1,9 @@
+# Main Python (the "python" command), Python 3.11 or newer.
+# Install: python -m pip install -r requirements.txt
+openpyxl>=3.1.5
+numpy>=2.4.2
+# Only for Grind, Sim Dev League and the OOTP tools (screen automation):
+pyautogui>=0.9.54
+pywin32>=312
+opencv-python>=5.0.0.93
+Pillow>=12.1.1

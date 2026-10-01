@@ -57,9 +57,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 import statsplus as S  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "tools"))
+import settings as ST  # noqa: E402
 
 LEAGUE_DIRS = {"TGS": "The Sheets TGS", "BLM": "The Sheets BLM"}
-SLUGS = {"TGS": "tgs", "BLM": "blm"}
+SLUGS = {lg: s for lg, s in ST.slug_map().items() if lg in LEAGUE_DIRS}
 PITCHER_POS = {"SP", "RP", "CL", "P"}
 POS_CODE = {"P": 1, "C": 2, "1B": 3, "2B": 4, "3B": 5, "SS": 6, "LF": 7, "CF": 8, "RF": 9, "DH": 10,
             "SP": 1, "RP": 1, "CL": 1}
@@ -556,7 +558,7 @@ def main():
     ap.add_argument("--refresh", action="store_true", help="refetch the API feeds (ignore cache)")
     a = ap.parse_args()
 
-    slug = a.slug or SLUGS[a.league]
+    slug = a.slug or SLUGS.get(a.league) or ST.slug(a.league)
     base = S.normalize_base(slug)
     try:
         date = S.fetch_date(base)

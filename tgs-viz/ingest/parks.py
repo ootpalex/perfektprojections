@@ -38,6 +38,15 @@ NPB = {"Fukuoka Vipers", "Hiroshima Phoenix", "Kansai Cubs", "Kyoto Aces",
        "Sendai Woodpeckers", "Tokyo Golden Kites", "Tokyo Jaguars", "Yokohama Astrals"}
 
 REPO = os.path.dirname(VIZ)
+sys.path.insert(0, os.path.join(VIZ, "tools"))
+import settings as ST  # noqa: E402
+
+
+def _home(lg):
+    """The league's home club for My Park (settings leagues.<LG>.my_team)."""
+    return (ST.league(lg) or {}).get("my_team")
+
+
 LEAGUES = {
     # "workbook": the league's park sheet the user keeps (gitignored folder). Sheet
     # "Current": cols A-B = Team / MLB Park (assignments; blank rows = folded clubs),
@@ -45,9 +54,9 @@ LEAGUES = {
     # not accurate) - factors always come from the StatsPlus export, per club. When
     # the workbook exists, park_list.csv + park_assignments.csv in calib/<LG>/ are
     # refreshed from it, so the tracked copies stay current.
-    "TGS": {"home": "Chicago Cubs", "exclude": NPB,
+    "TGS": {"home": _home("TGS"), "exclude": NPB,
             "workbook": os.path.join(REPO, "perfekt filters and views", "TGS Park Factors.xlsx")},
-    "BLM": {"home": "Tampa Bay Rays", "exclude": set()},
+    "BLM": {"home": _home("BLM"), "exclude": set()},
 }
 
 

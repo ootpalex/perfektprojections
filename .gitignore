@@ -79,3 +79,16 @@ desktop.ini
 
 # StatsPlus API tokens (user-edited, never committed)
 StatsPlus Tokens.txt
+
+# Control panel: local settings, bad settings copies and job folders (never committed)
+settings.local.json
+settings.local.bad-*.json
+/.control*/
+# Vite caches of worktree test servers
+/.vite-cache*/
+/tgs-viz/.vite-cache*/
+*.tmp
+# Excel lock files hold the Windows user name
+~$*
+# winsim diagnostic screenshots
+ootp/_diag_*.png

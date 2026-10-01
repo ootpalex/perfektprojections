@@ -31,6 +31,11 @@ of this pool's players (a draft under way) keeps the saved list, with a WARNING:
 never disappear during a draft. An empty list with no saved picks from this pool (no
 draft yet, or last year's) is used as before.
 
+--calib TGS|BLM prices the players with another league's calibration (default: the
+league itself). Such a league has no park factors, so its *_park files are copies of
+the neutral ones. The default pool exports sit in the league's OOTP save
+(settings: ootp_version and ootp_save, tgs-viz/tools/settings.py).
+
 Exit codes:
   0  board written, or skipped with a note (no pool export, no cached pull)
   3  StatsPlus refused a request or sent something that is not the data. Nothing was
@@ -44,6 +49,11 @@ sys.path.insert(0, HERE); sys.path.insert(0, ENGINE)
 import statsplus as S
 import ratings as R
 REPO = os.path.dirname(os.path.dirname(HERE))
+_TOOLS = os.path.join(REPO, "tgs-viz", "tools")
+if _TOOLS not in sys.path:
+    sys.path.insert(0, _TOOLS)
+import settings as ST  # noqa: E402
+CALIB_LEAGUES = ("TGS", "BLM")    # leagues with their own calibration (sheets + calib/<LG>)
 EXIT_REFUSED = 3      # StatsPlus refused, or its reply was not the data; nothing written
 EXIT_NETWORK = 4      # dispersal: StatsPlus not reachable for the team names; nothing written
 
@@ -70,12 +80,23 @@ def _saved_picks(path):
 
 
 def _save_json(path, obj):
-    """Write obj as JSON through a temp file, so a failed write keeps the old copy."""
+    """Write obj as JSON through a temp file, so a failed write keeps the old copy.
+    The move is retried while a reader holds the file (10 tries, 200 ms apart)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = f"{path}.{os.getpid()}.tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False)
-    os.replace(tmp, path)
+    ST.replace_retry(tmp, path)
+
+
+def _calib(league):
+    """(calibration league, own): --calib, else the league itself. own is False
+    when the league borrows another league's calibration."""
+    calib = _arg("--calib") or league
+    if "--calib" in sys.argv and calib not in CALIB_LEAGUES:
+        print(f"--calib must be {' or '.join(CALIB_LEAGUES)} (got {calib!r}).")
+        raise SystemExit(2)
+    return calib, calib == league
 
 
 # OOTP draft-pool export(s), per league. Override with --csv (repeatable).
@@ -83,18 +104,30 @@ def _save_json(path, obj):
 # SEPARATELY — both are read and merged, and the file a row came from decides
 # whether it is projected as a hitter or a pitcher (more reliable than POS).
 import glob as _glob
-_OOTP27 = os.path.join(os.path.expanduser("~"), "Documents", "Out of the Park Developments",
-                       "OOTP Baseball 27", "saved_games")
+POOL_DEFAULT = "major_league_baseball_draft_pool_-_draft_pool_default.csv"
+POOL_HITTERS = "major_league_baseball_draft_pool_-_draft_pool_hitter_export.csv"
+POOL_PITCHERS = "major_league_baseball_draft_pool_-_draft_pool_pitcher_export.csv"
+
+
+def _pool_groups(lg):
+    """The league's default export groups, in its OOTP save's import_export folder
+    (settings ootp_version + ootp_save). TGS exports one combined file; every other
+    league may also export hitters and pitchers separately."""
+    save = ST.ootp_save_dir(lg)
+    if not save:
+        return None
+    ie = os.path.join(save, "import_export")
+    groups = [[os.path.join(ie, POOL_DEFAULT)]]
+    if lg != "TGS":
+        groups.append([os.path.join(ie, POOL_HITTERS), os.path.join(ie, POOL_PITCHERS)])
+    return groups
+
+
 DEFAULT_CSV = {
     # Each league is a LIST OF GROUPS. The first group with a file present wins, so a
     # fresh combined export is never merged with a stale split pair (or vice versa).
-    "TGS": [[r"C:\OOTP 26\data\saved_games\TheGrandestSalami.lg\import_export\major_league_baseball_draft_pool_-_draft_pool_default.csv"]],
-    "BLM": [[os.path.join(_OOTP27, "BLM.lg", "import_export",
-                          "major_league_baseball_draft_pool_-_draft_pool_default.csv")],
-            [os.path.join(_OOTP27, "BLM.lg", "import_export",
-                          "major_league_baseball_draft_pool_-_draft_pool_hitter_export.csv"),
-             os.path.join(_OOTP27, "BLM.lg", "import_export",
-                          "major_league_baseball_draft_pool_-_draft_pool_pitcher_export.csv")]],
+    lg: g for lg, g in ((lg, _pool_groups(lg)) for lg, e in ST.leagues(include_disabled=True).items()
+                        if e.get("type") == "statsplus") if g
 }
 
 # Leagues allowed to build the board from the StatsPlus draft_eligible flag when no CSV
@@ -148,10 +181,11 @@ PITCHER_POS = {"SP", "RP", "CL", "P"}
 
 def main():
     league = _arg("--league", "TGS")
-    slug = _arg("--slug") or {"TGS": "tgs"}.get(league, league.lower())
+    slug = _arg("--slug") or ST.slug(league)
+    calib, own = _calib(league)
     # --csv may be repeated; otherwise use the league's default export path(s).
     cli_csv = [sys.argv[i + 1] for i, a in enumerate(sys.argv) if a == "--csv" and i + 1 < len(sys.argv)]
-    csv_paths = cli_csv or _pick_group(DEFAULT_CSV.get(league)) or []
+    csv_paths = cli_csv or _pick_group(DEFAULT_CSV.get(league) or _pool_groups(league)) or []
     write = "--write" in sys.argv
     out_dir = os.path.join(REPO, "tgs-viz", "public", "data", league)
 
@@ -185,7 +219,7 @@ def main():
             print(f"  WARNING: StatsPlus /players draft_eligible fetch failed ({type(e).__name__}: {e})")
     if not by_id:
         print(f"No draft pool for {league}. Looked for:")
-        for g in (DEFAULT_CSV.get(league) or []):
+        for g in (DEFAULT_CSV.get(league) or _pool_groups(league) or []):
           for p in (g if isinstance(g, list) else [g]):
             print("   " + str(p))
         print("Export the pool from OOTP's Amateur Draft screen (Draft Pool report -> CSV),")
@@ -287,21 +321,24 @@ def main():
     # BOTH park bases, same as refresh.py builds the league population ("we have to
     # draft for our park"): neutral files + *_park (50% home / 50% other-MLB blend).
     # The app's Park Basis toggle swaps draft datasets exactly like hitters/pitchers.
-    currency = R.live_currency(league)   # audit D2/D9: same fitted currency layer as refresh.py
-    tails, fielding = R.live_hitter_tails(league), R.live_fielding(league)
-    scurves = R.live_scurves(league)
+    currency = R.live_currency(calib)   # audit D2/D9: same fitted currency layer as refresh.py
+    tails, fielding = R.live_hitter_tails(calib), R.live_fielding(calib)
+    scurves = R.live_scurves(calib)
     hit_rows = [r for r in trows if not is_pit(r)]
     pit_rows = [r for r in trows if is_pit(r)]
     hit_ids = {str(r.get("ID")) for r in hit_rows}
     for park_mode, suffix in (("neutral", ""), ("blend", "_park")):
+        # a league priced with another league's calibration has no park factors:
+        # its *_park files use the neutral basis (as refresh.py --calib does)
+        mode = park_mode if own else "neutral"
         # BOTH engines over EVERY row (every pull row carries both skill sets; a pure
         # pitcher's bat is just 20-floors) so two-way players stop being invisible.
-        hrecs_full = R.run_hitters(trows, league, currency=currency,     # audit D4/D3
-                                   tails=tails, fielding=fielding, park_mode=park_mode)
+        hrecs_full = R.run_hitters(trows, calib, currency=currency,     # audit D4/D3
+                                   tails=tails, fielding=fielding, park_mode=mode)
         # audit D1: same live curve model as refresh.py (S-curves TGS / two-line BLM)
-        precs_full = R.run_pitchers(trows, league, scurves=scurves,
-                                    currency=currency, park_mode=park_mode,
-                                    role_stuff=R.live_role_stuff(league))
+        precs_full = R.run_pitchers(trows, calib, scurves=scurves,
+                                    currency=currency, park_mode=mode,
+                                    role_stuff=R.live_role_stuff(calib), observed=own)
         hrecs = [r for r in hrecs_full if str(r.get("ID")) in hit_ids]
         precs = [r for r in precs_full if str(r.get("ID")) not in hit_ids]
         # Two-way flag — GENUINE threats only (user 2026-09-04): BOTH sides must clear
@@ -339,7 +376,7 @@ def main():
                 rec["DraftedRound"] = pk["round"]
                 rec["DraftedPick"] = pk["pick"]
                 rec["DraftedTeam"] = pk["team"]
-        print(f"projected ({park_mode}): {len(hrecs)} hitters, {len(precs)} pitchers (full class)")
+        print(f"projected ({park_mode if own else park_mode + ' = neutral'}): {len(hrecs)} hitters, {len(precs)} pitchers (full class)")
         # Full class (drafted stamped, nobody removed) — the Mock Draft page's dataset.
         out(hrecs, f"hitters_draft_all{suffix}.json")
         out(precs, f"pitchers_draft_all{suffix}.json")
@@ -352,7 +389,8 @@ def main():
 def dispersal_main():
     """--orgs mode: pool = entire orgs (folding teams), from the cached pull only."""
     league = _arg("--league", "TGS")
-    slug = _arg("--slug") or {"TGS": "tgs"}.get(league, league.lower())
+    slug = _arg("--slug") or ST.slug(league)
+    calib, own = _calib(league)
     orgs = [o.strip() for o in (_arg("--orgs") or "").split(",") if o.strip()]
     excl_path = _arg("--exclude") or os.path.join(REPO, "dispersal_drafted.txt")
     write = "--write" in sys.argv
@@ -423,19 +461,20 @@ def dispersal_main():
 
     # Both park bases, same as the amateur board (the Park Basis toggle swaps
     # draft datasets like every other player dataset).
-    currency = R.live_currency(league)   # audit D2/D9: same fitted currency layer as refresh.py
-    tails, fielding = R.live_hitter_tails(league), R.live_fielding(league)
-    scurves = R.live_scurves(league)
+    currency = R.live_currency(calib)   # audit D2/D9: same fitted currency layer as refresh.py
+    tails, fielding = R.live_hitter_tails(calib), R.live_fielding(calib)
+    scurves = R.live_scurves(calib)
     hit_rows = [r for r in trows if not is_pit(r)]
     pit_rows = [r for r in trows if is_pit(r)]
     for park_mode, suffix in (("neutral", ""), ("blend", "_park")):
-        hrecs = R.run_hitters(hit_rows, league, currency=currency,       # audit D4/D3
-                              tails=tails, fielding=fielding, park_mode=park_mode)
+        mode = park_mode if own else "neutral"      # no park factors for a borrowed calibration
+        hrecs = R.run_hitters(hit_rows, calib, currency=currency,       # audit D4/D3
+                              tails=tails, fielding=fielding, park_mode=mode)
         # audit D1: same live curve model as refresh.py (S-curves TGS / two-line BLM)
-        precs = R.run_pitchers(pit_rows, league, scurves=scurves,
-                               currency=currency, park_mode=park_mode,
-                               role_stuff=R.live_role_stuff(league))
-        print(f"projected ({park_mode}): {len(hrecs)} hitters, {len(precs)} pitchers")
+        precs = R.run_pitchers(pit_rows, calib, scurves=scurves,
+                               currency=currency, park_mode=mode,
+                               role_stuff=R.live_role_stuff(calib), observed=own)
+        print(f"projected ({park_mode if own else park_mode + ' = neutral'}): {len(hrecs)} hitters, {len(precs)} pitchers")
         if cmap is not None:
             n = (S.attach_contract_injury(hrecs, cmap, pmap, columns=cols)
                  + S.attach_contract_injury(precs, cmap, pmap, columns=cols))

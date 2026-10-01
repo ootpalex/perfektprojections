@@ -373,7 +373,10 @@ def sync_league(league_dir, write=False, yes=False, calib=None, metadata=None):
             print(f'    {name:8} {tc:4} {m["label"]:20} {str(ov):>12}  ->  {nv}')
 
     if write and total and not yes:
-        resp = input(f'  Apply these {total} change(s) to {league_dir}? [y/N] ').strip().lower()
+        try:
+            resp = input(f'  Apply these {total} change(s) to {league_dir}? [y/N] ').strip().lower()
+        except EOFError:                   # no console to answer (a page job): no
+            print('  skipped (no answer).'); return
         if resp not in ('y', 'yes'):
             print('  skipped (not applied).'); return
     if write and total:

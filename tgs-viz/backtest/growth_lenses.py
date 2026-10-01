@@ -116,7 +116,9 @@ CACHE_DIR = os.path.join(HERE, ".lens_cache")
 CACHE_VERSION = 2             # season files: one league mean for both sides, plus coverage
 PEOPLE_VERSION = 2            # people files: carry the pull's real date and content hash
 
-LEAGUE_SLUG = {"TGS": "tgs", "BLM": "blm"}
+sys.path.insert(0, os.path.join(VIZ, "tools"))
+import settings as ST         # noqa: E402  (stdlib only)
+LEAGUE_SLUG = ST.slug_map()   # {id: StatsPlus slug} of the online leagues
 PIT_POS = ("SP", "RP", "CL")
 PIT_COLS = ("STU", "HRR", "PBABIP", "CON")      # GAP_PAIRS keys that are pitcher ratings
 

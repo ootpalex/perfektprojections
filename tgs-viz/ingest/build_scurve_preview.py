@@ -25,6 +25,8 @@ import statsplus as S  # noqa: E402
 import pitchers as P   # noqa: E402
 
 REPO = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, os.path.join(REPO, "tgs-viz", "tools"))
+import settings as ST  # noqa: E402
 
 # fields joined onto the live records by refresh.py that the engine run lacks
 # (ORG names need network; contracts need the public endpoints) — carried over
@@ -38,7 +40,7 @@ def main():
     ap.add_argument("--league", required=True, choices=["TGS", "BLM"])
     a = ap.parse_args()
     lg = a.league
-    slug = {"TGS": "tgs"}.get(lg, lg.lower())
+    slug = ST.slug(lg)
     out_dir = os.path.join(REPO, "tgs-viz", "public", "data", lg)
     out_path = os.path.join(out_dir, "pitchers_scurve_preview.json")
 

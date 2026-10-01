@@ -31,6 +31,13 @@ Continuous mode (one long-lived league, simmed in place, no clone):
     python ootp/winsim.py --league DEV --sim --dry-run           # print the plan
     python ootp/winsim.py --league DEV --test-year               # set the date, no AUTO-PLAY
     python ootp/winsim.py --league DEV --sim [--years N] [--start-year Y]
+
+After a stopped or killed sim (the Control page runs this itself):
+    python ootp/winsim.py --reset-input        # release Ctrl, Shift, Alt, Win and the mouse button
+
+OOTP folders: discovered as below, then ootp.installs.<ver>.saved_games from the
+settings (tgs-viz/tools/settings.py) wins when that folder exists. PROTECTED and
+the extra profiles of leagues added by New League also come from the settings.
 """
 import sys, os, time, shutil, argparse, re, ctypes, statistics
 from pathlib import Path
@@ -38,6 +45,8 @@ from datetime import datetime, timedelta
 
 HERE = Path(__file__).resolve().parent
 BUTTONS = HERE / "buttons"
+sys.path.insert(0, str(HERE.parent / "tgs-viz" / "tools"))
+import settings as ST  # noqa: E402  (OOTP folders, protected saves, extra profiles)
 
 # ---------------------------------------------------------------- config
 # Version-agnostic: we DISCOVER installed OOTP versions instead of hardcoding them, so a
@@ -72,13 +81,21 @@ def discover_games():
         best = max(paths, key=_lg_count)          # the one actually holding leagues
         out[ver] = dict(app=f"OOTP Baseball {ver}", saved=best,
                         title=f"Out of the Park Baseball {ver}")
+    # a saved_games folder set in the settings (ootp.installs.<ver>) wins when it exists
+    for ver in (ST.load().get("ootp") or {}).get("installs") or {}:
+        p = ST.saved_games(ver)
+        if p and Path(p).is_dir():
+            out[ver] = dict(app=f"OOTP Baseball {ver}", saved=Path(p),
+                            title=f"Out of the Park Baseball {ver}")
     return dict(sorted(out.items()))
 
 GAMES = discover_games()
 
 # Leagues that must NEVER be simmed or cloned-as-master: the real leagues you play.
 # (A real league shows "no dumps" only because CSV export is off - that is NOT pristine.)
-PROTECTED = {"blm", "thegrandestsalami", "new game", "regular game"}
+# Settings: ootp.protected_extra plus the save of every online and local-export league,
+# disabled ones included. Never a dev league: --sim runs guard() on its own folder.
+PROTECTED = ST.protected_saves()   # today {"blm", "thegrandestsalami", "new game", "regular game"}
 
 # Per-league setup lives here so a version move is a config edit, not a code change.
 PROFILES_PATH = HERE / "leagues.json"
@@ -99,11 +116,13 @@ DEFAULT_PROFILES = {
 }
 
 def load_profiles():
+    """leagues.json plus the ootp_profile of every league New League added
+    (settings). The file wins on a clash."""
     import json
     if not PROFILES_PATH.exists():
         PROFILES_PATH.write_text(json.dumps(DEFAULT_PROFILES, indent=2), encoding="utf-8")
         print(f"  (created {PROFILES_PATH.name} with defaults - edit it when you change versions)")
-    return json.loads(PROFILES_PATH.read_text(encoding="utf-8"))
+    return ST.ootp_profiles()
 
 LEAGUE_START_YEAR = 2016
 TARGET_YEAR = 2026
@@ -1341,7 +1360,14 @@ def main():
                     "(profile default, else 5)")
     ap.add_argument("--folder", default=None, help="continuous mode: the league's saved-game name "
                     "(overrides the profile's \"folder\")")
+    ap.add_argument("--reset-input", action="store_true", help="release Ctrl, Shift, Alt, Win and the left "
+                    "mouse button, then exit (run after a stopped sim; opens and clicks nothing)")
     a = ap.parse_args()
+
+    if a.reset_input:
+        reset_input()
+        print("  released Ctrl, Shift, Alt, Win and the left mouse button.")
+        return
 
     if a.games:
         if not GAMES:

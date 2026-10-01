@@ -20,6 +20,9 @@ StatsPlus mode (what the bats run):
       and writes the app's JSON. statsplus.py sends the league's saved StatsPlus
       token (StatsPlus Tokens.txt); the browser cookie in STATSPLUS_COOKIE
       is the fallback for a league with no token.
+  add --calib TGS|BLM to price a league with another league's calibration (default:
+      the league itself). Such a league has no park factors: its My Park files are
+      copies of the neutral ones and park_lineup_values.json is not built.
   add --from-cache to rebuild from the last saved pull (.cache/statsplus_<slug>.json)
       with no new ratings job. The team names, contracts and injury status then
       reuse the StatsPlus replies saved earlier while the league's in-game date
@@ -45,6 +48,11 @@ sys.path.insert(0, HERE)
 import ratings as R  # noqa: E402
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_TOOLS = os.path.join(REPO, "tgs-viz", "tools")
+if _TOOLS not in sys.path:
+    sys.path.insert(0, _TOOLS)
+import settings as ST  # noqa: E402
+CALIB_LEAGUES = ("TGS", "BLM")    # leagues with their own calibration (sheets + calib/<LG>)
 
 
 def _arg(flag, default=None):
@@ -240,24 +248,41 @@ def _not_pulled(S, league, slug):
 
 
 def write_json(records, path, overwrite):
+    """Write records as JSON. --write keeps a .bak-<stamp> copy of the old file.
+    The data goes to <target>.<pid>.tmp first and then moves onto the target
+    (retried while a reader holds it), so a kill mid-write never leaves a
+    cut-off file."""
     target = path if overwrite else path.replace(".json", "_engine.json")
     if overwrite and os.path.exists(path):
         shutil.copy2(path, path + ".bak-" + time.strftime("%Y%m%d-%H%M%S"))
-    with open(target, "w", encoding="utf-8") as f:
-        json.dump(records, f, ensure_ascii=False)
+    tmp = f"{target}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(records, f, ensure_ascii=False)
+        ST.replace_retry(tmp, target)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
     return target
 
 
 def main():
     league = _arg("--league", "TGS")
+    # --calib: the calibration league the engine prices with (default: the league
+    # itself). A new online league borrows TGS's or BLM's sheets and calib layers;
+    # its output folder, raw cache, archive and level map stay its own.
+    calib = _arg("--calib") or league
+    if "--calib" in sys.argv and calib not in CALIB_LEAGUES:
+        _stop(2, f"--calib must be {' or '.join(CALIB_LEAGUES)} (got {calib!r}).")
+    own = calib == league           # False: no park factors and no per-pitcher role table for this league
     overwrite = "--write" in sys.argv
     out_dir = os.path.join(REPO, "tgs-viz", "public", "data", league)
-    drift_check(league)   # audit B4: warn loudly if constants snapshots disagree
+    drift_check(calib)    # audit B4: warn loudly if constants snapshots disagree
 
     # --- fully-automatic mode: pull ratings from StatsPlus with your token ---
     if "--statsplus" in sys.argv:
         import statsplus as S
-        slug = _arg("--slug") or {"TGS": "tgs"}.get(league, league.lower())
+        slug = _arg("--slug") or ST.slug(league)
         raw_path = os.path.join(HERE, ".cache", f"statsplus_{slug}.json")
         if "--from-cache" in sys.argv:    # reprocess the saved raw pull: no new ratings job
             rows = json.load(open(raw_path, encoding="utf-8"))
@@ -394,32 +419,41 @@ def main():
 
         def is_pit(r):
             return str(r.get("POS", "")).upper() in ("SP", "RP", "CL")
-        currency = R.live_currency(league)   # audit D2/D9: fitted currency layer (both leagues)
-        print(f"  currency layer: {'FITTED (D2 exponents + D9 RPW, calib/' + league + '/currency.json)' if currency else 'sheet constants (no currency.json)'}")
-        tails = R.live_hitter_tails(league)      # audit D4: measured tail corrections (both leagues)
-        fielding = R.live_fielding(league)       # audit D3: monotone piecewise PM% (both leagues)
-        print(f"  hitter tails: {'FITTED (D4, calib/' + league + '/hitter_tails.json)' if tails else 'sheet two-line (no hitter_tails.json)'}")
-        print(f"  fielding PM%: {'PIECEWISE (D3, calib/' + league + '/fielding_curves.json)' if fielding else 'sheet linear (no fielding_curves.json)'}")
+        if not own:
+            print(f"  engine calibration: {calib} (the sheets and calib layers of {calib})")
+        currency = R.live_currency(calib)   # audit D2/D9: fitted currency layer (both leagues)
+        print(f"  currency layer: {'FITTED (D2 exponents + D9 RPW, calib/' + calib + '/currency.json)' if currency else 'sheet constants (no currency.json)'}")
+        tails = R.live_hitter_tails(calib)      # audit D4: measured tail corrections (both leagues)
+        fielding = R.live_fielding(calib)       # audit D3: monotone piecewise PM% (both leagues)
+        print(f"  hitter tails: {'FITTED (D4, calib/' + calib + '/hitter_tails.json)' if tails else 'sheet two-line (no hitter_tails.json)'}")
+        print(f"  fielding PM%: {'PIECEWISE (D3, calib/' + calib + '/fielding_curves.json)' if fielding else 'sheet linear (no fielding_curves.json)'}")
         # Park spec 2026-08-14: the shipped default is NEUTRAL (all parks equal —
         # contracts and cross-team comparisons are park-normalized); a second
         # *_park dataset carries the 50% home / 50% other-MLB-parks blend for
         # the app's "My Park" toggle.
         hit_rows = [r for r in trows if not is_pit(r)]
         pit_rows = [r for r in trows if is_pit(r)]
-        hrecs = R.run_hitters(hit_rows, league, currency=currency,
+        hrecs = R.run_hitters(hit_rows, calib, currency=currency,
                               tails=tails, fielding=fielding, park_mode="neutral")
-        hrecs_park = R.run_hitters(hit_rows, league, currency=currency,
-                                   tails=tails, fielding=fielding, park_mode="blend")
-        scurves = R.live_scurves(league)   # audit D1: per-block curves from calib/<LG>/scurves.json, or None
+        if own:
+            hrecs_park = R.run_hitters(hit_rows, calib, currency=currency,
+                                       tails=tails, fielding=fielding, park_mode="blend")
+        scurves = R.live_scurves(calib)   # audit D1: per-block curves from calib/<LG>/scurves.json, or None
         print(f"  pitching curves: {R.scurve_summary(scurves)}")
-        role_stuff = R.live_role_stuff(league)   # 2026-09-26: measured SP <-> RP stuff change
-        print(f"  role stuff: {'MEASURED (calib/' + league + '/role_stuff.json)' if role_stuff else 'sheet flat 5 (no role_stuff.json)'}")
-        precs = R.run_pitchers(pit_rows, league, scurves=scurves, currency=currency, park_mode="neutral",
-                               role_stuff=role_stuff)
-        precs_park = R.run_pitchers(pit_rows, league, scurves=scurves, currency=currency, park_mode="blend",
-                                    role_stuff=role_stuff)
-        print(f"  park layer: neutral default + blend variant "
-              f"({len(hrecs_park)} hitters / {len(precs_park)} pitchers on the My-Park basis)")
+        role_stuff = R.live_role_stuff(calib)   # 2026-09-26: measured SP <-> RP stuff change
+        print(f"  role stuff: {'MEASURED (calib/' + calib + '/role_stuff.json)' if role_stuff else 'sheet flat 5 (no role_stuff.json)'}")
+        precs = R.run_pitchers(pit_rows, calib, scurves=scurves, currency=currency, park_mode="neutral",
+                               role_stuff=role_stuff, observed=own)
+        if own:
+            precs_park = R.run_pitchers(pit_rows, calib, scurves=scurves, currency=currency, park_mode="blend",
+                                        role_stuff=role_stuff)
+            print(f"  park layer: neutral default + blend variant "
+                  f"({len(hrecs_park)} hitters / {len(precs_park)} pitchers on the My-Park basis)")
+        else:
+            # No park factors exist for this league: the My Park files are copies
+            # of the neutral results (as export_league.py does).
+            hrecs_park, precs_park = [dict(r) for r in hrecs], [dict(r) for r in precs]
+            print(f"  park layer: neutral only ({league} has no park factors; My Park = neutral)")
         if not hrecs and not precs:
             print(f"!!!! PULL FAILED for {league}: mapping produced 0 players. Raw columns:")
             print(" ", cols)
@@ -487,7 +521,9 @@ def main():
         # Series lineup tool: hitter values in every club park
         # (park_lineup_values.json), rebuilt from the hitters just written.
         # Additive. It can never fail or block a pull.
-        if overwrite and hrecs:
+        if overwrite and hrecs and not own:
+            print(f"park lineup values: skipped ({league} has no park factors).")
+        elif overwrite and hrecs:
             try:
                 import park_values as PV
                 rep = PV.build(league, records=hrecs, write=True, quiet=True)
@@ -506,13 +542,14 @@ def main():
         return
 
     if hit_f:
-        recs = R.run_hitters(R.read_export(hit_f), league, currency=R.live_currency(league),
-                             tails=R.live_hitter_tails(league), fielding=R.live_fielding(league))
+        recs = R.run_hitters(R.read_export(hit_f), calib, currency=R.live_currency(calib),
+                             tails=R.live_hitter_tails(calib), fielding=R.live_fielding(calib))
         t = write_json(recs, os.path.join(out_dir, "hitters.json"), overwrite)
         print(f"hitters: {len(recs)} players -> {os.path.relpath(t, REPO)}")
     if pit_f:
-        recs = R.run_pitchers(R.read_export(pit_f), league, scurves=R.live_scurves(league),
-                              currency=R.live_currency(league), role_stuff=R.live_role_stuff(league))
+        recs = R.run_pitchers(R.read_export(pit_f), calib, scurves=R.live_scurves(calib),
+                              currency=R.live_currency(calib), role_stuff=R.live_role_stuff(calib),
+                              observed=own)
         t = write_json(recs, os.path.join(out_dir, "pitchers.json"), overwrite)
         print(f"pitchers: {len(recs)} players -> {os.path.relpath(t, REPO)}")
     print("done." + ("" if overwrite else "  (side files — add --write to make them live)"))

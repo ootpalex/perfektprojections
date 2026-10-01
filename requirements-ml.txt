@@ -1,0 +1,4 @@
+# ML Python (the "py -3.14" command). Install: py -3.14 -m pip install -r requirements-ml.txt
+numpy>=2.3.4
+pandas>=2.3.3
+scikit-learn>=1.7.2

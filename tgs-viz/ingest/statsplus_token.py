@@ -22,14 +22,22 @@ Usage:
   python tgs-viz/ingest/statsplus_token.py --check [TGS|BLM]  check the tokens in the file with StatsPlus
   python tgs-viz/ingest/statsplus_token.py --have TGS,BLM     exit 0 when every named league has a token, else 1
 Both create the file (with empty TGS= and BLM= lines) when it is missing.
+The leagues and their slugs come from the settings (tgs-viz/tools/settings.py):
+every enabled online league has a line, keyed by its slug in capitals.
 This module is stdlib-only. The CLI imports statsplus.py; the functions do not.
 """
 import argparse, datetime, hashlib, json, os, re, sys, urllib.error, urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-FILE_NAME = "StatsPlus Tokens.txt"
-LEAGUES = (("TGS", "tgs"), ("BLM", "blm"))
+_TOOLS = os.path.join(REPO, "tgs-viz", "tools")
+if _TOOLS not in sys.path:
+    sys.path.insert(0, _TOOLS)
+import settings as ST  # noqa: E402  (league ids, slugs and the token file)
+
+FILE_NAME = os.path.basename(ST.token_file(use_env=False))     # "StatsPlus Tokens.txt"
+# (league id, slug) of every enabled online league. The file is keyed by slug.
+LEAGUES = tuple(ST.slug_map().items())
 EXPIRE_DAYS = 90
 WARN_DAYS = 80
 TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{20,80}")
@@ -41,15 +49,13 @@ TEMPLATE = (
     "# copy the Current Token from the API Token box (36 characters).\r\n"
     "# Tokens expire 90 days after StatsPlus makes them: paste the new one here then.\r\n"
     "# This file stays on this computer (it is not uploaded to GitHub).\r\n"
-    "TGS=\r\n"
-    "BLM=\r\n"
-)
+) + "".join(f"{_slug_.upper()}=\r\n" for _lg_, _slug_ in LEAGUES)
 _MEMO = {}
 
 
 def default_token_file():
-    """The token file when STATSPLUS_TOKEN_FILE is not set."""
-    return os.path.join(REPO, FILE_NAME)
+    """The token file when STATSPLUS_TOKEN_FILE is not set (settings statsplus.token_file)."""
+    return ST.token_file(use_env=False)
 
 
 def token_file():
@@ -145,7 +151,7 @@ def _read():
 
 
 def ensure_file():
-    """Create the token file with empty TGS= and BLM= lines when it is missing.
+    """Create the token file with one empty line per online league (TGS=, BLM=) when it is missing.
     Returns True when it was created."""
     path = token_file()
     if os.path.exists(path):
@@ -154,6 +160,17 @@ def ensure_file():
     with open(path, "w", encoding="utf-8", newline="") as f:
         f.write(TEMPLATE)
     _MEMO.clear()
+    return True
+
+
+def ensure_line(slug):
+    """Add an empty <SLUG>= line when the file has no line for the slug.
+    Other lines and notes are kept. Returns True when it added the line."""
+    s = _slug(slug)
+    ensure_file()
+    if s in _read():
+        return False
+    _set_line(s, "")
     return True
 
 
@@ -245,6 +262,21 @@ def saved_info(slug, today=None):
             "team_id": str(e.get("team_id") or ""), "team": str(e.get("team") or "")}
 
 
+def token_age(slug, today=None):
+    """How old the league's token is, without writing anything (doctor.py).
+    {"days": n} when the first-seen file knows the current token,
+    {"days": None, "new": True} when the token is new to it, None when the
+    league has no token."""
+    s = _slug(slug)
+    tok = token_for(s)
+    if not tok:
+        return None
+    e = _read_seen().get(s)
+    if isinstance(e, dict) and e.get("fp") == _fp(tok):
+        return {"days": _days_since(e.get("seen"), today)}
+    return {"days": None, "new": True}
+
+
 def age_warning(slug, today=None):
     """A warning when the league's token was first seen more than 80 days ago, else None."""
     info = saved_info(slug, today)
@@ -305,15 +337,24 @@ def have(leagues):
 
 # ---- command line --------------------------------------------------------------
 
+def _and(words, last="and"):
+    """'A', 'A and B', 'A, B and C'."""
+    words = list(words)
+    if len(words) < 2:
+        return "".join(words)
+    return f"{', '.join(words[:-1])} {last} {words[-1]}"
+
+
 def _leagues(arg):
-    """[(LG, slug)] from 'TGS', 'BLM', 'TGS,BLM' or 'all'."""
+    """[(LG, slug)] from 'TGS', 'BLM', 'TGS,BLM' or 'all' (any enabled online league)."""
     known = dict(LEAGUES)
     names = [x.strip().upper() for x in re.split(r"[,\s]+", arg or "") if x.strip()]
     if not names or names == ["ALL"]:
         return list(LEAGUES)
     bad = [n for n in names if n not in known]
     if bad:
-        raise SystemExit(f"unknown league {', '.join(bad)}: use TGS or BLM")
+        use = _and(known, "or") if known else "no online league is set up"
+        raise SystemExit(f"unknown league {', '.join(bad)}: use {use}")
     return [(n, known[n]) for n in names]
 
 
@@ -391,14 +432,15 @@ def _check(S, lg, slug, token):
 def _no_token_line(lg, slug):
     p = problem_for(slug)
     if p:
-        return f"{lg}: the {lg}= line in {FILE_NAME} does not hold a usable token: {p}"
-    return f"{lg}: no token in {FILE_NAME} (paste it after {lg}=)."
+        return f"{lg}: the {slug.upper()}= line in {FILE_NAME} does not hold a usable token: {p}"
+    return f"{lg}: no token in {FILE_NAME} (paste it after {slug.upper()}=)."
 
 
 def cmd_check(leagues):
     S = _statsplus()
     if ensure_file():
-        print(f"Made {token_file()}: paste the tokens after TGS= and BLM=, then save it.")
+        print(f"Made {token_file()}: paste the tokens after "
+              f"{_and(s.upper() + '=' for _lg, s in LEAGUES)}, then save it.")
     ok = n = 0
     for lg, slug in leagues:
         tok = token_for(slug)

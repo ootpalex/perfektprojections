@@ -109,9 +109,25 @@ def parse_date(s):
 
 
 # ---------------------------------------------------------------- profile and folders
+def _settings():
+    """tgs-viz/tools/settings.py, imported on first use (stdlib only)."""
+    import sys
+    tools = os.path.join(VIZ, "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    import settings
+    return settings
+
+
 def profile(league):
-    """League profile from ootp/leagues.json, with defaults. Never raises."""
-    prof = (read_json(PROFILES_PATH) or {}).get(league) or {}
+    """League profile from ootp/leagues.json plus the profiles New League added
+    (settings), with defaults. Raises only settings.SettingsError (a broken
+    settings file stops the pipeline)."""
+    try:
+        profiles = _settings().ootp_profiles()
+    except (OSError, ValueError):
+        profiles = {}                              # leagues.json not readable: the defaults below
+    prof = (profiles or {}).get(league) or {}
     if not isinstance(prof, dict):
         prof = {}
     out = {"game": str(prof.get("game") or "27"),
@@ -126,18 +142,27 @@ def is_dump_profile(league):
 
 
 def saved_games_dirs(game):
-    """Candidate saved_games folders of one OOTP version, existing ones only."""
+    """Candidate saved_games folders of one OOTP version, existing ones only.
+    The settings folder (ootp.installs.<game>.saved_games) comes first."""
     home = os.path.expanduser("~")
-    cands = [os.path.join(home, "Documents", "Out of the Park Developments",
+    cands = [_settings().saved_games(game),
+             os.path.join(home, "Documents", "Out of the Park Developments",
                           f"OOTP Baseball {game}", "saved_games")]
     for root in ("C:\\", "D:\\"):
         cands.append(os.path.join(root, f"OOTP {game}", "data", "saved_games"))
-    return [c for c in cands if os.path.isdir(c)]
+    out = []
+    for c in cands:
+        if c and os.path.isdir(c) and os.path.normcase(c) not in {os.path.normcase(x) for x in out}:
+            out.append(c)
+    return out
 
 
 def league_dir(league, prof=None):
-    """<saved_games>/<league name>.lg for the profile, or None."""
+    """<saved_games>/<league name>.lg for the profile, or None. A profile New
+    League wrote with a "dump_dir" (the dumps live elsewhere) returns that folder."""
     prof = prof or profile(league)
+    if prof.get("dump_dir") and os.path.isdir(str(prof["dump_dir"])):
+        return str(prof["dump_dir"])
     for d in saved_games_dirs(prof["game"]):
         p = os.path.join(d, prof["league"] + ".lg")
         if os.path.isdir(p):

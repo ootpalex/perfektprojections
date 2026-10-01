@@ -385,7 +385,11 @@ def main():
         print("\n  dry-run - re-run with --write to apply.")
         return
     if not a.yes:
-        if input(f"  Add these {len(plan)} clone(s) to {wbpath.name}? [y/N] ").strip().lower() not in ("y", "yes"):
+        try:
+            resp = input(f"  Add these {len(plan)} clone(s) to {wbpath.name}? [y/N] ").strip().lower()
+        except EOFError:                   # no console to answer (a page job): no
+            print("  skipped (no answer)."); return
+        if resp not in ("y", "yes"):
             print("  skipped (not applied)."); return
 
     bak = wbpath.with_suffix(f".xlsx.bak-{datetime.datetime.now():%Y%m%d-%H%M%S}")

@@ -70,7 +70,12 @@ import pull_order as PO  # in-game order of the pulls (live + asof)  # noqa: E40
 DB_PATH = PO.DB_PATH                  # tgs-viz/backtest/ratings_history.db (tests: RATINGS_ARCHIVE_ROOT)
 ASOF = PO.ASOF                        # source of a past-date StatsPlus snapshot (statsplus_history.py)
 
-LEAGUES = {"TGS": "tgs", "BLM": "blm"}
+_TOOLS = os.path.join(VIZ, "tools")
+if _TOOLS not in sys.path:
+    sys.path.insert(0, _TOOLS)
+import settings as ST  # noqa: E402  (stdlib only; works under the ML interpreter too)
+
+LEAGUES = ST.slug_map()               # {id: slug} of the online leagues (TGS, BLM)
 
 # ---- rating columns (sheet-name space; mirrors ingest/ratings.py SMOOTH_COLS) --
 _PIT_CORE = ["STU", "HRR", "PBABIP", "CON"]
@@ -149,7 +154,26 @@ def _compact(x):
     return int(x) if float(x).is_integer() else float(x)
 
 
+ARCHIVE_MISSING = ("The ratings archive is missing. Rebuild it first: Control, Setup check, Rebuild ratings "
+                   "archive (or python tgs-viz\\backtest\\vintage_backup.py --restore).")
+
+
+def _archive_missing(db_path):
+    """True when db_path does not exist but saved vintages sit next to it
+    (vintages/*/_pulls.csv): a fresh clone whose archive was never rebuilt."""
+    if os.path.exists(db_path) or os.environ.get("RATINGS_DB_ALLOW_NEW") == "1":
+        return False
+    root = os.path.dirname(os.path.abspath(db_path))
+    return bool(glob.glob(os.path.join(root, "vintages", "*", "_pulls.csv")))
+
+
 def connect(db_path=DB_PATH):
+    # Never create an empty archive next to saved vintages: an export from it
+    # would write "players": {} over rating_trends.json, and vintage_backup
+    # --restore refuses once a database exists. RATINGS_DB_ALLOW_NEW=1 (worktree
+    # tests only) skips this. vintage_backup.restore opens its own connection.
+    if _archive_missing(db_path):
+        raise SystemExit(ARCHIVE_MISSING)
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
     rating_defs = ", ".join(f'"{COL2SQL[c]}" NUMERIC' for c in ALL_COLS)
@@ -191,9 +215,20 @@ def derive_lev(r, league):
     lev = str(r.get("Lev") or "").strip()
     if lev:
         return lev
-    if league in LEAGUES and ("League" in r or "LgLvl" in r):
+    if _online(league) and ("League" in r or "LgLvl" in r):
         return S._lev_for(r, league)
     return None
+
+
+_ONLINE = {}
+
+
+def _online(league):
+    """A StatsPlus league: LEAGUES, or one New League is adding (pending in the
+    settings), so its first archived pull gets levels too."""
+    if league not in _ONLINE:
+        _ONLINE[league] = league in LEAGUES or (ST.league(league) or {}).get("type") == "statsplus"
+    return _ONLINE[league]
 
 
 def raw_pull_levels(conn, pull_id, league):
@@ -349,6 +384,19 @@ def append_pull(league, raw_rows, source="live", real_ts=None, real_date=None,
         return insert_pull(conn, league, real_date, real_ts, source, files or [], pmap, game_date=game_date)
     finally:
         conn.close()
+
+
+def forget_league(conn, league):
+    """Delete every pull of one league (its ratings rows and its pulls rows) in
+    one transaction. Returns the number of pulls removed. Only the New League
+    rollback calls this, for a league whose first try failed, so its id can be
+    used again."""
+    ids = [r[0] for r in conn.execute("SELECT pull_id FROM pulls WHERE league=?", (league,))]
+    with conn:
+        for pid in ids:
+            conn.execute("DELETE FROM ratings WHERE pull_id=?", (pid,))
+            conn.execute("DELETE FROM pulls WHERE pull_id=?", (pid,))
+    return len(ids)
 
 
 # ---------------------------------------------------------------- backfill
@@ -1191,7 +1239,7 @@ def _org_name_map(lg):
     (pulls are archived before enrichment), which is why the Trends screens
     showed numbers nobody can place (user, 2026-08-26). Minor-league team ids
     resolve to the PARENT org name, same as the app. Unknown ids stay numeric."""
-    slug = {"TGS": "tgs", "BLM": "blm"}.get(lg, lg.lower())
+    slug = ST.slug(lg)
     raw_path = os.path.join(VIZ, "ingest", ".cache", f"statsplus_{slug}.json")
     votes = {}
     try:

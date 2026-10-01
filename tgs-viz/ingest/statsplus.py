@@ -1280,10 +1280,29 @@ FOREIGN_LEAGUE_IDS = NPB_LEAGUE_IDS | KBO_LEAGUE_IDS
 FOREIGN_BY_LEAGUE = {"TGS": FOREIGN_LEAGUE_IDS, "BLM": set()}
 
 
+def _settings():
+    """tgs-viz/tools/settings.py (imported on first use: this module also runs
+    under the ML interpreter)."""
+    tools = os.path.join(os.path.dirname(HERE), "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    import settings
+    return settings
+
+
+def foreign_ids(league):
+    """StatsPlus League ids of the foreign leagues to drop. TGS: NPB + KBO; BLM:
+    none; any other league: its settings foreign_league_ids (default none)."""
+    if league in FOREIGN_BY_LEAGUE:
+        return FOREIGN_BY_LEAGUE[league]
+    lg = _settings().league(league) or {}
+    return {str(x) for x in lg.get("foreign_league_ids") or []}
+
+
 def drop_foreign(rows, league="TGS"):
     """Remove players rostered in a foreign league (NPB/KBO in the TGS world). A
     player in the free-agent pool (League 0) is NOT on a foreign roster, so kept."""
-    ids = FOREIGN_BY_LEAGUE.get(league, FOREIGN_LEAGUE_IDS)
+    ids = foreign_ids(league)
     return [r for r in rows if str(r.get("League")) not in ids]
 
 
@@ -1300,8 +1319,10 @@ BLM_LGLVL_TO_LEV = {"1": "MLB", "2": "AAA", "3": "AA", "4": "A+", "5": "A-", "6"
 
 
 def _lev_for(r, league):
-    """Resolve the app's Lev string for a ratings row, per world."""
-    if league == "BLM":
+    """Resolve the app's Lev string for a ratings row, per world. TGS maps its
+    League ids; every other league (BLM and new online leagues) reads the clean
+    LgLvl tier."""
+    if league != "TGS":
         lgl = str(r.get("LgLvl") or "").strip()
         if lgl in BLM_LGLVL_TO_LEV:
             return BLM_LGLVL_TO_LEV[lgl]

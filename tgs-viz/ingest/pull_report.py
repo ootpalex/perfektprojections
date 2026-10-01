@@ -19,6 +19,10 @@ warning when it is more than 80 days old (tokens expire after 90 days). The
 token itself is never shown.
 
 Exit code: 0 when at least one league's ratings are fresh, 1 when none are.
+
+--leagues A,B reports only those leagues (the Control page's per-league update
+task passes its own league). With no flag it reports TGS and BLM, the ones of
+those two that are enabled online leagues in the settings.
 """
 import os
 import sys
@@ -27,9 +31,13 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 DATA = os.path.join(REPO, "tgs-viz", "public", "data")
+_TOOLS = os.path.join(REPO, "tgs-viz", "tools")
+if _TOOLS not in sys.path:
+    sys.path.insert(0, _TOOLS)
+import settings as ST  # noqa: E402
 
-LEAGUES = ["TGS", "BLM"]
-SLUGS = {"TGS": "tgs", "BLM": "blm"}
+SLUGS = ST.slug_map()
+LEAGUES = [lg for lg in ("TGS", "BLM") if lg in SLUGS]
 # The files the pull rewrites for a league it updates.
 RATINGS_FILES = ["hitters.json", "pitchers.json", "hitters_park.json", "pitchers_park.json"]
 # Informational boards: shown with their dates, but they never fail the run
@@ -56,7 +64,7 @@ def _token_lines(lg):
         if HERE not in sys.path:
             sys.path.insert(0, HERE)
         import statsplus_token as T
-        slug = SLUGS.get(lg, lg.lower())
+        slug = ST.slug(lg)
         info, warn = T.saved_info(slug), T.age_warning(slug)
     except Exception as e:
         return False, [f"       StatsPlus token: could not be read ({type(e).__name__})"]
@@ -71,16 +79,30 @@ def _token_lines(lg):
     return True, lines
 
 
+def _leagues_arg():
+    """The --leagues list (A,B), else LEAGUES."""
+    if "--leagues" not in sys.argv:
+        return list(LEAGUES)
+    i = sys.argv.index("--leagues") + 1
+    raw = sys.argv[i] if i < len(sys.argv) else ""
+    names = [x.strip().upper() for x in raw.split(",") if x.strip()]
+    if not names:
+        print("  --leagues needs league ids, for example --leagues TGS,BLM")
+        sys.exit(2)
+    return names
+
+
 def main():
     max_age_min = 30.0
     if "--max-age-min" in sys.argv:
         max_age_min = float(sys.argv[sys.argv.index("--max-age-min") + 1])
+    leagues = _leagues_arg()
     now = time.time()
     fresh_lgs, stale_lgs = [], []
     has_token = {}
     print()
     print("  ================= DATA DATE REPORT =================")
-    for lg in LEAGUES:
+    for lg in leagues:
         d = os.path.join(DATA, lg)
         oldest = None      # the stalest ratings file decides the league verdict
         missing = []
@@ -126,14 +148,18 @@ def main():
                 print("  !!!! then run this bat again. Until then it keeps the data shown above.")
             else:
                 print(f"  To update {lg} too: paste its token into StatsPlus Tokens.txt (or open")
-                print(f"  statsplus.net/{SLUGS.get(lg, lg.lower())} in your browser, logged in), then run this bat again.")
+                print(f"  statsplus.net/{ST.slug(lg)} in your browser, logged in), then run this bat again.")
                 print("  Until then it keeps the data shown above.")
         print("  Reload the web app to see the fresh data.")
         sys.exit(0)
     if fresh_lgs:
-        print("  Both leagues updated. Reload the web app to see the new data.")
+        what = {1: "Updated.", 2: "Both leagues updated."}.get(len(fresh_lgs), "All leagues updated.")
+        print(f"  {what} Reload the web app to see the new data.")
         sys.exit(0)
-    print("  !!!! NOTHING updated this run - that is a real failure (token expired or unknown,")
+    if len(leagues) == 1:
+        print(f"  !!!! {leagues[0]} not pulled this run - that is a real failure (token expired or unknown,")
+    else:
+        print("  !!!! NOTHING updated this run - that is a real failure (token expired or unknown,")
     print("  !!!! bad cookie, network, or StatsPlus down). Scroll up for the reason and try again.")
     sys.exit(1)
 

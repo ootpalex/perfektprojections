@@ -214,17 +214,20 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, BT)
 import statsplus as S          # noqa: E402
 import pull_order as PO        # noqa: E402
+sys.path.insert(0, os.path.join(VIZ, "tools"))
+import settings as ST          # noqa: E402
 
-SLUGS = {"TGS": "tgs", "BLM": "blm"}
+SLUGS = ST.slug_map()
 SITE_HOST = "statsplus.net"
+_HIST = ST.history_settings()  # settings leagues.<LG>.history
 # first game date each league's player pages show rating history for
-FIRST_KNOWN = {"TGS": "2038-01-01", "BLM": "2051-01-01"}
+FIRST_KNOWN = {lg: h["first_date"] for lg, h in _HIST.items()}
 # walk back at most this many years before it. TGS: none (user, 2026-09-30:
 # "just like the past 8 seasons because older versions of the game likely had
 # different ratings"), so TGS starts at 2038-01-01 (2038-2045 = 8 seasons).
 # BLM: none either (same reason; older snapshots would only feed displays and
 # could contaminate any measurement), so BLM starts at 2051-01-01.
-PROBE_YEARS = {"TGS": 0, "BLM": 0}
+PROBE_YEARS = {lg: h["probe_years"] for lg, h in _HIST.items()}
 MIN_PAUSE = 20.0                # seconds between jobs (be gentle with the server)
 RATE_GAP = 0.0                  # seconds between job STARTS. No fixed wait (user, 2026-09-30):
                                 # the "5 minutes per team" rule was only read secondhand; when
@@ -844,7 +847,7 @@ def drop_asof(league, dates, drop_all, raw_dirs):
 # ---------------------------------------------------------------- main
 def parse_args(argv):
     ap = argparse.ArgumentParser(description="Pull past StatsPlus rating snapshots into the ratings archive.")
-    ap.add_argument("--league", required=True, choices=sorted(SLUGS))
+    ap.add_argument("--league", required=True, choices=sorted(set(SLUGS) & set(FIRST_KNOWN)))
     ap.add_argument("--slug", help="StatsPlus slug: letters, digits and dashes only")
     ap.add_argument("--from", dest="start", help="first game date YYYY-MM-DD (default: walk back)")
     ap.add_argument("--to", dest="end", help="last step game date YYYY-MM-DD (default: newest live pull)")

@@ -29,16 +29,18 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-_OOTP26 = r"C:\OOTP 26\data\saved_games"
-_OOTP27 = os.path.join(os.path.expanduser("~"), "Documents", "Out of the Park Developments",
-                       "OOTP Baseball 27", "saved_games")
+_TOOLS = os.path.join(REPO, "tgs-viz", "tools")
+if _TOOLS not in sys.path:
+    sys.path.insert(0, _TOOLS)
+import settings as ST  # noqa: E402
 
+FNAME = "mlb_transactions_free_agents_-_international_amateur_fa_fa_screen.csv"
+# The export in each online league's OOTP save (settings ootp_version + ootp_save).
+# BLM has an international phase too; this is where its export will land.
 DEFAULT_CSV = {
-    "TGS": os.path.join(_OOTP26, "TheGrandestSalami.lg", "import_export",
-                        "mlb_transactions_free_agents_-_international_amateur_fa_fa_screen.csv"),
-    # BLM has an international phase too; this is where its export will land.
-    "BLM": os.path.join(_OOTP27, "BLM.lg", "import_export",
-                        "mlb_transactions_free_agents_-_international_amateur_fa_fa_screen.csv"),
+    lg: os.path.join(ST.ootp_save_dir(lg), "import_export", FNAME)
+    for lg, e in ST.leagues(include_disabled=True).items()
+    if e.get("type") == "statsplus" and ST.ootp_save_dir(lg)
 }
 
 # Carried through to the app. ID is the join key; the rest is what StatsPlus lacks.

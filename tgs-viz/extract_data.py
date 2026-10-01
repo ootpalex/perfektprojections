@@ -353,6 +353,26 @@ def load_manifest_entries(manifest_path):
     return [e for e in raw if isinstance(e, dict) and e.get("id")]
 
 
+def _write_manifest(manifest_path, entries):
+    """Write {"leagues": entries} to a temp file in the same folder, then move it
+    onto leagues.json, so a reader never sees a half-written manifest. Text
+    mode with the default newline, as before (the file keeps its CRLF bytes).
+    The move is retried while a reader holds the file (10 tries, 200 ms)."""
+    import time
+    tmp = f"{manifest_path}.{os.getpid()}.tmp"
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump({"leagues": entries}, f, indent=2, ensure_ascii=False)
+    for attempt in range(10):
+        try:
+            os.replace(tmp, manifest_path)
+            return
+        except PermissionError:
+            if attempt == 9:
+                os.remove(tmp)
+                raise
+            time.sleep(0.2)
+
+
 def upsert_manifest(manifest_path, new_entries):
     """Merge new/updated league entries into leagues.json (keyed by id) and
     write the new {"leagues": [...]} schema. Entries not in new_entries are
@@ -363,9 +383,19 @@ def upsert_manifest(manifest_path, new_entries):
         merged.update(entry)
         by_id[entry["id"]] = merged
     entries = sorted(by_id.values(), key=lambda x: x["id"])
-    with open(manifest_path, 'w', encoding='utf-8') as f:
-        json.dump({"leagues": entries}, f, indent=2, ensure_ascii=False)
+    _write_manifest(manifest_path, entries)
     return entries
+
+
+def remove_manifest_entry(manifest_path, league_id):
+    """Drop one league from leagues.json (same atomic write). Returns True when
+    the entry was there."""
+    entries = load_manifest_entries(manifest_path)
+    kept = [e for e in entries if e.get("id") != league_id]
+    if len(kept) == len(entries):
+        return False
+    _write_manifest(manifest_path, sorted(kept, key=lambda x: x["id"]))
+    return True
 
 
 # Display names for trends-only leagues that --manifest-only registers from a

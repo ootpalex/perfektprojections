@@ -77,6 +77,8 @@ import extract_data as X     # noqa: E402
 import offline_league as OL  # noqa: E402
 import dump_vintages as DV   # noqa: E402
 import dump_source as D      # noqa: E402
+sys.path.insert(0, os.path.join(VIZ, "tools"))
+import settings as ST        # noqa: E402
 
 DATA_DIR = os.path.join(VIZ, "public", "data")
 RESERVED = {"TGS", "BLM", "DEV"}
@@ -85,8 +87,12 @@ LOW_A = ("california", "carolina", "florida state")
 
 
 def csv_dir_for(save, game):
-    return os.path.join(os.path.expanduser("~"), "Documents", "Out of the Park Developments",
-                        f"OOTP Baseball {game}", "saved_games", f"{save}.lg", "import_export", "csv")
+    """<save>.lg/import_export/csv in the version's saved_games folder: the
+    settings folder (ootp.installs.<game>) when set, else Documents."""
+    saved = ST.saved_games(game) or os.path.join(os.path.expanduser("~"), "Documents",
+                                                 "Out of the Park Developments", f"OOTP Baseball {game}",
+                                                 "saved_games")
+    return os.path.join(saved, f"{save}.lg", "import_export", "csv")
 
 
 def read_csv(path):
@@ -207,7 +213,7 @@ def write_json(records, path, overwrite):
     tmp = target + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(records, fh, ensure_ascii=False)
-    os.replace(tmp, target)
+    ST.replace_retry(tmp, target)          # retried while a reader holds the file
     return target
 
 
