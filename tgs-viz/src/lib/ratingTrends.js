@@ -9,6 +9,20 @@
 
 const cache = {};
 
+/**
+ * Rating display scales the export can stamp in age_curves.scale, and the
+ * size of one display step on each: 1 point on 20-80, and 100/60 = 1.67
+ * points on 1-100 (one 20-80 point spans that much of 1-100). An export
+ * without a stamp is a 20-80 league (TGS, BLM).
+ */
+export const DISPLAY_UNIT = { '20-80': 1, '1-100': 100 / 60 };
+
+/** The league's rating display scale: "20-80" (default) or "1-100". */
+export function ratingScale(ageCurves) {
+  const s = ageCurves?.scale;
+  return DISPLAY_UNIT[s] ? s : '20-80';
+}
+
 /** Fetch (once per league) the trends file. Resolves to null when missing. */
 export function loadRatingTrends(league) {
   const lg = league || 'TGS';

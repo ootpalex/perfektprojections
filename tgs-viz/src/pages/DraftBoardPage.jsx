@@ -116,7 +116,7 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
         <p className="text-sm text-slate-400 mt-1">
           Draft FV: age percentile 30% + ceiling 60% + projected peak 10%, all in WAA | Fragile, work ethic and intelligence adjust it
           <span className="block text-xs text-slate-500 mt-0.5">
-            Value columns display WAA (vs average). <b>Ceiling</b> = best case, no haircut. <b>Proj Peak</b> = same ceiling after the gap-factor + risk haircut. Ceiling is the payoff, Age Pctl is the probability.
+            Value columns display WAA (vs average). <b>Ceiling</b> = best case, no haircut. <b>Proj Peak</b> = where we project him to top out (Proj Potential): from the ML model when the row has it (his WAA today + the ML median gain, washouts counted), else his WAA today + the DEV cell gain or the measured curve. Ceiling is the payoff, Age Pctl is the probability.
           </span>
         </p>
       </div>
@@ -249,7 +249,7 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
                 <th>G5 Peak</th>
                 <th>Dev%</th>
                 <th className="border-l border-slate-700">Hybrid</th>
-                <th title="Same Ceiling, WAA, AFTER the development gap-factor and risk haircut — what we actually expect him to reach. Always <= Ceiling; the difference IS the risk.">Proj Peak</th>
+                <th title="Proj Potential, WAA: where we project him to top out. From the ML model when the row has it (his WAA today + the ML median gain, washouts counted), else his WAA today + the DEV cell gain or the measured curve.">Proj Peak</th>
               </tr>
             </thead>
             <tbody>

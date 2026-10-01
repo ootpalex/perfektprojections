@@ -6,6 +6,7 @@ import PitchersPage from './pages/PitchersPage';
 import DraftBoardPage from './pages/DraftBoardPage';
 import MockDraftPage from './pages/MockDraftPage';
 import RosterOptimizerPage from './pages/RosterOptimizerPage';
+import SeriesPlannerPage from './pages/SeriesPlannerPage';
 import DevAnalysisPage from './pages/DevAnalysisPage';
 import CalibrationPage from './pages/CalibrationPage';
 import MarketValuePage from './pages/MarketValuePage';
@@ -13,7 +14,9 @@ import TeamStandingsPage from './pages/TeamStandingsPage';
 import OrganizationPage from './pages/OrganizationPage';
 import TrendsPage from './pages/TrendsPage';
 import WaiverClaimPage from './pages/WaiverClaimPage';
-import { Users, Zap, Target, Trophy, Loader2, AlertCircle, BarChart3, TrendingUp, ChevronDown, DollarSign, TableProperties, Building2, Activity, ClipboardList } from 'lucide-react';
+import ParksPage from './pages/ParksPage';
+import MakeItOddsPage from './pages/MakeItOddsPage';
+import { Users, Zap, Target, Trophy, Loader2, AlertCircle, BarChart3, TrendingUp, ChevronDown, DollarSign, TableProperties, Building2, Activity, ClipboardList, Swords, Percent } from 'lucide-react';
 
 function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeChange, features, iafaCount = 0, r5Count = 0 }) {
   const linkClass = ({ isActive }) =>
@@ -23,8 +26,17 @@ function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeC
         : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
     }`;
 
+  // A trends-only league (features.players false) has no player files: the
+  // park toggle and every page built on players stay out of the nav, and only
+  // Rating Trends is offered.
+  const players = features.players !== false;
+
+  // The link list is taller than a short window. Without overflow-y-auto on it
+  // the nav grows past the viewport, the whole document scrolls, and every page
+  // looks cut off with a blank band under it. Only the list scrolls; the league
+  // select and park toggle stay pinned above it.
   return (
-    <nav className="w-56 bg-slate-900 border-r border-slate-800 flex flex-col h-full">
+    <nav className="w-56 shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col h-full">
       <div className="p-4 border-b border-slate-800">
         <h1 className="text-lg font-black text-white tracking-tight">TGS</h1>
         <p className="text-[10px] text-slate-500 uppercase tracking-widest">Projections Viz</p>
@@ -50,6 +62,7 @@ function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeC
       )}
 
       {/* Park basis toggle — Neutral is the shipped default (contracts normalized) */}
+      {players && (
       <div className="px-3 pt-2 pb-1">
         <p className="text-[10px] text-slate-600 uppercase tracking-widest px-1 pb-1.5">Park Basis</p>
         <div className="flex rounded-lg overflow-hidden border border-slate-700">
@@ -68,8 +81,11 @@ function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeC
           ))}
         </div>
       </div>
+      )}
 
-      <div className="flex-1 p-2 space-y-0.5">
+      <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-0.5">
+        {players && (
+        <>
         <p className="text-[10px] text-slate-600 uppercase tracking-widest px-3 pt-3 pb-1">Team Sheets</p>
         <NavLink to="/hitters" className={linkClass}>
           <Users size={16} /> Hitters
@@ -139,30 +155,51 @@ function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeC
         <NavLink to="/waivers" className={linkClass}>
           <ClipboardList size={16} /> Waivers &amp; DFA
         </NavLink>
+        <NavLink to="/parks" className={linkClass}>
+          <Building2 size={16} /> Parks
+        </NavLink>
 
         <p className="text-[10px] text-slate-600 uppercase tracking-widest px-3 pt-4 pb-1">Standings</p>
         <NavLink to="/standings" className={linkClass}>
           <TableProperties size={16} /> Team Projections
         </NavLink>
+        </>
+        )}
 
         <p className="text-[10px] text-slate-600 uppercase tracking-widest px-3 pt-4 pb-1">Tools</p>
-        {features.contracts && (
+        {players && features.contracts && (
           <NavLink to="/market-value" className={linkClass}>
             <DollarSign size={16} /> Market Value
           </NavLink>
         )}
+        {players && (
+        <>
         <NavLink to="/optimizer" className={linkClass}>
           <Trophy size={16} /> Roster Optimizer
+        </NavLink>
+        <NavLink to="/series" className={linkClass}>
+          <Swords size={16} /> Series Planner
         </NavLink>
         <NavLink to="/dev-analysis" className={linkClass}>
           <TrendingUp size={16} /> Dev Analysis
         </NavLink>
+        </>
+        )}
+        {features.trends !== false && (
         <NavLink to="/trends" className={linkClass}>
           <Activity size={16} /> Rating Trends
         </NavLink>
+        )}
+        {/* Make-it odds tables (user asked, 2026-09-24): DEV-league data, one
+            file for every league, so the link shows whatever league is picked. */}
+        <NavLink to="/odds" className={linkClass}>
+          <Percent size={16} /> Make-it odds
+        </NavLink>
+        {players && (
         <NavLink to="/calibration" className={linkClass}>
           <Target size={16} /> Model vs Actual
         </NavLink>
+        )}
       </div>
       <div className="p-3 border-t border-slate-800 text-[10px] text-slate-600">
         OOTP 26 Analytics
@@ -257,16 +294,21 @@ export default function App() {
     localStorage.setItem('tgs-park', mode);
   };
 
-  // Load player data for the selected league
-  const { data, loading, error, loadProgress } = usePlayerData(currentLeague, parkMode);
-
-  // Compute league-wide $/WAA rate (must be before early returns — React hooks rule)
-  const marketRate = useMarketRate(data.hitters, data.pitchers, data.marketBank);
-
   // Per-league feature flags from the manifest (unknown league -> everything on,
   // pages already degrade gracefully on missing fields/datasets).
   const activeLeague = leagues.find(lg => lg.id === currentLeague);
   const features = { ...DEFAULT_FEATURES, ...(activeLeague?.features || {}) };
+  // players false = a trends-only league: no player files exist, so nothing is
+  // fetched and the Rating Trends page is the only page. While the manifest is
+  // still loading the flag is unknown, and the fetch starts as it always did.
+  const showPlayers = features.players !== false;
+  const wantPlayers = leaguesLoading || showPlayers;
+
+  // Load player data for the selected league
+  const { data, loading, error, loadProgress } = usePlayerData(currentLeague, parkMode, wantPlayers);
+
+  // Compute league-wide $/WAA rate (must be before early returns — React hooks rule)
+  const marketRate = useMarketRate(data.hitters, data.pitchers, data.marketBank);
 
   // International amateur class. The ratings pull cannot identify these players (no
   // nationality field exists), so membership comes from the in-game export via
@@ -325,7 +367,7 @@ export default function App() {
 
   const hasData = data.hitters.length > 0 || data.pitchers.length > 0;
 
-  if (!hasData) {
+  if (!hasData && showPlayers) {
     return <ErrorScreen error={`No player data found for league "${currentLeague}". Run python extract_data.py first.`} />;
   }
 
@@ -344,6 +386,15 @@ export default function App() {
       <main className="flex-1 overflow-hidden">
         <div className="gradient-bar" />
         <div className="h-[calc(100%-3px)]">
+          {!showPlayers ? (
+          // Trends-only league: one page. Any other path (a player page left
+          // open from the previous league) lands on it.
+          <Routes>
+            <Route path="/trends" element={<TrendsPage league={currentLeague} />} />
+            <Route path="/odds" element={<MakeItOddsPage />} />
+            <Route path="*" element={<Navigate to="/trends" replace />} />
+          </Routes>
+          ) : (
           <Routes>
             <Route path="/" element={<Navigate to="/hitters" replace />} />
             <Route path="/hitters" element={<HittersPage players={data.hitters} allPlayers={data.hitters} marketRate={marketRate} />} />
@@ -370,6 +421,7 @@ export default function App() {
                 pitchers={data.pitchers_draft}
                 fullHitters={data.hitters_draft_all}
                 fullPitchers={data.pitchers_draft_all}
+                picks={data.draft_picks}
                 allHitters={data.hitters}
                 allPitchers={data.pitchers}
               />
@@ -377,6 +429,7 @@ export default function App() {
             <Route path="/standings" element={
               <TeamStandingsPage hitters={data.hitters} pitchers={data.pitchers} metadata={data.metadata} league={currentLeague} />
             } />
+            <Route path="/parks" element={<ParksPage parks={data.parks} parkList={data.park_list} league={currentLeague} />} />
             <Route path="/organization" element={
               <OrganizationPage hitters={data.hitters} pitchers={data.pitchers} metadata={data.metadata} league={currentLeague} />
             } />
@@ -389,10 +442,15 @@ export default function App() {
             <Route path="/optimizer" element={
               <RosterOptimizerPage hitters={data.hitters} pitchers={data.pitchers} metadata={data.metadata} league={currentLeague} />
             } />
+            <Route path="/series" element={
+              <SeriesPlannerPage hitters={data.hitters} pitchers={data.pitchers} parks={data.parks} metadata={data.metadata} league={currentLeague} parkMode={parkMode} />
+            } />
             <Route path="/dev-analysis" element={<DevAnalysisPage />} />
             <Route path="/calibration" element={<CalibrationPage league={currentLeague} />} />
             <Route path="/trends" element={<TrendsPage league={currentLeague} />} />
+            <Route path="/odds" element={<MakeItOddsPage />} />
           </Routes>
+          )}
         </div>
       </main>
     </div>

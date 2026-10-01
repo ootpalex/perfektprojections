@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  LEVELS, LEVEL_RANK, buildRosters, listOrgs,
+  LEVELS, LEVEL_RANK, buildRosters, listOrgs, chanceOf,
+  isFillerBat, trainingNotes, TRAIN_PEAK_BAR, keepCmp,
 } from '../lib/orgBuilder';
+import { devAlreadyThere, devShareBasisWords, devIsMl, devMlWords, devMlRangeNote, fmtWaa } from '../lib/devSignals';
 import { PositionalStrengthCard } from '../components/PositionalStrength';
 import { LEAGUE_TEAMS } from './TeamStandingsPage';
-import { usePlayerData } from '../hooks/usePlayerData';
+import { usePlayerData, usePlayersWithFV } from '../hooks/usePlayerData';
 import { Building2, ArrowUpCircle, ArrowDownCircle, AlertTriangle, ChevronDown, Zap, Users } from 'lucide-react';
 
 const fmt = (v) => (v === null || v === undefined ? '—' : Number(v).toFixed(1));
@@ -62,8 +64,73 @@ function Tags({ p, cardLev }) {
   );
 }
 
+// Training positions (user, 2026-09-24: "notate the positions they lack
+// training by each of the prospects to work as a reminder. I forget all the
+// time to change positions during the season in the minors for training").
+// One amber chip per bat listing every position where he is 0 WAA or better
+// if he reaches his potential but has not mastered (position rating
+// current/potential, 0 = never trained), best first. The rule and the math
+// live in orgBuilder.trainingNotes (the P WAA P line). Who gets it: on a
+// minors card any bat who is not a filler (isFillerBat: a filler does not
+// develop); on the MLB card any bat under 27 (he still trains). Pitchers
+// never. The hover lists his WAA at each position at his potential.
+function TrainChip({ h, lev }) {
+  if (h.isPitcher) return null;
+  const trains = lev === 'MLB' ? (h.age != null && h.age < 27) : !isFillerBat(h);
+  if (!trains) return null;
+  const notes = trainingNotes(h.p);
+  if (!notes.length) return null;
+  const signed = (v) => (v >= 0 ? '+' : '') + v.toFixed(1);
+  const label = notes.map((n) => (n.untrained ? `${n.pos} new` : `${n.pos} ${n.cur}/${n.pot}`)).join(' · ');
+  const peaks = notes.map((n) => `${n.pos} ${signed(n.peak)}`).join(', ');
+  const title = `Positions where he is ${TRAIN_PEAK_BAR} WAA or better if he reaches his potential, but has not mastered (position rating current/potential; "new" = never trained there, his tools carry it). Set his training position in OOTP. His WAA there at his potential: ${peaks}.`;
+  return <Badge title={title} cls="bg-amber-500/15 text-amber-300 border-amber-500/40 whitespace-nowrap">train {label}</Badge>;
+}
+
 // Parse a raw sheet value; null when the projection doesn't exist for that role.
 const pnum = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
+
+// MLB % on minors rows (user, 2026-09-24, "if they will ever be anything in
+// the mlb first and foremost"): the chance the player's eventual peak
+// reaches -1 WAA (an MLB-level player: a 5th starter or bench bat) from
+// where he is now, the share of his DEV lookalikes (same age, Pot, growth
+// and a similar current) whose gain covered the distance; a player already
+// at the bar reads 100% (user, 2026-09-24: "there are a ton of guys who are
+// already at 0+ WAA that are getting like tagged as less than 100%").
+// Useful % (0) and Good % (+1.5) sit in the hover. These, not Make it %,
+// rank minors playing time (orgBuilder chanceOf: rotations, pens and
+// lineups, chance first). A row with no DEV group at all (growth and
+// pot-only cells both thin, or outside 16-26) shows the stand-in from Proj
+// Potential with an asterisk. Hover wording matches the list columns
+// (devSignals.js devShareTitle).
+const pct = (v) => `${Math.round(v * 100)}%`;
+const chanceRow = (x, lev) => (lev === 'MLB' ? null : (x.chance || chanceOf(x.p)));
+const chanceText = (c) => (c === null ? '' : `${pct(c.mlb)}${c.source === 'stand-in' ? '*' : ''}`);
+const chanceTitle = (c, p) => {
+  const s = (v) => (v === null || v === undefined ? '?' : pct(v));
+  const head = `MLB ${s(c.mlb)}${c.source === 'stand-in' ? '*' : ''} / Starter ${s(c.useful)} / Star ${s(c.good)}`;
+  if (c.source === 'stand-in') return `${head}: * stand-in from Proj Potential, no DEV group at all (growth and pot-only cells both thin, or outside 16-26)`;
+  const now = p ? p.Dev_ShareNow : null;
+  if (devIsMl(p)) {
+    // ML (2026-09-25): wording only; the chances the builder ranks on are
+    // the same fields, now filled by the ML model (devMl.js).
+    const cur = `${fmtWaa(now)}${p.Dev_Role === 'P' ? ', his better of SP and RP' : ''}`;
+    const already = ['mlb', 'useful', 'good'].filter((k) => devAlreadyThere(p, k));
+    const there = already.length ? ` Already ${already.map((k) => ({ mlb: 'at MLB level', useful: 'at starter level', good: 'a star' }[k])).join(', ')} (current ${cur}).` : '';
+    const s = (v) => (v === null || v === undefined ? '?' : pct(v));
+    return `${head}: chance his peak reaches -1 / 0 / +1.5 WAA from his current ${cur}, from ${devMlWords(p)}; cell method: ${s(p.Dev_CellMlb)} / ${s(p.Dev_CellUseful)} / ${s(p.Dev_CellGood)}${devMlRangeNote(p)}.${there}`;
+  }
+  if (now === null || now === undefined) return `${head}: share of DEV lookalikes whose peak reached -1 / 0 / +1.5 WAA; his current is unknown, so these are the group's shares, not his own chance`;
+  const n = p.Dev_PeakN !== null && p.Dev_PeakN !== undefined ? `n ${p.Dev_PeakN}` : 'n unknown';
+  const cell = p.Dev_PeakCell ? `, DEV cell ${p.Dev_PeakCell}` : '';
+  const basis = devShareBasisWords(p);
+  // A pitcher's current is the better of his SP and RP lines, not always
+  // the line this row shows (a rotation row shows the SP line).
+  const cur = `${fmtWaa(now)}${p.Dev_Role === 'P' ? ', his better of SP and RP' : ''}`;
+  const already = ['mlb', 'useful', 'good'].filter((k) => devAlreadyThere(p, k));
+  const there = already.length ? ` Already ${already.map((k) => ({ mlb: 'at MLB level', useful: 'at starter level', good: 'a star' }[k])).join(', ')} (current ${cur}).` : '';
+  return `${head}: chance his peak reaches -1 / 0 / +1.5 WAA from his current ${cur}: the share of DEV players with his age, Pot, growth and a similar current whose gain covered the distance (${n}${cell}${basis ? `, ${basis}` : ''}).${there}`;
+};
 
 function PitcherLine({ x, lev, role }) {
   // Show the WAA of the ROLE this line slots him in (user rule: the value at
@@ -73,6 +140,7 @@ function PitcherLine({ x, lev, role }) {
     : role === 'RP' ? (pnum(x.p['WAA wtd RP']) ?? x.cur) : x.cur;
   const pot = role === 'SP' ? (pnum(x.p['WAP']) ?? x.pot)
     : role === 'RP' ? (pnum(x.p['WAP RP']) ?? x.pot) : x.pot;
+  const chance = chanceRow(x, lev);
   return (
     <div className="flex items-center justify-between px-2 py-1 border-t border-slate-800/50 text-xs">
       <span className="text-slate-200 truncate flex items-center gap-1">{x.p['Name']} <span className="text-slate-600">{x.p['T']}HP</span><LocChip p={x.p} cardLev={lev} /><Tags p={x.p} cardLev={lev} />
@@ -82,6 +150,7 @@ function PitcherLine({ x, lev, role }) {
         <span className="text-slate-500">{x.age ?? '—'}</span>
         <span className={valColor(cur)}>{fmt(cur)}</span>
         <span className="text-sky-300/70 w-8 text-right">{fmt(pot)}</span>
+        {lev !== 'MLB' && <span className="w-8 text-right text-[10px] text-slate-500 whitespace-nowrap" title={chance === null ? undefined : chanceTitle(chance, x.p)}>{chanceText(chance)}</span>}
       </span>
     </div>
   );
@@ -108,7 +177,8 @@ function CutRow({ x }) {
 function HitterRow({ h, lev, bench }) {
   const eff = h.ceiling === 'MLB' ? 'AAA' : h.ceiling;
   const split = eff && LEVEL_RANK[eff] > LEVEL_RANK[lev];
-  const prospect = h.age != null && h.age < 25 && h.pot != null && h.cur != null && h.pot > h.cur + 1;
+  // Young = under 27 (turn-27 rule, DEV data, 2026-09-24; was 25).
+  const prospect = h.age != null && h.age < 27 && h.pot != null && h.cur != null && h.pot > h.cur + 1;
   const slot = h.slot || 'BN';
   const pos = h.slotPos || h.bestPos || h.p['POS'];
   // Value at the position he's PLAYING on this card (user rule) — a bat slotted
@@ -116,6 +186,7 @@ function HitterRow({ h, lev, bench }) {
   // no assigned position keep the best-position value.
   const cur = h.slotPos ? (pnum(h.p[`${h.slotPos} WAA wtd`]) ?? h.cur) : h.cur;
   const pot = h.slotPos ? (pnum(h.p[`${h.slotPos} WAA P`]) ?? h.pot) : h.pot;
+  const chance = chanceRow(h, lev);
   return (
     <tr className={`border-t border-slate-800/50 hover:bg-slate-800/30 ${bench ? 'opacity-70' : ''}`}>
       <td className="px-2 py-1"><Badge cls={bench ? 'bg-slate-800/40 text-slate-500 border-slate-700/40' : 'bg-slate-700/40 text-slate-300 border-slate-600/40'}>{slot}</Badge></td>
@@ -125,6 +196,7 @@ function HitterRow({ h, lev, bench }) {
       <td className={`px-2 py-1 text-right tabular-nums ${wobaColor(h.woba)}`}>{fmtWoba(h.woba)}</td>
       <td className={`px-2 py-1 text-right tabular-nums ${valColor(cur)}`}>{fmt(cur)}</td>
       <td className="px-2 py-1 text-right tabular-nums text-sky-300/70">{fmt(pot)}</td>
+      {lev !== 'MLB' && <td className="px-1 py-1 text-right tabular-nums text-[10px] text-slate-500 whitespace-nowrap" title={chance === null ? undefined : chanceTitle(chance, h.p)}>{chanceText(chance)}</td>}
       <td className="px-2 py-1">
         <div className="flex gap-1 items-center">
           <Tags p={h.p} cardLev={lev} />
@@ -132,6 +204,7 @@ function HitterRow({ h, lev, bench }) {
           {split && <Badge cls="bg-violet-500/15 text-violet-300 border-violet-500/30">split ↓ from {eff}</Badge>}
           {h._stretch && <Badge title="roster filler — stretched up to cover a bench spot (no real future, no harm)" cls="bg-amber-500/15 text-amber-300/80 border-amber-500/30">stretch ↑ {h.ceiling}</Badge>}
           {h._devDepth && <Badge title="roster depth — fills the roster beyond the core lineup + bench (young bats kept to develop, plus fillers to reach the roster cap)" cls="bg-sky-500/10 text-sky-300/70 border-sky-500/25">depth</Badge>}
+          <TrainChip h={h} lev={lev} />
         </div>
       </td>
     </tr>
@@ -153,7 +226,7 @@ function LevelCard({ lev, data }) {
           {!empty && <span className="text-xs text-slate-500 tabular-nums">{c.SP} SP · {c.RP} RP · {c.hitters} bats{c.bench ? ` (${c.bench} bench)` : ''} · {c.LHP} LHP</span>}
         </div>
         <div className="flex gap-1.5 flex-wrap justify-end">
-          {data.gaps.map((g, i) => <Badge key={i} cls="bg-rose-500/15 text-rose-400 border-rose-500/30" title="every fill path was tried — the org has no eligible 25+ body left for this slot; sign a minor-league filler">{g}: sign a filler</Badge>)}
+          {data.gaps.map((g, i) => <Badge key={i} cls="bg-rose-500/15 text-rose-400 border-rose-500/30" title="every fill path was tried: the org has no eligible 27+ body left for this slot; sign a minor-league filler">{g}: sign a filler</Badge>)}
         </div>
       </div>
       {empty ? <div className="px-4 py-3 text-xs text-slate-600 italic">No players reach this level</div> : (
@@ -177,11 +250,13 @@ function LevelCard({ lev, data }) {
                 <th className="px-2 py-0.5 text-left font-medium">Slot</th><th className="px-2 py-0.5 text-left font-medium">Player</th>
                 <th className="px-2 py-0.5 font-medium">Age</th><th className="px-2 py-0.5 font-medium">Pos</th>
                 <th className="px-2 py-0.5 text-right font-medium">wOBA</th>
-                <th className="px-2 py-0.5 text-right font-medium">Cur</th><th className="px-2 py-0.5 text-right font-medium">Pot</th><th /></tr></thead>
+                <th className="px-2 py-0.5 text-right font-medium">Cur</th><th className="px-2 py-0.5 text-right font-medium">Pot</th>
+                {lev !== 'MLB' && <th className="px-1 py-0.5 text-right font-medium" title="MLB %: chance his peak reaches -1 WAA (an MLB-level player) from where he is now, the share of DEV lookalikes at a similar current whose gain covered the distance; 100% when he is already there (hover a row for Starter % and Star %, the 0 and +1.5 bars; * = stand-in from Proj Potential when no DEV group at all)">MLB</th>}
+                <th /></tr></thead>
               <tbody>
                 {starters.map((h, i) => <HitterRow key={`s${i}`} h={h} lev={lev} />)}
                 {bench.length > 0 && (
-                  <tr><td colSpan={8} className="px-2 pt-2 pb-0.5 text-[9px] uppercase tracking-wider text-slate-600">Bench</td></tr>
+                  <tr><td colSpan={lev === 'MLB' ? 8 : 9} className="px-2 pt-2 pb-0.5 text-[9px] uppercase tracking-wider text-slate-600">Bench</td></tr>
                 )}
                 {bench.map((h, i) => <HitterRow key={`b${i}`} h={h} lev={lev} bench />)}
               </tbody>
@@ -211,8 +286,15 @@ export default function OrganizationPage({ hitters: hittersIn = [], pitchers: pi
   // Team Projections pages. When the app toggle is already Neutral the files
   // are identical (and cached), so this costs nothing.
   const { data: neutralData } = usePlayerData(league, 'neutral');
-  const hitters = neutralData.hitters.length ? neutralData.hitters : hittersIn;
-  const pitchers = neutralData.pitchers.length ? neutralData.pitchers : pitchersIn;
+  const hittersNeutral = neutralData.hitters.length ? neutralData.hitters : hittersIn;
+  const pitchersNeutral = neutralData.pitchers.length ? neutralData.pitchers : pitchersIn;
+  // Proj Potential on every row (user, 2026-09-24: the Org tab must use what
+  // we actually project). usePlayersWithFV stamps _potentialWAA, the same
+  // number the lists show, onto the NEUTRAL rows above (the park basis stays
+  // neutral). It loads the measured curve itself and needs nothing else from
+  // this page. orgBuilder.potentialValue reads _potentialWAA first.
+  const hitters = usePlayersWithFV(hittersNeutral);
+  const pitchers = usePlayersWithFV(pitchersNeutral);
 
   const orgs = useMemo(() => listOrgs(hitters, pitchers), [hitters, pitchers]);
   const [org, setOrg] = useState('');
@@ -242,9 +324,10 @@ export default function OrganizationPage({ hitters: hittersIn = [], pitchers: pi
   // sinks to the bottom).
   const cuts = useMemo(() => {
     if (!rosters?.depth) return { H: [], P: [] };
-    const youth = (a) => (a == null ? 0 : a <= 20 ? 2.5 : a <= 22 ? 1.5 : a <= 24 ? 0.6 : 0);
-    const keep = (x) => (x.pot ?? x.cur ?? -99) + youth(x.age);
-    const byKeep = (a, b) => keep(a) - keep(b);
+    // orgBuilder's keepCmp reversed, the same order the depth pass keeps
+    // players in (prospects by chance first, then fillers by keep value;
+    // 2026-09-25), so the cuts list and the rosters agree: most cuttable first.
+    const byKeep = (a, b) => keepCmp(b, a);
     return {
       H: rosters.depth.filter((x) => !x.isPitcher).sort(byKeep),
       P: rosters.depth.filter((x) => x.isPitcher).sort(byKeep),
@@ -259,6 +342,7 @@ export default function OrganizationPage({ hitters: hittersIn = [], pitchers: pi
           <div>
             <h1 className="text-xl font-black text-white">Organization Builder</h1>
             <p className="text-xs text-slate-500">Cards = where each player <span className="text-slate-300">should</span> be · <span className="text-slate-400">@ lvl</span> = where he is <span className="text-slate-300">now</span> in OOTP · <span className="text-emerald-300">↑ lvl</span> promote · <span className="text-orange-300">prove it</span> = 18+ in complex · <span className="text-amber-300">★</span> captain — {league}</p>
+            <p className="text-xs text-slate-500"><span className="text-amber-300">train C 45/50 · RF new</span> = positions he projects at 0 WAA or better at peak but has not mastered (position rating current/potential; new = never trained there, his tools carry it): set his training position in OOTP · shown for minors bats who are not fillers and MLB bats under 27 · hover a chip for the projected peak at each position</p>
           </div>
         </div>
         <div className="relative">
@@ -312,7 +396,7 @@ export default function OrganizationPage({ hitters: hittersIn = [], pitchers: pi
               <div className="px-4 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center gap-2">
                 <ArrowDownCircle size={15} className="text-rose-400" />
                 <span className="text-sm font-black text-rose-300">Possible Cuts</span>
-                <span className="text-xs text-slate-500">{cuts.H.length + cuts.P.length} surplus — rosters are filled, these didn't make one (worst ceiling first)</span>
+                <span className="text-xs text-slate-500">{cuts.H.length + cuts.P.length} surplus: rosters are filled, these didn't make one (most cuttable first: fillers, then prospects with the lowest MLB %)</span>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
                 <div className="border-r border-slate-800/60">

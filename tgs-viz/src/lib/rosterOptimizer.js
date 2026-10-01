@@ -237,6 +237,7 @@ function optimalPositionAssignment(candidates, split, excludeIds = new Set(), pr
     const opts = [];
     for (let p = 0; p < nPos; p++) {
       if (!h._positions.includes(positionsToFill[p])) continue;
+      if (!lineupOK(h, positionsToFill[p])) continue;   // Win now: starters only where at potential
       const waa = getPositionWAAForSplit(h, positionsToFill[p], split);
       if (waa !== -Infinity) opts.push([p, waa]);
     }
@@ -369,9 +370,6 @@ function optimizeBattingOrder(starters, split) {
     slotTwo = bestWOBA;
   }
 
-  // Slot-to-rank mapping (1-indexed): slot -> wOBA rank (for slots 3-9)
-  const SLOT_TO_RANK = { 3: 5, 4: 3, 5: 4, 6: 6, 7: 7, 8: 9, 9: 8 };
-
   const order = new Array(10).fill(null); // index 1-9
   const usedIds = new Set();
 
@@ -383,20 +381,20 @@ function optimizeBattingOrder(starters, split) {
   order[2] = slotTwo;
   usedIds.add(getId(slotTwo));
 
-  // Slots 3-9: map by wOBA rank
-  for (let slot = 3; slot <= 9; slot++) {
-    const targetRank = SLOT_TO_RANK[slot]; // 1-based
-    let candidate = rankedByWOBA[targetRank - 1]; // 0-based index
-
-    if (!candidate || usedIds.has(getId(candidate))) {
-      candidate = rankedByWOBA.find(r => !usedIds.has(getId(r)));
-    }
-
+  // Slots 3-9 (user fix 2026-09-17): The Book's order of importance applied to
+  // the hitters who are LEFT, ranked by wOBA: 4th, 5th, 3rd, 6th, 7th, 9th, 8th.
+  // The old fixed slot->wOBA-rank table assumed ranks 1 and 2 had taken slots 1
+  // and 2, which is false whenever the leadoff man is picked on OBP: the 2nd-best
+  // bat then had no slot and fell into the 6-hole (Castillo, .339 vs LHP).
+  const SLOT_FILL_ORDER = [4, 5, 3, 6, 7, 9, 8];
+  const remaining = rankedByWOBA.filter(r => !usedIds.has(getId(r)));
+  SLOT_FILL_ORDER.forEach((slot, i) => {
+    const candidate = remaining[i];
     if (candidate) {
       order[slot] = candidate;
       usedIds.add(getId(candidate));
     }
-  }
+  });
 
   // Build labeled result
   const SLOT_LABELS = {
@@ -476,6 +474,7 @@ function identifyPlatoonBat(benchCandidates, starters) {
       for (const pos of benchPositions) {
         const starter = starters[pos];
         if (!starter) continue;
+        if (!lineupOK(benchPlayer, pos)) continue;
 
         const benchWAA = getPositionWAAForSplit(benchPlayer, pos, split);
         const starterWAA = getPositionWAAForSplit(starter, pos, split);
@@ -534,6 +533,7 @@ function bestPlatoonPartner(pool, excludeIds, startersMap) {
     for (const pos of h._positions) {
       const starter = startersMap[pos];
       if (!starter) continue;
+      if (!lineupOK(h, pos)) continue;
       const cand = getPositionWAAForSplit(h, pos, 'vL');
       const inc = getPositionWAAForSplit(starter, pos, 'vL');
       if (cand === -Infinity || inc === -Infinity) continue;
@@ -567,13 +567,37 @@ const SWAP_IN_SPLIT = 8;        // …plus the best per-split specialists
 // The exact quantity the win model pays for a 13-man roster: both split lineups
 // re-assigned optimally from the SAME 13, PA-share blended. Unfillable slots are
 // penalized so the search can never "improve" by rostering its way out of a position.
+// Bench cover (user, 2026-09-17): starters do not play every game, so the man
+// who fills in has to be able to play BOTH splits. Without this term a bench
+// player only counted if he cracked a starting nine, and a backup who is far
+// better vs RHP (Vincent) lost his roster spot to one with a 0.01 edge at one
+// position vs LHP (Cimini). Each lineup spot is covered for the share of games a
+// normal player misses (1 - PRONE_FACTOR.Normal, the app's own playing-time
+// factor) by the best bench player eligible there, at that split's WAA.
+function benchCoverValue(roster13, assignment, split) {
+  const starters = new Set(Object.values(assignment.assignments).map(_idOf));
+  const bench = roster13.filter(h => !starters.has(_idOf(h)));
+  if (!bench.length) return 0;
+  let total = 0;
+  for (const pos of Object.keys(assignment.assignments)) {
+    let best = -Infinity;
+    for (const b of bench) {
+      if (pos !== 'DH' && !b._positions.includes(pos)) continue;
+      const w = getPositionWAAForSplit(b, pos, split);
+      if (w > best) best = w;
+    }
+    if (best !== -Infinity) total += best;
+  }
+  return (1 - PRONE_FACTOR.Normal) * total;
+}
+
 function blendedLineupScore(roster13, vrShare) {
   const vR = optimalPositionAssignment(roster13, 'vR');
   const vL = optimalPositionAssignment(roster13, 'vL');
   const missR = ALL_LINEUP_POSITIONS.length - Object.keys(vR.assignments).length;
   const missL = ALL_LINEUP_POSITIONS.length - Object.keys(vL.assignments).length;
-  return vrShare * (vR.totalWAA - missR * EMPTY_SLOT_PENALTY)
-       + (1 - vrShare) * (vL.totalWAA - missL * EMPTY_SLOT_PENALTY);
+  return vrShare * (vR.totalWAA - missR * EMPTY_SLOT_PENALTY + benchCoverValue(roster13, vR, 'vR'))
+       + (1 - vrShare) * (vL.totalWAA - missL * EMPTY_SLOT_PENALTY + benchCoverValue(roster13, vL, 'vL'));
 }
 
 // ---- Bench-composition contract (hard constraint) ----
@@ -1001,7 +1025,7 @@ function callupUpgrades({ everydayStarters, startingPitchers, reliefPitchers, po
     const sVL = getPositionWAAForSplit(starter, pos, 'vL');
     let best = null;
     for (const h of pool) {
-      if (rosteredIds.has(_idOf(h)) || !h._positions.includes(pos)) continue;
+      if (rosteredIds.has(_idOf(h)) || !h._positions.includes(pos) || !lineupOK(h, pos)) continue;
       const cVR = getPositionWAAForSplit(h, pos, 'vR');
       const cVL = getPositionWAAForSplit(h, pos, 'vL');
       if (cVR === -Infinity) continue;
@@ -1056,6 +1080,35 @@ export function leagueHasInjuryData(hitters, pitchers) {
   return hitters.some(hasFields) || pitchers.some(hasFields);
 }
 
+// ---- Win now: only positions a player has fully learned ----
+// OOTP keeps a position rating per player and position (fields 'C','1B',..,'RF')
+// and a potential for it ('PotC','Pot1B',..). The engine's "<pos> Eligible" flag
+// comes from fielding ratings alone, so it will place a man at a position he has
+// never played (rating 0) or is still learning (rating below potential). Win now
+// (user rule): a player may field a position ONLY where his position rating is
+// above 0 AND has reached his potential there. DH is always allowed.
+const WIN_NOW_POSITIONS = ['C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF'];
+export function knowsPosition(p, pos) {
+  const cur = parseFloat(p[pos]);
+  if (!Number.isFinite(cur) || cur <= 0) return false;
+  const pot = parseFloat(p[`Pot${pos}`]);
+  return !Number.isFinite(pot) || cur >= pot;
+}
+export function leagueHasPositionRatings(hitters) {
+  return hitters.some(h => WIN_NOW_POSITIONS.some(pos => h[pos] !== undefined && h[pos] !== null && h[pos] !== ''));
+}
+// Clone carrying `_lineupBlocked`: the positions he may not START at. The rule
+// covers the STARTING LINEUPS only (user): bench roles (backup C, utility IF,
+// utility OF) keep the normal "<pos> Eligible" flags, so a bench glove still
+// qualifies on ratings the way it always has.
+function applyKnownPositions(p) {
+  return { ...p, _lineupBlocked: WIN_NOW_POSITIONS.filter(pos => !knowsPosition(p, pos)) };
+}
+// May this hitter be written into a lineup at this position? (always true when Win now is off)
+function lineupOK(h, pos) {
+  return !(h._lineupBlocked && h._lineupBlocked.includes(pos));
+}
+
 // ---- Durability: expected playing-time factor from proneness + current injury ----
 const PRONE_FACTOR = { 'Iron Man': 0.99, 'Durable': 0.96, 'Normal': 0.90, 'Fragile': 0.80, 'Wrecked': 0.68 };
 function durabilityFactor(p) {
@@ -1104,6 +1157,7 @@ export function optimizeRoster(hitters, pitchers, options = {}) {
     vrShare = null,   // league's real "OVR vR" season split (from metadata); falls back below
     durabilityWeighted = false,   // haircut value by injury proneness + playing time, then re-pick
     excludeInjured = false,       // drop currently-hurt players (OnDL / 60-day / DL days) BEFORE selection
+    winNow = false,               // only field a man where his position rating has reached his potential
     clearedInjured = null,        // Set of playerKey()s to treat as HEALTHY even while flagged on the DL
                                   // (manual "he's back this sim" override; only meaningful when excludeInjured)
     leagueOffset = 0,             // mean optimized winBasis across the league; subtracted so wins are
@@ -1154,6 +1208,13 @@ export function optimizeRoster(hitters, pitchers, options = {}) {
     const healthyOrCleared = (p) => !isInjured(p) || (clearedInjured && clearedInjured.has(playerKey(p)));
     availableHitters = availableHitters.filter(healthyOrCleared);
     availablePitchers = availablePitchers.filter(healthyOrCleared);
+  }
+
+  // Win now: a hitter may only be placed at a position he has fully learned.
+  // Applied to YOUR pool only; the league baseline stays on the normal rules so
+  // the win totals remain comparable.
+  if (winNow) {
+    availableHitters = availableHitters.map(applyKnownPositions);
   }
 
   // League run environment from the FULL (unfiltered, unscaled) pitcher pool — the
@@ -1386,7 +1447,7 @@ export function optimizeRoster(hitters, pitchers, options = {}) {
   });
   const pythWins = Math.round(runs.pythWins);
   const clearedTag = (excludeInjured && clearedInjured && clearedInjured.size) ? `+${clearedInjured.size}` : '';
-  const seedStr = `${teamOrg || 'ALL'}|${levelFilter || 'ALL'}|${Math.round(runs.RS)}|${Math.round(runs.RA)}|${durabilityWeighted ? 'D' : 'N'}|${excludeInjured ? 'H' : 'A'}${clearedTag}`;
+  const seedStr = `${teamOrg || 'ALL'}|${levelFilter || 'ALL'}|${Math.round(runs.RS)}|${Math.round(runs.RA)}|${durabilityWeighted ? 'D' : 'N'}|${excludeInjured ? 'H' : 'A'}${clearedTag}${winNow ? '|W' : ''}`;
   // audit D9/D6 Monte Carlo widening (all measured — see leagueCalib.js):
   //  luckRuns: per-side run noise closing the gap between the Bernoulli
   //    season's binomial win floor (sqrt(G)/2) and the archive's measured
@@ -1463,6 +1524,7 @@ export function optimizeRoster(hitters, pitchers, options = {}) {
       games: G,   // season length used by every win model (B3)
       durabilityWeighted,
       excludeInjured,
+      winNow,
     },
     // Win-model lenses — the page's model selector reads from here.
     models: {

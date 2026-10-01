@@ -81,6 +81,7 @@ export default function PitchersPage({ players, isDraft = false, isFA = false, i
           onPlayerClick={setSelectedPlayer}
           selectedPlayerId={selectedPlayer?.ID}
           maxRows={1000}
+          storageKey={isIAFA ? 'iafa-pitchers' : isR5 ? 'r5-pitchers' : isFA ? 'fa-pitchers' : isDraft ? 'draft-pitchers' : 'pitchers'}
         />
       </div>
 

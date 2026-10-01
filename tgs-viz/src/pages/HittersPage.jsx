@@ -82,6 +82,7 @@ export default function HittersPage({ players, isDraft = false, isFA = false, is
           selectedPlayerId={selectedPlayer?.ID}
           maxRows={1000}
           positionViewMode
+          storageKey={isIAFA ? 'iafa-hitters' : isR5 ? 'r5-hitters' : isFA ? 'fa-hitters' : isDraft ? 'draft-hitters' : 'hitters'}
         />
       </div>
 

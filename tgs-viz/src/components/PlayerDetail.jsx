@@ -4,8 +4,48 @@ import { calculateFutureValue } from '../lib/futureValue';
 import { controlWindow, formatControl } from '../lib/serviceTime';
 import { formatCellValue, getCellColorClass } from '../lib/columns';
 import { loadRatingTrends, playerHistory } from '../lib/ratingTrends';
-import { loadAgeCurve, measuredTrajectory } from '../lib/ageCurve';
+import { loadAgeCurve } from '../lib/ageCurve';
+import { devSummary, devPeakText, devBasisText, devMlWords, fmtWaa } from '../lib/devSignals';
+import { trainingNotes, TRAIN_PEAK_BAR } from '../lib/orgBuilder';
 import { X } from 'lucide-react';
+
+/**
+ * One line of dev signals for a player aged 16-22 (lib/devSignals.js), the
+ * Exp peak sentence when the cell has one, and the basis in small print.
+ * MLB %, Useful % and Good % (the chance his peak reaches -1 / 0 / +1.5 WAA
+ * from where he is now: the share of his DEV lookalikes at a similar current
+ * whose gain covered the distance, 100% "already there" when his current
+ * sits at the bar; user, 2026-09-24) sit right after Make it in devSummary,
+ * in that order ("MLB x%" first: the chance he is ever anything in the
+ * majors, user, 2026-09-24), same style, because Make it is playing time,
+ * not quality.
+ * Renders nothing for a row without an entry.
+ */
+function DevSignalsLine({ player }) {
+  if (!player || !player.Dev_Role) return null;
+  const flag = player.Dev_Flag;
+  const peak = devPeakText(player);
+  return (
+    <div className="border-t border-slate-700/50 mt-1 pt-1">
+      <div className="flex justify-between items-start gap-2 py-0.5">
+        <span className="text-xs text-slate-300">
+          <span className="text-slate-500">Dev signals: </span>{devSummary(player)}
+        </span>
+        {flag && (
+          <span className={`text-xs font-bold shrink-0 ${flag === 'keep' ? 'text-green-400' : 'text-red-400'}`}>
+            {flag.toUpperCase()}
+          </span>
+        )}
+      </div>
+      {peak && (
+        <div className="text-xs text-slate-300 py-0.5">
+          <span className="text-slate-500">Exp peak: </span>{peak}
+        </div>
+      )}
+      <div className="text-[10px] text-slate-600">{devBasisText(player)}</div>
+    </div>
+  );
+}
 
 /**
  * OOTP-style 20-80 rating chip. The whole point is legibility: a big number in
@@ -193,6 +233,30 @@ function RatingHistory({ player }) {
   );
 }
 
+/**
+ * Training positions for a hitter (user, 2026-09-24: "notate the positions
+ * they lack training by each of the prospects to work as a reminder"): every
+ * position where he is 0 WAA or better if he reaches his potential but has
+ * not mastered (position rating current/potential, 0 = never trained), best
+ * first. The rule and the math are orgBuilder.trainingNotes. Hover a
+ * position for his WAA there at his potential. Renders nothing when there
+ * is none.
+ */
+function TrainingLine({ player }) {
+  const notes = useMemo(() => trainingNotes(player), [player]);
+  if (!notes.length) return null;
+  const signed = (v) => (v >= 0 ? '+' : '') + v.toFixed(1);
+  return (
+    <div className="border-t border-slate-700/50 mt-1 pt-1 py-0.5 text-xs text-slate-300">
+      <span className="text-slate-500">Training: </span>
+      {notes.map((n, i) => (
+        <span key={n.pos} title={`at his potential, ${n.pos}: ${signed(n.peak)} WAA${n.untrained ? '; never trained there, his tools carry it' : ''}`}>{i > 0 ? ', ' : ''}{n.pos} {n.untrained ? 'new' : `${n.cur}/${n.pot}`}</span>
+      ))}
+      <span className="text-slate-500"> ({TRAIN_PEAK_BAR} WAA or better there at his potential)</span>
+    </div>
+  );
+}
+
 export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
   if (!player) return null;
 
@@ -209,39 +273,43 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
 
   // valueYears: control is what you keep, valueYears is what is worth counting (a free
   // agent controls 0 seasons but is not worth 0). See serviceTime.controlWindow.
-  // NOTE: the measured age curve is NOT passed here (calculateFutureValue has a
-  // dormant measured path). The archive's only window so far is pre-first-full-
-  // development-cycle (offseason dev labs still running — user, 2026-08-26), so
-  // its closure rates aren't representative yet. The chart below still SHOWS the
-  // measured line for comparison. Flip: pass { ageCurve } here and in
-  // usePlayersWithFV once a full tracked dev cycle is in the archive.
-  const fv = useMemo(() => calculateFutureValue(player, control.valueYears), [player, control]);
+  // The measured DEV curve and the row's DEV cell gain make this the same
+  // year-by-year path model the lists run (usePlayersWithFV), so the card's
+  // numbers match the boards. Until the curve loads the assumed model shows.
+  const fv = useMemo(
+    () => calculateFutureValue(player, control.valueYears, { ageCurve, devGain: player.Dev_PeakGainP50 }),
+    [player, control, ageCurve],
+  );
 
-  // Development curve data: the model's assumed track, plus (when the league has
-  // a measured age curve) the MEASURED track — per-age gap-closure rates from the
-  // ratings archive applied to this player's own current->ceiling gap.
+  // Development curve data: the projected path to age 40 on the measured DEV
+  // curve (fv.fullPath), or the assumed model's window when there is no curve.
+  // Display-WAA basis (y.waa), never y.rawWAA (the internal WAR/market track).
   const devCurve = useMemo(() => {
-    // y.waa (display-WAA basis) — NOT y.rawWAA (internal WAR/market track):
-    // both chart lines must share the WAA basis the card's stats show, or the
-    // model line sits a constant replacement-offset above the Measured overlay.
-    const rows = fv.yearByYear.map(y => ({ age: y.age, WAA: y.waa ?? y.rawWAA }));
-    const meas = measuredTrajectory(
-      ageCurve,
-      parseFloat(player.Age),
-      fv.displayWAA ? fv.displayWAA.current : NaN,
-      fv.displayWAA ? fv.displayWAA.potential : NaN,
-    );
-    if (meas) {
-      const byAge = new Map(rows.map(r => [r.age, r]));
-      for (const m of meas) {
-        const row = byAge.get(m.age);
-        if (row) row.Measured = m.waa;
-        else { const nr = { age: m.age, Measured: m.waa }; rows.push(nr); byAge.set(m.age, nr); }
-      }
-      rows.sort((a, b) => a.age - b.age);
+    if (fv.fullPath) return fv.fullPath.map(x => ({ age: x.age, WAA: x.waa }));
+    return fv.yearByYear.map(y => ({ age: y.age, WAA: y.waa ?? y.rawWAA }));
+  }, [fv]);
+
+  // "Next season" line: the change from today to next year's projected WAA.
+  // ML rows (2026-09-25): the ML model's median change for next season and
+  // its 25th to 75th percentile range (Dev_MlD[0], Dev_MlD1Lo / Hi). The
+  // ML path models learn only from players who stayed in the league, so the
+  // line reads "if he keeps playing"; the peak numbers (Proj Potential)
+  // count the washouts. The display path (chart, Year by year) is capped at
+  // Proj Potential, so its year 1 can sit below this median (checker: 585
+  // TGS rows).
+  const nextSeason = useMemo(() => {
+    const p = fv.fullPath;
+    if (!p || p.length < 2) return null;
+    const out = { age: p[1].age, delta: Math.round((p[1].waa - p[0].waa) * 10) / 10, waa: p[1].waa };
+    const d1 = Array.isArray(player.Dev_MlD) ? player.Dev_MlD[0] : null;
+    if (fv.targetSource === 'ml' && Number.isFinite(d1)) {
+      out.delta = Math.round(d1 * 10) / 10;
+      out.ml = true;
+      out.lo = Number.isFinite(player.Dev_MlD1Lo) ? player.Dev_MlD1Lo : null;
+      out.hi = Number.isFinite(player.Dev_MlD1Hi) ? player.Dev_MlD1Hi : null;
     }
-    return rows;
-  }, [fv, ageCurve, player]);
+    return out;
+  }, [fv, player]);
 
   // Position WAA bar chart (hitters only)
   const posWAAData = type === 'hitter' ? [
@@ -324,6 +392,8 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                   {statLine('wOBA (wtd)', player['wOBA wtd'], 'wOBA wtd')}
                 </>
               )}
+              <DevSignalsLine player={player} />
+              {type === 'hitter' && <TrainingLine player={player} />}
             </div>
 
             {type === 'hitter' && (() => {
@@ -370,7 +440,17 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                   expectedPeakWAA / potentialWAA are the internal WAR values and must
                   NOT be shown under a WAA label; fv.displayWAA is the converted track. */}
               {statLine('Current WAA', fv.displayWAA?.current, '_currentWAA')}
-              {statLine('Proj Potential (WAA)', fv.displayWAA?.expectedPeak, '_potentialWAA')}
+              {/* Proj Potential = the top of the projected path (fv.expectedPeak);
+                  the suffix says what it grew toward (futureValue.targetSource):
+                  current + the DEV cell gain, or the measured curve on his listed gap.
+                  ML rows aged 26 and under: current + the ML gain q50 (on the line his
+                  money uses; a pitcher's Exp peak starts from his better WAA line). */}
+              {statLine(
+                fv.targetSource === 'ml' ? 'Proj Potential (WAA, ML)'
+                  : fv.targetSource === 'cell' ? 'Proj Potential (WAA, DEV cell)'
+                  : fv.targetSource === 'listed' ? 'Proj Potential (WAA, measured curve)'
+                  : 'Proj Potential (WAA)',
+                fv.displayWAA?.expectedPeak, '_potentialWAA')}
               {statLine('Peak Potential (WAA)', fv.displayWAA?.potential, '_rawPotentialWAA')}
               {statLine('Peak WAA', fv.displayWAA?.peakProjected, '_peakWAA')}
               {/* The internal WAR basis, shown raw so the WAA numbers above are auditable.
@@ -389,8 +469,26 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                   )}
                 </span>
               </div>
-              {statLine('To Peak (WAA)', fv.displayWAA ? Math.round((fv.displayWAA.potential - fv.displayWAA.current) * 10) / 10 : null, '_potentialWAA')}
-              {statLine('ETA to Peak', fv.yearsTilPeak > 0 ? `${fv.yearsTilPeak} yrs` : 'At peak')}
+              {statLine('To Peak (WAA)', fv.displayWAA
+                ? Math.round((fv.displayWAA.expectedPeak - fv.displayWAA.current) * 10) / 10
+                : null, '_potentialWAA')}
+              {statLine('ETA to Peak', fv.yearsTilPeak > 0
+                ? `${fv.yearsTilPeak} yrs${fv.peakAge ? ` (age ${fv.peakAge})` : ''}`
+                : 'At peak')}
+              {nextSeason && (
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="text-slate-500 text-xs">{nextSeason.ml ? 'Next season, if he keeps playing' : 'Next season'}</span>
+                  <span className={`text-sm font-mono ${
+                    nextSeason.delta > 0.05 ? 'text-green-400' : nextSeason.delta < -0.05 ? 'text-red-400' : 'text-slate-400'
+                  }`} title={nextSeason.ml
+                    ? `Median change next season (age ${nextSeason.age}) from ${devMlWords(player)}, 25th to 75th pct ${fmtWaa(nextSeason.lo)} to ${fmtWaa(nextSeason.hi)}. It assumes he keeps playing: the path models learn only from players who stayed in the league, while Proj Potential counts the ones who wash out. The chart and the Year by year columns are capped at Proj Potential; projected WAA at age ${nextSeason.age} there: ${nextSeason.waa.toFixed(1)}`
+                    : `Projected WAA at age ${nextSeason.age}: ${nextSeason.waa.toFixed(1)}`}>
+                    {nextSeason.delta > 0 ? '+' : ''}{nextSeason.delta.toFixed(1)} WAA{nextSeason.ml ? '' : ` (age ${nextSeason.age})`}
+                    {nextSeason.ml && nextSeason.lo !== null && nextSeason.hi !== null
+                      ? ` (range ${fmtWaa(nextSeason.lo)} to ${fmtWaa(nextSeason.hi)})` : ''}
+                  </span>
+                </div>
+              )}
               {/* Remaining control — the window everything above is summed over.
                   Plain div, not statLine: formatCellValue would parseFloat the
                   composite string down to its leading number. */}
@@ -525,15 +623,20 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                     labelStyle={{ color: '#e2e8f0' }}
                   />
                   <Line type="monotone" dataKey="WAA" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="Measured" stroke="#a78bfa" strokeWidth={2}
-                        strokeDasharray="5 4" dot={{ r: 2 }} connectNulls />
                 </LineChart>
               </ResponsiveContainer>
               <div className="text-center text-xs text-slate-500 mt-1">
-                <span className="text-blue-400">model curve</span>
-                {devCurve.some(r => r.Measured !== undefined) && (
-                  <> · <span className="text-purple-300">measured league curve</span>
-                    {ageCurve ? ` (${ageCurve.players} players, ${ageCurve.span_years}yr archive)` : ''}</>
+                {fv.targetSource === 'ml' ? (
+                  <>
+                    <span className="text-blue-400">projected path: five years from the ML model, then the measured DEV curve</span>
+                  </>
+                ) : fv.measured ? (
+                  <>
+                    <span className="text-blue-400">projected path (measured DEV curve)</span>
+                    {ageCurve ? ` (${ageCurve.source_league ? `${ageCurve.source_league} true ratings, ` : ''}${ageCurve.players} players, ${ageCurve.span_years}yr)` : ''}
+                  </>
+                ) : (
+                  <span className="text-blue-400">model curve</span>
                 )}
               </div>
             </div>

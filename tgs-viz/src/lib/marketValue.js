@@ -176,16 +176,19 @@
  *    curve is still non-monotone at n~130, constrain it. TGS is unaffected.
  * 9. VALUATION — multi-year: for each remaining SalarySchedule year y,
  *      surplus_y = (priceAt(agedWAR_y) - salary_y) * 0.97^y
- *    with agedWAR via futureValue's getAgingFactor schedule, anchored so that
- *    agedWAR_0 = today's WAR (the same basis the fit regressed on). 0.97 is
- *    futureValue's DISCOUNT_RATE (3%/yr time value).
+ *    with agedWAR from the row's measured path (futureValue fullPath, the
+ *    internal WAR track: growth to 27, then the measured DEV decline) when
+ *    the DEV curve is loaded, else futureValue's getAgingFactor schedule.
+ *    Both are anchored so that agedWAR_0 = today's WAR (the same basis the
+ *    fit regressed on). 0.97 is futureValue's DISCOUNT_RATE (3%/yr time
+ *    value).
  *    The FAIR-OFFER horizon is the player's OWN remaining control
  *    (serviceTime.controlWindow: service days vs the signed schedule), not the
  *    flat six years this file used to assume for everybody.
  *
  * WHAT REMAINS HEURISTIC OR CONVENTION (clearly labeled, not fitted):
- * - The aging schedule itself (futureValue FV_DEFAULTS, INTERIM per the
- *   2026-08-05 directive — unmeasured until the aging harness runs).
+ * - The fallback aging schedule (futureValue FV_DEFAULTS, INTERIM per the
+ *   2026-08-05 directive). It runs only when no measured curve is loaded.
  * - Band width "1 SD" and the LOESS kernel/span (tricube, 0.4) are standard
  *   conventions; the dispersions themselves are fitted from real signings.
  * - CV protocol constants (10 folds, 20 repeats, "beat by 1 paired SE"): the
@@ -222,7 +225,8 @@
  *   toward admitting an extension.
  */
 
-import { getAgingFactor, FV_DEFAULTS } from './futureValue.js';
+import { getAgingFactor, FV_DEFAULTS, measuredPath } from './futureValue.js';
+import { curveShape } from './ageCurve.js';
 import { replacementOffset } from './leagueCalib.js';
 import {
   SVC_YEAR_DAYS, FA_SERVICE_YEARS, ARB_SERVICE_YEARS, svcYearDays, controlWindow,
@@ -1165,6 +1169,22 @@ export function agedWAR(war, ageNow, ageY) {
 
 /**
  * Projected WAR for seasons y = 0..years-1 (year 0 = current season).
+ *
+ * ML PATH (a row with fv.expectedPath, futureValue.js 2026-09-25): the
+ * internal WAR track of the expected path, the ML model's mean changes for
+ * years 1..5 and the same curve rules after, so money is priced on the
+ * expected outcome.
+ *
+ * MEASURED PATH (the DEV curve is loaded): the internal WAR track of the
+ * row's fv.fullPath, for every age. Year 0 is today's WAR, growth runs to
+ * 27 on the measured shape, and the measured decline follows, so an older
+ * free agent is priced on the decline the curve measured. Past the path's
+ * last age the curve's last mean keeps the decline going when the caller
+ * passes ageCurve; without it the last value holds. A row without an
+ * fv breakdown but with a curve gets the measured decline of its current
+ * WAR (no growth).
+ *
+ * ASSUMED MODEL (no curve):
  * - Established players: relative aging of today's WAR (above).
  * - Developing prospects (pre-maturity, potential data + positive gap):
  *   follow futureValue's year-by-year development curve (already
@@ -1175,10 +1195,38 @@ export function agedWAR(war, ageNow, ageY) {
  *   season off the peak-anchored aging curve (below measured WAR), a
  *   systematic low bias vs the fit's current-WAR basis.
  */
-export function agedWARPath(player, years) {
+export function agedWARPath(player, years, ageCurve) {
   const fv = player._fvBreakdown;
   const age = Math.round(parseFloat(player.Age) || 25);
   const war = fv ? fv.currentWAA : (getPlayerWAR(player) ?? 0);
+
+  let measured = null;
+  if (fv && fv.measured && Array.isArray(fv.expectedPath) && fv.expectedPath.length
+      && Number.isFinite(fv.expectedPath[0].rawWAA)) {
+    // ML rows (futureValue expectedPath, 2026-09-25): money prices on the
+    // EXPECTED changes (the ML means), not the medians the display path
+    // shows. A median understates a skewed outcome; a price must average it.
+    measured = fv.expectedPath.map(x => ({ age: x.age, waa: x.rawWAA }));
+  } else if (fv && fv.measured && Array.isArray(fv.fullPath) && fv.fullPath.length
+      && Number.isFinite(fv.fullPath[0].rawWAA)) {
+    measured = fv.fullPath.map(x => ({ age: x.age, waa: x.rawWAA }));
+  } else if (!fv && ageCurve) {
+    measured = measuredPath(ageCurve, age, war, war);
+  }
+  if (measured) {
+    const shape = ageCurve ? curveShape(ageCurve) : null;
+    const path = [];
+    let last = measured[measured.length - 1];
+    let waa = last.waa;
+    for (let y = 0; y < years; y++) {
+      if (y < measured.length) { path.push(measured[y].waa); continue; }
+      const a = last.age + (y - measured.length) + 1;
+      waa += shape ? Math.min(0, shape.mean(a - 1) ?? 0) : 0;
+      path.push(waa);
+    }
+    return path;
+  }
+
   const developing = !!(fv && fv.hasPotential
     && fv.potentialWAA - fv.currentWAA > 0
     && age < FV_DEFAULTS.MATURITY_AGE);
@@ -1209,8 +1257,11 @@ const r2dp = (v) => Math.round(v * 100) / 100;
  * @param {Object} player - player row (ideally with _fvBreakdown attached)
  * @param {{slope:number, floor:number, residSD?:number}} rate - resolved fit
  *        (resolveRate). NOT a bare number any more.
+ * @param {{ageCurve?:Object}} [opts] - the measured DEV curve (age_curve.json)
+ *        for agedWARPath; the row's own measured path is used either way.
  */
-export function calculatePlayerValue(player, rate) {
+export function calculatePlayerValue(player, rate, opts = {}) {
+  const ageCurve = opts && opts.ageCurve ? opts.ageCurve : null;
   const slope = rate && Number.isFinite(rate.slope) ? rate.slope : 0;
   const floor = rate && Number.isFinite(rate.floor) ? rate.floor : 0;
   const curv = rate && Number.isFinite(rate.curv) ? rate.curv : 0;
@@ -1258,7 +1309,7 @@ export function calculatePlayerValue(player, rate) {
     ? player.SalarySchedule.filter(Number.isFinite)
     : [];
   if (sched.length && slope > 0) {
-    const path = agedWARPath(player, sched.length);
+    const path = agedWARPath(player, sched.length, ageCurve);
     let totSalary = 0, totValue = 0, totSurplus = 0;
     const years = sched.map((salary, y) => {
       const w = path[y];
@@ -1309,7 +1360,7 @@ export function calculatePlayerValue(player, rate) {
   // for more than that; the horizon row has to exist or meanWAR(offerYears)
   // would divide a shorter path by the longer horizon and understate it.
   const maxLen = Math.max(1, Math.min(Math.max(8, offerYears), FV_DEFAULTS.MAX_CAREER_AGE - age));
-  const offerPath = agedWARPath(player, maxLen);
+  const offerPath = agedWARPath(player, maxLen, ageCurve);
   const meanWAR = (len) => offerPath.slice(0, len).reduce((s, w) => s + w, 0) / len;
 
   const offerMeanWAR = meanWAR(offerYears);
@@ -1392,11 +1443,11 @@ export function calculatePlayerValue(player, rate) {
 }
 
 // Convenience wrappers (API compatible with the hooks)
-export function calculateHitterValue(player, rate) {
-  return calculatePlayerValue(player, rate);
+export function calculateHitterValue(player, rate, opts) {
+  return calculatePlayerValue(player, rate, opts);
 }
-export function calculatePitcherValue(player, rate) {
-  return { ...calculatePlayerValue(player, rate), role: isBetterAsRP(player) ? 'RP' : 'SP' };
+export function calculatePitcherValue(player, rate, opts) {
+  return { ...calculatePlayerValue(player, rate, opts), role: isBetterAsRP(player) ? 'RP' : 'SP' };
 }
 
 // ============================================================

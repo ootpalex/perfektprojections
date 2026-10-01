@@ -6,6 +6,25 @@ import { replacementOffset } from '../lib/leagueCalib.js';
 import { buildDevPercentileData, calculateG5FV } from '../lib/g5FV';
 import { calculateHybridFV } from '../lib/hybridFV';
 import { getBestWAA, getPlayerWAR, calculatePlayerValue, calculatePitcherValue, fitFAMarket, resolveRate } from '../lib/marketValue';
+import { DEFAULT_FEATURES, FALLBACK_LEAGUES, normalizeLeagues, isTrendsOnly } from '../lib/leagues.js';
+import { loadRatingTrends } from '../lib/ratingTrends';
+import { applyDevSignals, fetchDevSignals } from '../lib/devSignals';
+import { applyDevMl, fetchDevMl, devMlStaleReason } from '../lib/devMl';
+import { loadAgeCurve, MEASURED_CURVE_LEAGUE } from '../lib/ageCurve';
+
+export { DEFAULT_FEATURES };
+
+// Player lists that get the Dev_* fields from dev_signals.json (keyed by ID).
+const DEV_SIGNAL_LISTS = [
+  'hitters', 'pitchers',
+  'hitters_draft', 'pitchers_draft',
+  'hitters_draft_all', 'pitchers_draft_all',
+];
+
+// The dev_ml.json stale-guard lines already written to the console. Several
+// hooks load the same league on one page (the Org page loaded it 3 times),
+// so each distinct line is logged once per page load, not once per load.
+const devMlStaleLogged = new Set();
 
 /**
  * Build data file paths for a given league.
@@ -32,6 +51,9 @@ function getDataFiles(league, parkMode = 'neutral') {
     // board build predates the park variants).
     hitters_draft_all: `${prefix}/hitters_draft_all${suffix}.json`,
     pitchers_draft_all: `${prefix}/pitchers_draft_all${suffix}.json`,
+    // The real draft's pick order (round / pick / overall / club, supplementals
+    // included). The Mock Draft slots our board into these picks. Absent -> [].
+    draft_picks: `${prefix}/draft_picks.json`,
     // NOTE: hitters_fa/pitchers_fa.json are no longer fetched — they were a
     // retired Excel extract that shadowed live data; the FA pages now derive
     // free agents from the live hitters/pitchers rows (no org = FA) in App.jsx.
@@ -40,55 +62,22 @@ function getDataFiles(league, parkMode = 'neutral') {
     iafa: `${prefix}/iafa.json`,
     // Rule 5 pool membership (ingest/r5.py). Absent file -> empty pool.
     r5: `${prefix}/r5.json`,
+    // Stadiums + park factors + occupancy (ingest/parks.py). Absent -> [].
+    parks: `${prefix}/parks.json`,
+    park_list: `${prefix}/park_list.json`,
   };
 }
 
-/**
- * Per-league feature flags. Anything not declared in the manifest defaults to
- * true so legacy manifests keep today's behavior (everything shown).
- */
-export const DEFAULT_FEATURES = { draft: true, fa: true, contracts: true };
-
-// Hardcoded fallback when /data/leagues.json is missing or unreadable —
-// the two leagues the app originally shipped with. Guarantees the app
-// always boots even if the manifest was never generated.
-const FALLBACK_LEAGUES = [
-  { id: 'TGS', name: 'TGS', features: { draft: true, fa: true, contracts: true } },
-  { id: 'BLM', name: 'BLM', features: { draft: true, fa: false, contracts: true } },
-];
-
-/**
- * Accept both manifest schemas:
- *   new:    { "leagues": [{ id, name, features: {draft, fa, contracts}, ... }] }
- *   legacy: [{ id, name, folder, datasets }]
- * Legacy entries derive features from their dataset list (contracts unknowable
- * from the old schema, so assumed present — columns are null-safe anyway).
- */
-function normalizeLeagues(raw) {
-  const list = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.leagues) ? raw.leagues : []);
-  return list
-    .filter(lg => lg && lg.id)
-    .map(lg => {
-      let features = lg.features;
-      if (!features && Array.isArray(lg.datasets)) {
-        features = {
-          draft: lg.datasets.some(d => String(d).endsWith('_draft')),
-          fa: lg.datasets.some(d => String(d).endsWith('_fa')),
-          contracts: true,
-        };
-      }
-      return {
-        ...lg,
-        name: lg.name || lg.id,
-        features: { ...DEFAULT_FEATURES, ...(features || {}) },
-      };
-    });
-}
+// Per-league feature flags, manifest schemas and the built-in TGS/BLM fallback
+// live in lib/leagues.js (a pure module, so a node check can load it).
 
 /**
  * Hook to load the leagues manifest (/data/leagues.json).
  * Returns { leagues, loading }. Never fails: if the manifest is missing,
  * unreadable, or empty, it falls back to the built-in TGS/BLM list.
+ * A trends-only league (features.players false) is listed only when its
+ * rating_trends.json exists; the probe is the same cached fetch the Rating
+ * Trends page reuses, so the file is downloaded once.
  */
 export function useLeagues() {
   const [leagues, setLeagues] = useState([]);
@@ -104,9 +93,13 @@ export function useLeagues() {
         }
         return res.json();
       })
-      .then(data => {
+      .then(async data => {
         const normalized = normalizeLeagues(data);
-        setLeagues(normalized.length ? normalized : FALLBACK_LEAGUES);
+        const present = await Promise.all(normalized.map(lg => (
+          isTrendsOnly(lg) ? loadRatingTrends(lg.id).then(t => t != null) : Promise.resolve(true)
+        )));
+        const shown = normalized.filter((_, i) => present[i]);
+        setLeagues(shown.length ? shown : FALLBACK_LEAGUES);
         setLoading(false);
       })
       .catch(e => {
@@ -123,8 +116,10 @@ export function useLeagues() {
  * Main data loading hook.
  * Loads all player data for the given league.
  * Re-fetches when league changes.
+ * wantPlayers false (a trends-only league) skips every fetch and resolves at
+ * once with empty lists, so no "missing file" error can come from it.
  */
-export function usePlayerData(league, parkMode = 'neutral') {
+export function usePlayerData(league, parkMode = 'neutral', wantPlayers = true) {
   const [data, setData] = useState({
     hitters: [],
     pitchers: [],
@@ -132,6 +127,7 @@ export function usePlayerData(league, parkMode = 'neutral') {
     pitchers_draft: [],
     hitters_draft_all: [],
     pitchers_draft_all: [],
+    draft_picks: [], parks: [], park_list: [],
     hitters_fa: [], iafa: [], r5: [],
     pitchers_fa: [],
     metadata: null,
@@ -152,10 +148,16 @@ export function usePlayerData(league, parkMode = 'neutral') {
       hitters: [], pitchers: [],
       hitters_draft: [], pitchers_draft: [],
       hitters_draft_all: [], pitchers_draft_all: [],
+      draft_picks: [], parks: [], park_list: [],
       hitters_fa: [], pitchers_fa: [], iafa: [], r5: [],
       metadata: null,
       marketBank: null,
     });
+
+    if (!wantPlayers) {
+      setLoading(false);
+      return () => { cancelled = true; };
+    }
 
     const dataFiles = getDataFiles(league, parkMode);
 
@@ -218,6 +220,38 @@ export function usePlayerData(league, parkMode = 'neutral') {
         results.marketBank = null;
       }
 
+      // Dev signals (growth, Pot direction, DEV-league odds of becoming a
+      // regular) for players aged 16-22 at the latest pull. Absent file = no
+      // Dev_* fields on any row. The park variants carry the same IDs, so one
+      // file serves both bases.
+      const devSignals = await fetchDevSignals(base);
+      if (devSignals) {
+        for (const key of DEV_SIGNAL_LISTS) {
+          results[key] = applyDevSignals(results[key], devSignals);
+        }
+      }
+      // ML numbers (backtest/ml/score.py; user, 2026-09-24: "is there any way
+      // you can make a machine learning model to help with figuring out this
+      // dev stuff") replace the cell method right after the signals, so Proj
+      // Potential, the Org Builder, the columns, the card and the draft boards
+      // all read them. Stale guard: only when dev_ml.json is on the same pull
+      // as dev_signals.json; otherwise the cell method stays.
+      const devMl = await fetchDevMl(base);
+      if (devMl) {
+        const stale = devMlStaleReason(devMl, devSignals);
+        if (stale) {
+          const line = `dev_ml.json not used for ${league || 'default'}: ${stale}; the cell method stays`;
+          if (!devMlStaleLogged.has(line)) {
+            devMlStaleLogged.add(line);
+            console.info(line);
+          }
+        } else {
+          for (const key of DEV_SIGNAL_LISTS) {
+            results[key] = applyDevMl(results[key], devMl, devSignals);
+          }
+        }
+      }
+
       if (!cancelled) {
         setData(results);
         setLoading(false);
@@ -232,9 +266,90 @@ export function usePlayerData(league, parkMode = 'neutral') {
     });
 
     return () => { cancelled = true; };
-  }, [league, parkMode]);
+  }, [league, parkMode, wantPlayers]);
 
   return { data, loading, error, loadProgress };
+}
+
+/**
+ * Files the Series Planner reads on top of the app data. Data key
+ * `park_lineup_values`: every MLB/AAA hitter in every club park
+ * (ingest/park_values.py, rebuilt by each ratings pull). It is an object, not a
+ * player list, and it is about 2 MB, so the page loads it when it opens
+ * instead of adding it to every app start.
+ */
+export function getSeriesFiles(league) {
+  const prefix = league ? `/data/${league}` : '/data';
+  return {
+    park_lineup_values: `${prefix}/park_lineup_values.json`,
+    // The planner always works from the NEUTRAL hitters: the park values are
+    // stored as park minus neutral. No park suffix here, whatever the toggle says.
+    hitters_neutral: `${prefix}/hitters.json`,
+  };
+}
+
+// JSON or null. A dev-server SPA fallback (200, text/html) counts as missing, same as a 404.
+async function fetchJsonOrNull(url) {
+  const res = await fetch(url);
+  const ctype = res.headers.get('content-type') || '';
+  if (!res.ok || !ctype.includes('json')) return null;
+  return res.json();
+}
+
+// The park toggle remounts the page while the app reloads its data, so the
+// planner asks for the same file twice within a second or two. hitters.json is
+// about 38 MB: share one request for a short time. The window is short on
+// purpose, so a new pull is never hidden behind an old copy.
+const RECENT_MS = 30000;
+const _recent = new Map();
+function fetchJsonShared(url) {
+  const hit = _recent.get(url);
+  if (hit && Date.now() - hit.at < RECENT_MS) return hit.promise;
+  const promise = fetchJsonOrNull(url);
+  _recent.set(url, { at: Date.now(), promise });
+  promise.catch(() => _recent.delete(url));
+  return promise;
+}
+
+/**
+ * Series Planner data for one league.
+ * `hitters` is the app's loaded list: it IS the neutral file when the park
+ * toggle is on Neutral, so it is reused. On My Park the neutral file is fetched.
+ * status: 'loading' | 'ready' | 'missing' (no park values file yet) | 'error'.
+ */
+export function useSeriesPlannerData(league, parkMode, hitters) {
+  const [state, setState] = useState({ status: 'loading', parkValues: null, neutralHitters: [], error: null });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ status: 'loading', parkValues: null, neutralHitters: [], error: null });
+    const files = getSeriesFiles(league);
+
+    async function load() {
+      const parkValues = await fetchJsonOrNull(files.park_lineup_values);
+      if (!parkValues || !parkValues.hitters || !Array.isArray(parkValues.parks)) {
+        return { status: 'missing', parkValues: null, neutralHitters: [], error: null };
+      }
+      let neutralHitters = hitters;
+      if (parkMode !== 'neutral') {
+        const rows = await fetchJsonShared(files.hitters_neutral);
+        if (!Array.isArray(rows)) {
+          return { status: 'error', parkValues: null, neutralHitters: [], error: 'The neutral hitters file did not load.' };
+        }
+        neutralHitters = rows
+          .filter(p => p.Name && String(p.Name).trim() !== '' && String(p.Name).trim() !== '-')
+          .map(p => ({ ...p, _appLeague: league || 'TGS' }));
+      }
+      return { status: 'ready', parkValues, neutralHitters, error: null };
+    }
+
+    load()
+      .then(next => { if (!cancelled) setState(next); })
+      .catch(e => { if (!cancelled) setState({ status: 'error', parkValues: null, neutralHitters: [], error: e.message }); });
+    return () => { cancelled = true; };
+  }, [league, parkMode, hitters]);
+
+  return state;
 }
 
 /**
@@ -375,11 +490,36 @@ export function useFilteredPlayers(players, initialFilters = {}) {
 /**
  * Hook that adds Future Value calculations to player data.
  */
+// First age after the peak where the display path has fallen 0.1 WAA or
+// more below it; null when it never does inside the path.
+function declineStartAge(path, peakAge) {
+  if (!Array.isArray(path) || !path.length) return null;
+  const peak = path.find(x => x.age === peakAge) || path[0];
+  for (const x of path) {
+    if (x.age > peak.age && peak.waa - x.waa >= 0.1) return x.age;
+  }
+  return null;
+}
+
 // League minimum salary. Measured, not guessed: 437 of 489 (89%) pre-arb one-year
 // MLB deals in the TGS market sample sit exactly here (market_fit.json minSalaryInfo).
 const LEAGUE_MIN_SALARY = 750000;
 
+// The measured DEV curve, loaded once. With it, calculateFutureValue runs
+// the measured year-by-year path for every player (futureValue.js); until
+// it arrives (or when the file is missing) the assumed model runs.
+function useMeasuredCurve() {
+  const [curve, setCurve] = useState(null);
+  useEffect(() => {
+    let on = true;
+    loadAgeCurve(MEASURED_CURVE_LEAGUE).then(c => { if (on) setCurve(c); });
+    return () => { on = false; };
+  }, []);
+  return curve;
+}
+
 export function usePlayersWithFV(players) {
+  const curve = useMeasuredCurve();
   return useMemo(() => {
     // League minimum salary, measured from THIS league's own rows: the modal
     // single-year salary among org-attached players (TGS 750k, BLM 700k — the
@@ -405,7 +545,12 @@ export function usePlayersWithFV(players) {
       const cw = controlWindow(p);
       // valueYears, not controlYears: a free agent controls zero seasons but the value
       // left in him is the term you would sign him for (serviceTime.controlWindow).
-      const fv = calculateFutureValue(p, cw.valueYears);
+      // The measured DEV curve and the row's DEV cell gain make this the
+      // year-by-year path model (futureValue.js); the card in PlayerDetail
+      // passes the same two, so its numbers match the lists.
+      const fv = calculateFutureValue(p, cw.valueYears, { ageCurve: curve, devGain: p.Dev_PeakGainP50 });
+      const path = fv.fullPath || null;
+      const pathAt = (k) => (path && path[k] && Number.isFinite(path[k].waa) ? path[k].waa : null);
       // Value Gap = our projection-based FV minus OOTP's POT (what other GMs eyeball).
       // Positive → we rate him higher than his potential shows → undervalued / a buy.
       const pot = parseFloat(p.Pot);
@@ -429,10 +574,11 @@ export function usePlayersWithFV(players) {
         _fvScale: fv.fvScale,
         _fvGap: (Number.isFinite(fv.fvScale) && Number.isFinite(pot)) ? fv.fvScale - pot : null,
         _peakWAA: toWAA(d.peakProjected),
-        // ceiling minus current, in display WAA — one meaning for every player
-        // (the old % mixed three formulas; see futureValue.pctToPeak history)
-        _toPeakWAA: fv.displayWAA
-          ? Math.round((fv.displayWAA.potential - fv.displayWAA.current) * 10) / 10
+        // Proj Potential minus current, in display WAA: what he still gains
+        // to the top of his projected path. One meaning for every player
+        // (the old % mixed three formulas; see futureValue.pctToPeak history).
+        _toPeakWAA: (Number.isFinite(d.expectedPeak) && Number.isFinite(d.current))
+          ? Math.round((d.expectedPeak - d.current) * 10) / 10
           : null,
         _yearsTilPeak: fv.yearsTilPeak,
         // --- contract, summarized for trade work -------------------------------
@@ -468,12 +614,28 @@ export function usePlayersWithFV(players) {
         })(),
         _projYears: fv.projectionYears,
         _currentWAA: toWAA(d.current),
-        // "Proj Peak" = the REALISTIC age-adjusted peak (what we project he'll actually reach),
-        // i.e. the raw ceiling AFTER the gap-factor and risk haircut. So a 26+ player past
-        // development shows his current WAA — no credit for potential he'll never fill.
-        // The un-haircut scouting ceiling is the board's "Ceiling (WAA)" column.
+        // Proj Potential = the top of his projected path (user, 2026-09-24:
+        // "what we project them to end up at by the time they are at their
+        // peak"). On the measured path that is current + the DEV cell gain
+        // for a player with a cell, or current + the closable share of his
+        // listed gap; never below his current. Without the curve it is the
+        // assumed model's haircut ceiling. The un-haircut ceiling is "Peak
+        // Potential".
         _potentialWAA: toWAA(d.expectedPeak),
+        _potentialSource: !fv.measured ? 'model'
+          : fv.targetSource === 'ml' ? 'ML'
+          : fv.targetSource === 'cell' ? 'DEV cell'
+          : 'measured curve',
         _rawPotentialWAA: toWAA(d.potential),
+        // Year by year: display WAA at age+1, +2, +3, +5 on the measured path,
+        // the age of the projected peak, and the first age the path has
+        // fallen 0.1 or more below it. All null on the assumed model.
+        _yr1WAA: pathAt(1),
+        _yr2WAA: pathAt(2),
+        _yr3WAA: pathAt(3),
+        _yr5WAA: pathAt(5),
+        _peakAge: fv.peakAge ?? null,
+        _declineStart: declineStartAge(path, fv.peakAge),
         _controlYears: cw.controlYears,
         _controlSource: cw.source,
         _svcYears: cw.serviceYears,
@@ -481,7 +643,7 @@ export function usePlayersWithFV(players) {
         _fvBreakdown: fv,
       };
     });
-  }, [players]);
+  }, [players, curve]);
 }
 
 /**
@@ -653,15 +815,19 @@ function withMarketValue(p, val, war) {
  * comparable-WAR signings).
  */
 export function useHittersWithMarketValue(players, marketFit) {
+  // The measured DEV curve: contract and offer paths run on the row's
+  // measured path (marketValue.agedWARPath) and the curve extends it past
+  // its last age.
+  const curve = useMeasuredCurve();
   return useMemo(() => {
     if (!players || players.length === 0 || !marketFit || !marketFit.pooled) return players;
     const rate = resolveRate(marketFit, 'hitter');
     if (!(rate.slope > 0)) return players;
     return players.map(p => {
-      const val = calculatePlayerValue(p, rate);
+      const val = calculatePlayerValue(p, rate, { ageCurve: curve });
       return withMarketValue(p, val, getPlayerWAR(p) ?? 0);
     });
-  }, [players, marketFit]);
+  }, [players, marketFit, curve]);
 }
 
 /**
@@ -669,15 +835,16 @@ export function useHittersWithMarketValue(players, marketFit) {
  * Same fitted line resolution; shows SP/RP role for reference.
  */
 export function usePitchersWithMarketValue(players, marketFit) {
+  const curve = useMeasuredCurve();
   return useMemo(() => {
     if (!players || players.length === 0 || !marketFit || !marketFit.pooled) return players;
     const rate = resolveRate(marketFit, 'pitcher');
     if (!(rate.slope > 0)) return players;
     return players.map(p => {
-      const val = calculatePitcherValue(p, rate);
+      const val = calculatePitcherValue(p, rate, { ageCurve: curve });
       return { ...withMarketValue(p, val, getPlayerWAR(p) ?? 0), _marketRole: val.role };
     });
-  }, [players, marketFit]);
+  }, [players, marketFit, curve]);
 }
 
 /**

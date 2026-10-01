@@ -4,9 +4,17 @@
 // (too-low / right / too-high + prospect-vs-filler + age-for-level), and
 // per-org affiliate rosters with roster-balance / org-need flags.
 //
-// "Value" = projected WAA: hitters use Max WAA wtd (current) / MAX WAA P
-// (potential); pitchers use the better of SP/RP (WAA wtd / WAA wtd RP) and
-// WAP / WAP RP. Nothing here touches the Excel sheets.
+// "Value" = projected WAA: hitters use Max WAA wtd (current); pitchers use
+// the better of SP/RP (WAA wtd / WAA wtd RP). Potential is the app's Proj
+// Potential (_potentialWAA, the projected peak of the measured path) when
+// the rows carry it, else the DEV cell median, else the listed MAX WAA P /
+// WAP / WAP RP (see potentialValue). Nothing here touches the Excel sheets.
+//
+// Chance first (user, 2026-09-24): minors playing time ranks on the CHANCE
+// a player is ever anything in the majors (MLB %, chanceOf) before anything
+// else, and a player with no chance (noChance) is a filler at any age. The
+// chance is measured from where he is now (his current WAA), so a player
+// already at a bar reads 100% there (user, 2026-09-24).
 
 export const LEVELS = ["INT", "WL", "R-", "R+", "A-", "A+", "AA", "AAA", "MLB"]; // low -> high (INT = international complex, WL = winter league — the bottom rungs)
 export const LEVEL_RANK = Object.fromEntries(LEVELS.map((l, i) => [l, i]));
@@ -43,6 +51,19 @@ export function currentValue(p, isPitcher) {
   return num(p["Max WAA wtd"]);
 }
 export function potentialValue(p, isPitcher) {
+  // What we actually project he becomes (user, 2026-09-24: the Org tab must
+  // use what we actually project). First the app's Proj Potential
+  // (_potentialWAA from usePlayersWithFV: the projected peak of the measured
+  // path, current + the DEV cell's typical gain, the same number the lists
+  // show). Then the DEV cell's median peak (Dev_PeakP50, attached by
+  // usePlayerData for 16-26-year-olds with a filled cell). The listed
+  // potential ratings are the last fallback. For a pitcher _potentialWAA is
+  // the potential-role peak. Who STARTS in the minors is decided chance
+  // first (chanceOf, user 2026-09-24), no longer on spPot (WAP).
+  const proj = num(p["_potentialWAA"]);
+  if (proj !== null) return proj;
+  const dev = num(p["Dev_PeakP50"]);
+  if (dev !== null) return dev;
   if (isPitcher) {
     const sp = num(p["WAP"]);
     const rp = num(p["WAP RP"]);
@@ -71,8 +92,8 @@ export function pitcherRole(p, { developmental = false } = {}) {
   // arm gets unloaded on the 3rd time through the order, so current RP value tops
   // current SP value for nearly every minor-leaguer. Judging role on that buries
   // every starter prospect in the bullpen and leaves the minor rotations empty.
-  // We'd rather a possible starter actually start; his SP *potential* (WAP) is the
-  // real ceiling, and rotations fill best-potential-first downstream.
+  // We'd rather a possible starter actually start; rotations fill chance
+  // first downstream (chanceOf, user 2026-09-24), not on the relief line.
   if (developmental) return "SP";
   // Established (MLB) context: play him where he projects best right now. A guy who
   // is genuinely better in short relief should be a reliever in the majors.
@@ -302,6 +323,18 @@ export function offenseFloors(hitters, { excludeOrgs = new Set(), pct = 0.35 } =
   const out = {}; for (const l of LEVELS) out[l] = quantile(by[l].sort((a, b) => a - b), pct);
   return out;
 }
+// Filler bats (dev done) are placed on WAA, not on the bat: "for guys who are
+// 24 and older we are just trying to get WAA results out of them" (user,
+// 2026-09-22, Ariza case). Same percentile bars as the hit gate, on Max WAA wtd.
+export function waaFloors(hitters, { excludeOrgs = new Set(), pct = 0.35 } = {}) {
+  const by = {}; for (const l of LEVELS) by[l] = [];
+  for (const p of hitters) {
+    const lev = p["Lev"]; if (!isAffiliate(lev) || excludeOrgs.has(p["ORG"])) continue;
+    const w = num(p["Max WAA wtd"]); if (w !== null) by[lev].push(w);
+  }
+  const out = {}; for (const l of LEVELS) out[l] = quantile(by[l].sort((a, b) => a - b), pct);
+  return out;
+}
 export function pitcherFloors(pitchers, { excludeOrgs = new Set(), pct = 0.40 } = {}) {
   const by = {}; for (const l of LEVELS) by[l] = [];
   for (const p of pitchers) {
@@ -380,6 +413,196 @@ function fillSlots(pool, slots, used, valueFn) {
   return { roster, gaps };
 }
 
+// Minors lineup scoring (user, 2026-09-22, Dale Wosick case: a 24-yo with no
+// future started AAA 2B at -4.2 because the old score used his BEST position
+// and credited potential he has no time left to reach).
+//  * isFillerBat: 27+ is filler (dev done); 23-26 is filler unless his potential
+//    is about 0 WAA or better (-0.25 tolerance) and he still has room to grow.
+//    The dev-done age moved from 25 to 27 (user, 2026-09-24: "move those to
+//    27 based on our data"). The DEV league's mean WAA change per year is
+//    +0.21 at 24, +0.13 at 25, +0.07 at 26, +0.01 at 27 and -0.03 at 28, so
+//    growth tails off at 27 and decline starts at 28. The Wosick check still
+//    starts at 23: pot is Proj Potential (the top of his measured path), so a
+//    24-yo with a negative projected peak stays a filler.
+//  * No chance = filler at ANY age (noChance, user 2026-09-24): the 27+ and
+//    the 23-26 tests stay; a younger bat with no chance joins them.
+//  * A filler starts only on what he is worth NOW at that exact position; a
+//    prospect keeps the potential-first blend, with a light pull toward the
+//    position he actually plays well.
+//  * assignLineup fills the 9 slots together (exact bitmask assignment: most
+//    slots filled first, then best total score) instead of one slot at a time.
+
+// ---- chance first (user, 2026-09-24) -----------------------------------------
+// The user: "we should probably base it on if they will ever be anything in
+// the mlb first and foremost and what degree of a chance do they have ...
+// if a guy is 26 and his growth rate is declined to an average of like 0.5
+// or whatever it is and they arent close to making it then whats the point".
+// So minors playing time ranks on the CHANCE first, and a player with no
+// chance is a filler at any age. The shares come from his DEV lookalikes
+// (same age, Pot bucket and growth; devSignals.js) and, since 2026-09-24,
+// are CONDITIONAL ON HIS CURRENT: each is the chance his eventual peak
+// reaches the bar from where he is now, the share of the lookalikes at a
+// similar current (the now-WAA tercile holding his own, Dev_ShareBasis)
+// whose gain covered the distance from his current (Dev_ShareNow) to the
+// bar. A player already at or above a bar reads 100% there. The old shares
+// were the whole cell's peak distribution, blind to his current (user,
+// 2026-09-24: "there are a ton of guys who are already at 0+ WAA that are
+// getting like tagged as less than 100% to reach it"). dev_signals ships
+// them as Dev_CellMlb / Dev_CellUseful / Dev_CellGood. On a row the ML model
+// covers (devMl.js, Dev_Source 'ML', 2026-09-25) the Dev_Peak* chances below
+// are the ML's; Dev_CellMlb / Useful / Good then hold the cell method's
+// CONDITIONAL chances (for reference) and the old unconditional shares move
+// to Dev_CellShareMlb / Useful / Good. Nothing here reads any Dev_Cell* field.
+//   Dev_PeakMlb    = chance his peak reaches -1 (an MLB-level player: a 5th
+//                    starter or bench bat) = MLB %, the chance he is ever
+//                    anything in the majors;
+//   Dev_PeakUseful = the same chance at 0 (an average MLB player);
+//   Dev_PeakGood   = the same chance at +1.5 (a clear regular).
+// chanceOf(p) returns { mlb, useful, good, source }. source is "cell" when
+// the row has a DEV cell. A thin growth cell now falls back to the pot-only
+// cell (same age and Pot) upstream, so the stand-in only fires for a row
+// with no cell at all (both thin, outside 16-26, or not in the signals
+// file): it comes from Proj Potential (p._potentialWAA, else the listed
+// potential, see potentialValue): >= 0 -> 0.5, >= -1.0 -> 0.25, else 0,
+// with useful and good null (unknown) and source "stand-in", so the UI can
+// say so.
+export const CHANCE_STAND_IN = { POS: 0.5, NEAR: 0.25, NONE: 0 };
+const isPitcherRow = (p) => !!p && p["Max WAA wtd"] === undefined;
+export function chanceOf(p, isPitcher = null) {
+  const mlb = num(p?.["Dev_PeakMlb"]);
+  if (mlb !== null) {
+    return { mlb, useful: num(p?.["Dev_PeakUseful"]), good: num(p?.["Dev_PeakGood"]), source: "cell" };
+  }
+  const pot = potentialValue(p || {}, isPitcher === null ? isPitcherRow(p) : isPitcher);
+  const standIn = pot === null ? CHANCE_STAND_IN.NONE
+    : pot >= 0 ? CHANCE_STAND_IN.POS : pot >= NO_CHANCE_POT ? CHANCE_STAND_IN.NEAR : CHANCE_STAND_IN.NONE;
+  return { mlb: standIn, useful: null, good: null, source: "stand-in" };
+}
+// No chance = a filler at any age (user, 2026-09-24: "whats the point"):
+// MLB % known and under 5% (since 2026-09-24 the chance from his current:
+// his lookalikes at a similar current almost never gained enough to reach
+// -1) AND Proj Potential under -1.0 WAA. With the share
+// unknown (no DEV cell): Proj Potential under -1.0 AND age 21 or older. A
+// younger player without a cell is unknown, not hopeless, so he keeps his
+// prospect status until the data says otherwise.
+export const NO_CHANCE_MLB = 0.05, NO_CHANCE_POT = -1.0, NO_CHANCE_AGE_UNKNOWN = 21;
+export function noChance(p, pot) {
+  const pt = num(pot);
+  if (pt === null || pt >= NO_CHANCE_POT) return false;
+  const mlb = num(p?.["Dev_PeakMlb"]);
+  if (mlb !== null) return mlb < NO_CHANCE_MLB;
+  const age = num(p?.["Age"]);
+  return age !== null && age >= NO_CHANCE_AGE_UNKNOWN;
+}
+
+const posPot = (p, pos) => num(p[`${pos} WAA P`]);
+const BAT_POT_OK = -0.25;
+export const isFillerBat = (h) => (h.age ?? 99) >= 27 ||
+  ((h.age ?? 99) >= 23 && !((h.pot ?? -99) >= BAT_POT_OK && (h.pot ?? -99) > (h.cur ?? -99))) ||
+  noChance(h.p, h.pot);   // no chance = filler at any age (user, 2026-09-24)
+
+// ---- training positions (user, 2026-09-24) -----------------------------------
+// The user: "add a thing in the org builder beside players who may become good
+// any positions that they could play at a 0 WAA or higher if they reach peak
+// but have not mastered like if a catcher is 45/50 for the position rating or
+// maybe they haven't started even training to be a RF yet but they have 60
+// range or something ... Would be good to notate the positions they lack
+// training by each of the prospects to work as a reminder. I forget all the
+// time to change positions during the season in the minors for training."
+// So, for a hitter who is not a filler, list every position (never DH) where
+// BOTH hold:
+//   1. his WAA at THAT POSITION if he reaches his potential ratings is
+//      TRAIN_PEAK_BAR (0 WAA) or better: the engine's "P WAA P" line (his
+//      potential ratings at P, fielded with his tools: range, error, arm,
+//      the catcher skills). The engine never reads the position rating, so
+//      that line is already his value at full training. "If they reach
+//      peak" means his potential, not the median projection (Proj
+//      Potential): until 2026-09-26 this read Proj Potential + the position
+//      offset, and the median sits below 0 for nearly every minor leaguer,
+//      so almost no one got a chip (user, 2026-09-26: "none of my prospects
+//      are being tagged to train any position").
+//   2. he has not mastered P: position rating current < potential (the
+//      user's 45/50), OR he has never trained there at all. OOTP exports a
+//      never-trained position as 0/0 (no potential until training starts),
+//      so "haven't started even training to be a RF yet but they have 60
+//      range" only shows through the tools line: a 0/0 position whose
+//      projected peak clears the bar is listed as NEW (untrained: true, pot
+//      null). Catcher is the exception: a non-catcher's C tools are not a
+//      real read of catching, so C is listed only when he already has a C
+//      rating above 0.
+// Returns [{ pos, cur, pot, peak, untrained }], best peak first (peak = the
+// P WAA P line); cur reads 0 when untrained. Pure: reads the row, nothing
+// else. The caller decides who gets the note (the Org page: non-filler
+// minors bats and MLB bats under 27; the card: any hitter).
+export const TRAIN_PEAK_BAR = 0.0;
+export const TRAIN_POS = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"];
+export function trainingNotes(p) {
+  if (!p) return [];
+  const out = [];
+  for (const pos of TRAIN_POS) {
+    const pot = num(p[`Pot${pos}`]);
+    const cur = num(p[pos]) ?? 0;                     // blank = never trained
+    const untrained = !(pot > 0);                     // 0/0: training never started
+    if (untrained && (cur > 0 || pos === "C")) continue;   // odd export, or catching without a C rating
+    if (!untrained && cur >= pot) continue;           // mastered already
+    const peak = num(p[`${pos} WAA P`]);              // his WAA there at his potential
+    if (peak === null || peak < TRAIN_PEAK_BAR) continue;
+    out.push({ pos, cur, pot: untrained ? null : pot, peak, untrained });
+  }
+  out.sort((a, b) => b.peak - a.peak);
+  return out;
+}
+function assignLineup(pool, slots, used, scoreAt) {
+  const avail = pool.filter((h) => !used.has(h));
+  const nS = slots.length, nM = 1 << nS, BONUS = 1e6;
+  const opts = avail.map((h) => {
+    const o = [];
+    slots.forEach(([, elig], si) => {
+      let bv = -Infinity, bp = null;
+      for (const pos of elig) { if (!eligibleAt(h.p, pos)) continue; const v = scoreAt(h, pos); if (v != null && v > bv) { bv = v; bp = pos; } }
+      if (bp) o.push([si, bv, bp]);
+    });
+    return o;
+  });
+  let prev = new Float64Array(nM).fill(-Infinity); prev[0] = 0;
+  const ch = [];
+  for (let i = 0; i < avail.length; i++) {
+    const cur = new Float64Array(nM).fill(-Infinity), c = new Int8Array(nM).fill(-1);
+    for (let m = 0; m < nM; m++) {
+      const b = prev[m]; if (b === -Infinity) continue;
+      if (b > cur[m]) { cur[m] = b; c[m] = -1; }
+      for (const [si, v] of opts[i]) { if (m & (1 << si)) continue; const nm = m | (1 << si), nv = b + v + BONUS; if (nv > cur[nm]) { cur[nm] = nv; c[nm] = si; } }
+    }
+    ch.push(c); prev = cur;
+  }
+  let bm = 0; for (let m = 1; m < nM; m++) if (prev[m] > prev[bm]) bm = m;
+  const bySlot = new Array(nS).fill(null);
+  let m = bm;
+  for (let i = avail.length - 1; i >= 0 && m; i--) { const si = ch[i][m]; if (si >= 0) { bySlot[si] = [avail[i], opts[i].find((o) => o[0] === si)[2]]; m &= ~(1 << si); } }
+  const roster = [], gaps = [];
+  slots.forEach(([label], si) => {
+    const e = bySlot[si];
+    if (!e) { gaps.push(label); return; }
+    const [h, pos] = e; used.add(h); h.slot = label; h.slotPos = pos; roster.push(h);
+  });
+  return { roster, gaps };
+}
+// The DH slot is scored on the DH line only (a DH does not field 1B).
+const MINOR_LINEUP = MINOR_SLOTS.map(([l, e]) => [l, l === "DH" ? ["DH"] : e]);
+const minorSlotScore = (h, pos) => {
+  const c = posWAA(h.p, pos); if (c == null) return null;
+  if (isFillerBat(h)) return c;
+  const EPS = 0.1;   // light position pull for prospects: they still start on their future
+  // + somethingBonus: chance first, the guys who have one play (user, 2026-09-24).
+  return WIN_W * (h.cur ?? c) + GROW_W * (h.pot ?? h.cur ?? c) + EPS * (c - (h.cur ?? c)) + somethingBonus(h.p);
+};
+// Best slot score over a slot's eligible positions -> [score, pos].
+const bestSlotScore = (h, elig) => {
+  let bv = -Infinity, bp = null;
+  for (const pos of elig) { if (!eligibleAt(h.p, pos)) continue; const v = minorSlotScore(h, pos); if (v != null && v > bv) { bv = v; bp = pos; } }
+  return [bv, bp];
+};
+
 // ---- minor-league playing-time philosophy -------------------------------------
 // Goal: win at every level AND develop. So the most play time (the starting jobs)
 // goes to the best blend of winning NOW (current ability) and GROWTH (potential),
@@ -393,9 +616,75 @@ function fillSlots(pool, slots, used, valueFn) {
 // favor win-now over ceiling.
 const WIN_W = 0.4, GROW_W = 0.6;
 const blendScore = (cur, pot) => WIN_W * (cur ?? pot ?? -99) + GROW_W * (pot ?? cur ?? -99);
+
+// ---- "will he be something" (user, 2026-09-24) ------------------------------
+// Make it % (Dev_Odds) is PLAYING TIME: the share of DEV lookalikes (same age,
+// Pot bucket and growth) who got 300 PA / 150 BF in a season. It says nothing
+// about whether they were any good. The user asked: "does make it consider
+// that their projected WAA might just not be good enough at all?" It does
+// not. So minors playing time ranks on the CHANCE shares of the same DEV
+// cell, each the chance from where he is now (chanceOf above): MLB % first
+// and foremost (user, 2026-09-24: "if
+// they will ever be anything in the mlb first and foremost and what degree
+// of a chance do they have"), then Useful % and Good %.
+// somethingBonus adds CHANCE_W x (mlb + useful + good) WAA of playing-time
+// priority to a PROSPECT's play score and lineup slot score, and takes it
+// off his bench score, so a blocked prospect with a real chance cascades
+// down and starts rather than sits. CHANCE_W = 2.0: a 60 / 40 / 20 prospect
+// carries +2.4 WAA of priority; one whose lookalikes all busted carries 0.
+// A row with no cell at all uses the stand-in MLB % from Proj Potential (at
+// most +1.0). Fillers (isFillerBat, isFillerArm) never get it: they play on what
+// they are worth now. Placement (which level) is untouched; this is only
+// who plays there. Rotations and pens rank on the same shares through the
+// chance-first order in buildRosters (chanceCmp / chanceScore).
+export const CHANCE_W = 2.0;
+export const somethingBonus = (p) => {
+  const c = chanceOf(p);
+  return CHANCE_W * (c.mlb + (c.useful ?? 0) + (c.good ?? 0));
+};
+
+// ---- keep-before-cut value (depth pass and the Org page's cuts list) --------
+// keepValue = Proj Potential + youthBonus, and for a PROSPECT also the
+// something bonus (the chance bonus above). Chance first (user, 2026-09-24:
+// "if they will ever be anything in the mlb first and foremost"), so a
+// 20-year-old with MLB 52% is not cut or pushed off a roster seat by a
+// 19-year-old at 40% (checker, 2026-09-25: Kilbourne vs Weng). Fillers
+// (isFillerRec: a filler bat, or an arm 27+ or with no chance) are unchanged:
+// no chance bonus. youthBonus rewards TCR upside (a 20-yo's talent can still
+// randomly jump); its steps end at 26 (turn-27 rule, DEV data, 2026-09-24):
+// a 25-26-year-old still gains a little.
+export const youthBonus = (age) => (age == null ? 0 : age <= 20 ? 2.5 : age <= 22 ? 1.5 : age <= 24 ? 0.9 : age <= 26 ? 0.4 : 0);
+// Same test as buildRosters' isFillerArm for arms and isFillerBat for bats.
+export const isFillerRec = (x) => (x.isPitcher
+  ? !((x.age ?? 99) <= 26 && !noChance(x.p, x.pot))
+  : isFillerBat(x));
+export const keepValue = (x) => (x.pot ?? x.cur ?? -99) + youthBonus(x.age)
+  + (isFillerRec(x) ? 0 : somethingBonus(x.p));
+// Keep order for depth seats and the cuts list, best to keep first (user,
+// 2026-09-25: "if you think chance is better then yeah we can go with
+// chance"). Prospects come before fillers; prospects rank by their chance
+// (MLB %, then Useful %, then Good %; chanceOf, a stand-in when he has no
+// DEV group) and only then by keepValue. The ML chance already knows his
+// age, so the youth bonus no longer outranks a real chance gap (it kept
+// 19-year-olds at 21-31% MLB over 21-22-year-olds at 34-38%). Fillers
+// keep the keepValue order.
+export const keepCmp = (a, b) => {
+  const fa = isFillerRec(a) ? 1 : 0, fb = isFillerRec(b) ? 1 : 0;
+  if (fa !== fb) return fa - fb;
+  if (!fa) {
+    const ca = chanceOf(a.p, a.isPitcher), cb = chanceOf(b.p, b.isPitcher);
+    const d = ((cb.mlb ?? 0) - (ca.mlb ?? 0)) || ((cb.useful ?? 0) - (ca.useful ?? 0))
+      || ((cb.good ?? 0) - (ca.good ?? 0));
+    if (d) return d;
+  }
+  return keepValue(b) - keepValue(a);
+};
+
 // Bench value: current production, penalized for unused upside so a prospect with
 // room to grow would rather cascade down and start than sit as a backup here.
-const benchScore = (rec) => (rec.cur ?? -99) - GROW_W * Math.max(0, (rec.pot ?? rec.cur ?? -99) - (rec.cur ?? -99));
+// A prospect also gives up his something bonus here (user, 2026-09-24).
+const benchScore = (rec) => (!rec.isPitcher && isFillerBat(rec)) ? (rec.cur ?? -99)
+  : (rec.cur ?? -99) - GROW_W * Math.max(0, (rec.pot ?? rec.cur ?? -99) - (rec.cur ?? -99)) - somethingBonus(rec.p);
 // A captain needs leadership + work ethic + loyalty together (not leadership alone,
 // which over-counts ~7x). All three high = a lock; leadership & work ethic high with
 // normal loyalty = a likely captain (the game also factors hidden values we can't see).
@@ -467,6 +756,8 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   // league's weak orgs from defining where a strong org's kids may stand.
   const HOLD_PCT = 1 / 3;
   const oHold = offenseFloors(hitters, { ...opts, pct: HOLD_PCT });
+  const wFloors = waaFloors(hitters, { ...opts, pct: FIT_PCT_HIT });   // fillers: placed on WAA results
+  const wHold = waaFloors(hitters, { ...opts, pct: HOLD_PCT });
   const pHold = pitcherFloors(pitchers, { ...opts, pct: HOLD_PCT });
   const rpHold = relieverFloors(pitchers, { ...opts, pct: HOLD_PCT });
   const holdLev = (p, val, holdFloors) => {
@@ -493,13 +784,55 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   // everyone except international-complex players.
   const minLev = (p) => (p["Lev"] === "INT" ? "INT" : "R-");
   const floorRankOf = (p, age) => Math.max(LEVEL_RANK[minLev(p)], ageFloorRank(age));
+  // Prospect arm = young with a chance; everyone else is a filler arm. Young
+  // = 26 or under (turn-27 rule, DEV data, 2026-09-24; was 24). A chance =
+  // not noChance (MLB % under 5% with Proj Potential under -1.0, user
+  // 2026-09-24). The old "pot > 1.0" bar is gone: it dates from when pot
+  // was the listed WAP; Proj Potential and the DEV shares replace it, and
+  // the chance-first order below ranks the prospects among themselves.
+  // Defined here because the play scores below need them: a filler arm gets
+  // no something bonus.
+  const isProspectArm = (x) => (x.age ?? 99) <= 26 && !noChance(x.p, x.pot);
+  const isFillerArm = (x) => !isProspectArm(x);
+  const chanceRec = (x) => x.chance || (x.chance = chanceOf(x.p, x.isPitcher));
+  // Chance-first order for a staff (user, 2026-09-24): prospects first, by
+  // MLB %, then Useful %, Good %, Proj Potential, then `tie` (the win+grow
+  // blend); fillers after every prospect, by what they are worth NOW in the
+  // role (`nowOf`). The same key builds rotations and pens.
+  const chanceCmp = (nowOf, tie) => (a, b) => {
+    const pa = isProspectArm(a), pb = isProspectArm(b);
+    if (pa !== pb) return pa ? -1 : 1;
+    if (!pa) return (nowOf(b) ?? -99) - (nowOf(a) ?? -99);
+    const ca = chanceRec(a), cb = chanceRec(b);
+    return (cb.mlb - ca.mlb) || ((cb.useful ?? 0) - (ca.useful ?? 0)) || ((cb.good ?? 0) - (ca.good ?? 0))
+      || ((b.pot ?? -99) - (a.pot ?? -99)) || (tie(b) - tie(a));
+  };
+  // The same order as one number, for the fill passes that score a candidate:
+  // a prospect = 1000 + 100 x MLB % + 10 x Useful % + 5 x Good % + Proj
+  // Potential (always above a filler); a filler = what he is worth now in
+  // the role.
+  const chanceScore = (nowOf) => (x) => {
+    if (!isProspectArm(x)) return nowOf(x) ?? -99;
+    const c = chanceRec(x);
+    return 1000 + 100 * c.mlb + 10 * (c.useful ?? 0) + 5 * (c.good ?? 0) + (x.pot ?? -99);
+  };
   const H = hitters.filter((p) => p["ORG"] === org).map((p) => {
     const cur = currentValue(p, false), pot = potentialValue(p, false), woba = num(p["wOBA wtd"]), age = num(p["Age"]);
     // Placed where his CURRENT bat fits (median of the level), no reach: a hitter who
     // can't hit the level gets buried; one too good for it wastes the rep.
+    // Placement basis: a developing hitter goes where his BAT holds up (the
+    // hit gate); a filler (dev done) goes where his WAA helps win games.
+    const filler = isFillerBat({ p, age, pot, cur });
+    const ceiling = filler
+      ? maxLev(highestClearing(cur, wFloors, minLev(p)) || minLev(p), holdLev(p, cur, wHold))
+      : maxLev(highestClearing(woba, oFloors, minLev(p)) || minLev(p), holdLev(p, woba, oHold));
+    // play = win+grow blend, plus the something bonus for a prospect (never a
+    // filler): chance first, the guys who have one play (user, 2026-09-24).
+    // chance = the MLB / Useful / Good shares (or the stand-in) for the card.
     return { p, isPitcher: false, cur, pot, woba, age,
-             priority: (pot != null ? pot : cur) ?? -99, play: blendScore(cur, pot),
-             ceiling: maxLev(highestClearing(woba, oFloors, minLev(p)) || minLev(p), holdLev(p, woba, oHold)),
+             priority: (pot != null ? pot : cur) ?? -99, play: blendScore(cur, pot) + (filler ? 0 : somethingBonus(p)),
+             chance: chanceOf(p, false),
+             ceiling,
              floorRank: floorRankOf(p, age), bestPos: bestPosition(p) };
   });
   const P = pitchers.filter((p) => p["ORG"] === org).map((p) => {
@@ -509,9 +842,13 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
     // reach. Overplacing a starter-prospect gets him shelled and tanks his potential; he
     // develops by succeeding where he belongs, then earning the next rung. role = MLB
     // usage (best-projected); devRole = how he's developed (starter-capable arm starts).
+    // play = win+grow blend, plus the something bonus for a prospect arm (never
+    // a filler arm); it is the last tiebreak of the chance-first rotation
+    // order (user, 2026-09-24). chance = the shares (or the stand-in).
     return { p, isPitcher: true, cur, pot, age,
-             priority: (pot != null ? pot : cur) ?? -99, play: blendScore(cur, pot),
-             spPot: num(p["WAP"]),   // SP potential (WAP) — decides who STARTS in the minors: future starters first
+             priority: (pot != null ? pot : cur) ?? -99, play: blendScore(cur, pot) + (isProspectArm({ p, age, pot }) ? somethingBonus(p) : 0),
+             chance: chanceOf(p, true),
+             spPot: num(p["WAP"]),   // SP potential (WAP), kept for display; it no longer decides who starts (chance first, user 2026-09-24)
              ceiling: maxLev(highestClearing(devRoleValue(p), pFloors, minLev(p)) || minLev(p), holdLev(p, devRoleValue(p), pHold)),
              floorRank: floorRankOf(p, age),
              role: pitcherRole(p), devRole: pitcherRole(p, { developmental: true }) };
@@ -605,7 +942,16 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   // The RELIEF line for ANY arm (a leftover starter is judged as the reliever he'd be).
   const rpCur = (x) => num(x.p["WAA wtd RP"]);
   const rpPotV = (x) => num(x.p["WAP RP"]);
-  const rpPlay = (x) => blendScore(rpCur(x), rpPotV(x));                  // RP potential-weighted
+  // Pen order = chance first (user, 2026-09-24): prospect arms by MLB %,
+  // Useful %, Good %, Proj Potential, then the RP win+grow blend; filler
+  // arms after every prospect, by their relief line now. rpOrder sorts a
+  // pen; rpPlay is the same order as one number for the fill passes.
+  const rpOrder = chanceCmp(rpCur, (x) => blendScore(rpCur(x), rpPotV(x)));
+  const rpPlay = chanceScore(rpCur);
+  // Rotation order, same rule on the SP line: spNow = his starter line now.
+  const spNow = (x) => num(x.p["WAA wtd"]) ?? x.cur;
+  const spOrder = chanceCmp(spNow, (x) => x.play);
+  const spScore = chanceScore(spNow);
   const rpCeil = (x) => maxLev(
     highestClearing(rpCur(x), rpFloors, minLev(x.p)) || minLev(x.p),
     holdLev(x.p, rpCur(x), rpHold)   // hysteresis: a median pen arm HOLDS his current level
@@ -620,20 +966,24 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   for (let li = minors.length - 1; li >= 0; li--) {
     const L = minors[li], down = li > 0 ? minors[li - 1] : null, dr = down ? LEVEL_RANK[down] : -1;
     if (L === "WL") { SProt[L] = []; continue; }   // WL = overlay, built after the summer system
-    // Rotation order = SP POTENTIAL (WAP) first: a future-positive starter must out-rank a
-    // future-negative one, so a weak current line can't bury a real prospect in the pen.
-    // Win+grow blend breaks ties among equal-ceiling arms.
-    const sp = spBy[L].sort((a, b) => (b.spPot ?? -99) - (a.spPot ?? -99) || b.play - a.play);
+    // Rotation order = CHANCE first (user, 2026-09-24): prospect arms by
+    // MLB %, then Useful %, Good %, Proj Potential, then the win+grow blend;
+    // filler arms (no chance, or 27+) after every prospect, by their SP line
+    // now. The old order was SP potential (WAP) first; WAP was the listed
+    // potential and said nothing about whether he ever gets there ("if a
+    // guy is 26 ... and they arent close to making it then whats the point").
+    const sp = spBy[L].sort(spOrder);
     SProt[L] = sp.slice(0, 6); SProt[L].forEach((x) => usedP.add(x));
     // Cascade overflow down. A YOUNG starter-capable arm (dev not done) KEEPS
     // STARTING — he cascades rotation to rotation all the way to his age floor
     // before ever converting to relief (user, 2026-08-30: "we aren't
     // developing him as a starter if he's at A- as an RP" — Rocha case). A
-    // 25+ arm gets one rung, then converts to relief at his own ability
-    // (Pass 2) — his development is over, the pen is his honest job. The old
-    // one-rung-for-everyone guard existed to stop multi-level slides into WL
-    // rotations; WL left the summer chain, and age floors still bound the slide.
-    if (down) for (const x of sp.slice(6)) if (dr >= x.floorRank && (!x._spDropped || (x.age ?? 99) < 25)) { x._spDropped = true; spBy[down].push(x); }
+    // 27+ arm (turn-27 rule, DEV data, 2026-09-24) gets one rung, then
+    // converts to relief at his own ability (Pass 2): his development is
+    // over, the pen is his honest job. The old one-rung-for-everyone guard
+    // existed to stop multi-level slides into WL rotations; WL left the
+    // summer chain, and age floors still bound the slide.
+    if (down) for (const x of sp.slice(6)) if (dr >= x.floorRank && (!x._spDropped || (x.age ?? 99) < 27)) { x._spDropped = true; spBy[down].push(x); }
   }
 
   // Pass 2 — RP bullpens: everyone still unplaced. The lower-ceiling starters who never
@@ -646,7 +996,7 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   for (let li = minors.length - 1; li >= 0; li--) {
     const L = minors[li], down = li > 0 ? minors[li - 1] : null, dr = down ? LEVEL_RANK[down] : -1;
     if (L === "WL") { RPpen[L] = []; continue; }   // WL = overlay
-    const rp = rpBy[L].sort((a, b) => rpPlay(b) - rpPlay(a));
+    const rp = rpBy[L].sort(rpOrder);   // chance first (user, 2026-09-24)
     RPpen[L] = rp.slice(0, 9); RPpen[L].forEach((x) => usedP.add(x));
     if (down) for (const x of rp.slice(9)) if (dr >= x.floorRank) rpBy[down].push(x);
   }
@@ -659,17 +1009,19 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   // only take startable arms (all SPs are RP-eligible, not vice-versa). Stretched arms get
   // an `_stretch` flag so the UI can mark them as roster-fillers, not true level talent.
   const SP_TARGET = 6, RP_TARGET = 9;
-  const isProspectArm = (x) => (x.age ?? 99) <= 24 && (x.pot ?? -99) > 1.0;   // young + real ceiling
-  const isFillerArm = (x) => !isProspectArm(x);
-  // 25+ = development is over (the turn-25 rule) — the ONLY guys who should
-  // travel long distances as roster fillers; a young low-pot arm still belongs
-  // near his own level (user, 2026-08-30).
-  const devDone = (x) => (x.age ?? 99) >= 25;
+  // isProspectArm / isFillerArm (young with a chance, or not) are defined
+  // above the H/P records now; the play scores need them.
+  // 27+ = development is over (the turn-27 rule, DEV data, 2026-09-24; it was
+  // the turn-25 rule): the ONLY guys who should travel long distances as
+  // roster fillers; a young low-pot arm still belongs near his own level
+  // (user, 2026-08-30).
+  const devDone = (x) => (x.age ?? 99) >= 27;
   // Fill preference (user, 2026-08-30, FINAL): "never place young players as
-  // fillers, period — at A+ and higher." At A+/AA/AAA only 25+ dev-done
-  // players fill/stash; below A+ young no-future fillers may also move, and a
-  // cut-bound youngster may take a LOW seat before hitting the street. A high
-  // seat nobody 25+ can take stays open ("not enough players") — accepted.
+  // fillers, period: at A+ and higher."
+  // At A+/AA/AAA only 27+ dev-done players fill/stash; below A+ young
+  // no-future fillers may also move, and a cut-bound youngster may take a LOW
+  // seat before hitting the street. A high seat nobody 27+ can take stays
+  // open ("not enough players"): accepted.
   const fillPrefs = (lr) => lr >= LEVEL_RANK["A+"]
     ? [(x) => isFillerArm(x) && devDone(x)]
     : [(x) => isFillerArm(x) && devDone(x), isFillerArm];
@@ -685,7 +1037,7 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   const fillStaff = (staff, belowStaff, target, lr, ceilOf, scoreOf, roleOk, L) => {
     while (staff.length < target) {
       let cand = null, ci = -1;
-      // allowed filler tiers for this level (25+ only at A+ and above) —
+      // allowed filler tiers for this level (27+ only at A+ and above), and
       // still at most a one-rung stretch in this pass.
       for (const pref of fillPrefs(lr)) {
         let cs = -Infinity;
@@ -732,8 +1084,8 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
     const L = minors[li], lr = LEVEL_RANK[L];
     if (HARD_MIN_EXEMPT.has(L)) continue;
     for (const [staff, min, roleOk, ceilOf, scoreOf] of [
-      [SProt[L], SP_MIN, (x) => x.devRole === "SP", (x) => x.ceiling, (x) => x.spPot ?? x.cur ?? -99],
-      [RPpen[L], RP_MIN, () => true, (x) => cap(rpCeil(x)), (x) => rpPlay(x)],
+      [SProt[L], SP_MIN, (x) => x.devRole === "SP", (x) => x.ceiling, spScore],   // chance first, not WAP first (user, 2026-09-24)
+      [RPpen[L], RP_MIN, () => true, (x) => cap(rpCeil(x)), rpPlay],
     ]) {
       // candidate sources, in preference order: unplaced arms; the WL card
       // (Winter League plays at a DIFFERENT time of year — a WL spot must
@@ -781,7 +1133,7 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
     const used = new Set();
     const pool = hBy[L].slice().sort((a, b) => b.play - a.play);          // best win+grow blend first
     // Starters get the most reps — chosen on the win+grow blend (emphasis win).
-    const { roster, gaps } = fillSlots(pool, MINOR_SLOTS, used, (h) => h.play);
+    const { roster, gaps } = assignLineup(pool, MINOR_LINEUP, used, minorSlotScore);
     // Bench fills position-coverage first (backup C / 2 IF / 2 OF) plus a few win-now bats —
     // a MODEST size, not the whole cap. The leftover roster-cap room is handed to the
     // development-depth pass to allocate by youth/ceiling (young arms vs. extra bats), so the
@@ -813,7 +1165,7 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
     for (const slot of lv.gaps) {
       if (total() >= rosterCap) { remaining.push(slot); continue; }
       const eg = slotElig[slot] || [slot];
-      // Fill from the ALLOWED filler tiers only (25+ dev-done only at A+ and
+      // Fill from the ALLOWED filler tiers only (27+ dev-done only at A+ and
       // above; below A+ a young low-pot filler may also move; prospects are
       // never fill material). An org that can't supply an allowed body shows
       // "not enough players" — that's on them (user, 2026-08-30, Baltimore).
@@ -827,7 +1179,7 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
         for (let i = 0; i < unplacedH2.length; i++) {
           const x = unplacedH2[i];
           if (!pref(x) || x.floorRank > lr || !eg.some((pos) => eligibleAt(x.p, pos))) continue;
-          const s = x.play ?? -99; if (s > cs) { cs = s; cand = x; ci = i; }
+          const s = bestSlotScore(x, eg)[0]; if (s > cs) { cs = s; cand = x; ci = i; }
         }
         if (cand) break;
       }
@@ -840,15 +1192,35 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
             let wi = -1, wv = Infinity;
             for (let i = 0; i < bb.length; i++) {
               if (!pref(bb[i]) || !eg.some((pos) => eligibleAt(bb[i].p, pos))) continue;
-              const v = benchScore(bb[i]); if (v < wv) { wv = v; wi = i; }
+              const v = -bestSlotScore(bb[i], eg)[0]; if (v < wv) { wv = v; wi = i; }   // best at the slot
             }
             if (wi >= 0) cand = bb.splice(wi, 1)[0];
           }
           if (cand) break;
         }
       }
+      // Last: pull a 27+ filler STARTER up from a lower lineup (nearest level
+      // first). His old slot becomes a gap there, filled when the loop reaches
+      // that level, so a true shortage lands at the bottom of the system.
+      if (!cand) {
+        for (let lj = li - 1; lj >= 0 && !cand; lj--) {
+          const L2 = minors[lj], blv = levels[L2];
+          if (!blv || L2 === "WL" || L2 === "INT") continue;
+          let bi = -1, bv = -Infinity;
+          for (let i = 0; i < blv.hitters.length; i++) {
+            const x = blv.hitters[i];
+            if (!devDone(x) || x.slot === "C" || !eg.some((pos) => eligibleAt(x.p, pos))) continue;
+            const v = bestSlotScore(x, eg)[0]; if (v > bv) { bv = v; bi = i; }
+          }
+          if (bi >= 0) {
+            cand = blv.hitters.splice(bi, 1)[0];
+            blv.gaps.push(cand.slot);
+            blv.counts = cnt(blv.SP, blv.RP, blv.hitters, blv.bench);
+          }
+        }
+      }
       if (!cand) { remaining.push(slot); continue; }
-      cand.slot = slot; cand.slotPos = eg.find((pos) => eligibleAt(cand.p, pos)) || slot;
+      cand.slot = slot; cand.slotPos = bestSlotScore(cand, eg)[1] || eg.find((pos) => eligibleAt(cand.p, pos)) || slot;
       if (LEVEL_RANK[cand.ceiling] < lr) cand._stretch = L;
       lv.hitters.push(cand); usedH.add(cand);
     }
@@ -915,28 +1287,38 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
       }
     }
     // Backup C must be an actual BENCH catcher (user: "it can't be the person
-    // starting at DH or 1B"). The import loop above tries 25+ mitts first —
+    // starting at DH or 1B"). The import loop above tries 27+ mitts first:
     // benches are for dev-done guys. LAST RESORT, when no old catcher exists
     // anywhere: swap a catcher-eligible DH/1B starter to the bench and start
     // the bench's best bat in his slot (a young catcher losing reps beats an
     // empty backup job — barely; user: Varela is young and should develop).
     if (benchNeedNow(lv.bench).C > 0) {
-      const ci2 = lv.hitters.findIndex((x) => (x.slot === "DH" || x.slot === "1B") && benchEligAt(x.p, "C"));
-      if (ci2 >= 0) {
-        const slot = lv.hitters[ci2].slot, slotPos = lv.hitters[ci2].slotPos || lv.hitters[ci2].slot;
+      // Any non-C slot counts (the exact lineup can put a 2nd catcher in LF).
+      // Bench a filler catcher before a prospect; the replacement is the bench
+      // bat worth the most AT THAT SLOT.
+      let best = null;
+      for (let ci2 = 0; ci2 < lv.hitters.length; ci2++) {
+        const cRec = lv.hitters[ci2];
+        if (cRec.slot === "C" || !benchEligAt(cRec.p, "C")) continue;
+        const slotPos = cRec.slotPos || cRec.slot;
         let bi = -1, bv = -Infinity;
         for (let i = 0; i < lv.bench.length; i++) {
           const b = lv.bench[i];
           if (benchEligAt(b.p, "C")) continue;               // don't burn another catcher on the swap
           if (!eligibleAt(b.p, slotPos)) continue;
-          const s = b.play ?? -99; if (s > bv) { bv = s; bi = i; }
+          const s = minorSlotScore(b, slotPos) ?? -99; if (s > bv) { bv = s; bi = i; }
         }
-        if (bi >= 0) {
-          const cRec = lv.hitters[ci2], bat = lv.bench[bi];
-          bat.slot = slot; bat.slotPos = slotPos;
-          cRec.slot = "BN"; cRec.slotPos = "C";
-          lv.hitters[ci2] = bat; lv.bench[bi] = cRec;
-        }
+        if (bi < 0) continue;
+        const key = [isFillerBat(cRec) ? 0 : 1, (minorSlotScore(cRec, slotPos) ?? -99) - bv];
+        if (!best || key[0] < best.key[0] || (key[0] === best.key[0] && key[1] < best.key[1])) best = { ci2, bi, key };
+      }
+      if (best) {
+        const { ci2, bi } = best;
+        const cRec = lv.hitters[ci2], bat = lv.bench[bi];
+        const slot = cRec.slot, slotPos = cRec.slotPos || cRec.slot;
+        bat.slot = slot; bat.slotPos = slotPos;
+        cRec.slot = "BN"; cRec.slotPos = "C";
+        lv.hitters[ci2] = bat; lv.bench[bi] = cRec;
       }
     }
     // HARD requirement (user, 2026-08-30): every minors level carries a
@@ -945,16 +1327,16 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
       lv.gaps.push("BU C");
     }
     // User rule (2026-08-30, Hernández/Horiuchi case): a YOUNG bench C should
-    // be STARTING one level down instead — swap him with a 25+ starting C
+    // be STARTING one level down instead: swap him with a 27+ starting C
     // from the nearest level below. The vet takes the bench job up here (his
     // development is over; reps beat level for the kid's).
     if (L !== "WL" && L !== "INT") {
-      const bi2 = lv.bench.findIndex((x) => benchEligAt(x.p, "C") && (x.age ?? 99) < 25);
+      const bi2 = lv.bench.findIndex((x) => benchEligAt(x.p, "C") && !isFillerBat(x));
       if (bi2 >= 0) {
         for (let lj = li - 1; lj >= 0; lj--) {
           const L2 = minors[lj], lv2 = levels[L2];
           if (!lv2 || L2 === "WL" || L2 === "INT") continue;
-          const si = lv2.hitters.findIndex((x) => x.slot === "C" && (x.age ?? 99) >= 25);
+          const si = lv2.hitters.findIndex((x) => x.slot === "C" && (x.age ?? 99) >= 27);
           if (si < 0) continue;
           const young = lv.bench[bi2], vet = lv2.hitters[si];
           vet.slot = "BN"; vet.slotPos = "C";
@@ -966,12 +1348,13 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
       }
     }
     // Advisory (user: real growth is not defined solely by potential rating —
-    // benching ANY under-25 costs development): when an upper-minors bench C
+    // benching ANY under-27 costs development; turn-27 rule, DEV data,
+    // 2026-09-24): when an upper-minors bench C
     // is STILL young after the swap above (no vet starter below to trade with),
     // say the action out loud: one veteran catcher signing frees him.
     if (L !== "WL" && L !== "INT" && lr >= LEVEL_RANK["A+"]) {
       const bc = lv.bench.find((x) => benchEligAt(x.p, "C"));
-      if (bc && (bc.age ?? 99) < 25 && !lv.gaps.some((g) => g.startsWith("BU C"))) {
+      if (bc && !isFillerBat(bc) && !lv.gaps.some((g) => g.startsWith("BU C"))) {
         lv.gaps.push("BU C is " + (bc.age ?? "?") + " — to free him");
       }
     }
@@ -986,20 +1369,28 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   // depth is just "keep the best remaining lottery tickets that fit." No position cap here:
   // an earlier 18-arms-per-level soft cap was dropping a HIGHER-value young arm (Tavio Molina,
   // 21) and letting the level finish on LOWER-value bats — exactly the bad cut the user flagged.
-  // youthBonus rewards TCR upside (a 20-yo's talent can still randomly jump); a level that runs
-  // out of age-appropriate players just stays under cap. What's left once maxed is the cut list.
-  const youthBonus = (age) => (age == null ? 0 : age <= 20 ? 2.5 : age <= 22 ? 1.5 : age <= 24 ? 0.6 : 0);
-  const keepValue = (x) => (x.pot ?? x.cur ?? -99) + youthBonus(x.age);
+  // keepValue (module level, above): Proj Potential + youthBonus, plus the
+  // chance bonus for a prospect (2026-09-25), so the order is chance first. A
+  // level that runs out of age-appropriate players just stays under cap.
+  // What's left once maxed is the cut list; the Org page's cuts list uses the
+  // same keepValue.
   const totalAt = (L) => levels[L].SP.length + levels[L].RP.length + levels[L].hitters.length + (levels[L].bench ? levels[L].bench.length : 0);
   {
     // User rule (2026-08-30): a 20-and-under with NO dev potential can live on
-    // the WL card as a filler — so he takes a summer depth seat LAST, after
+    // the WL card as a filler, so he takes a summer depth seat LAST, after
     // every player who needs the reps. But "at least doesn't mean at max":
     // with seats still open he fills one rather than being cut (WL only holds
-    // 40; the org has room — use it).
-    const noDevU20 = (x) => ((x.age ?? 99) <= 20 && (x.pot ?? -99) <= 0) ? 1 : 0;
+    // 40; the org has room, use it).
+    // "No dev potential" is decided by CHANCE since 2026-09-25 (user: "if you
+    // think chance is better then yeah we can go with chance"): only a
+    // no-chance U20 (noChance: MLB % under 5% and Proj Potential under -1)
+    // goes last. The old test (Proj Potential <= 0) sent high-chance teen arms
+    // to the cut list (Verhoeven 19 at 63% MLB, Taveras 20 at 60%, Akers 19 at
+    // 57%) while 7-9% arms held R+ pen seats; after the ML most teens read
+    // Proj Potential <= 0 because they are years from their peak.
+    const noDevU20 = (x) => ((x.age ?? 99) <= 20 && noChance(x.p, x.pot)) ? 1 : 0;
     const pool = [...H, ...P].filter((x) => !(x.isPitcher ? usedP.has(x) : usedH.has(x)))
-      .sort((a, b) => (noDevU20(a) - noDevU20(b)) || (keepValue(b) - keepValue(a)));
+      .sort((a, b) => (noDevU20(a) - noDevU20(b)) || keepCmp(a, b));
     for (const x of pool) {
       for (let r = Math.max(LEVEL_RANK[cap(x.ceiling)], x.floorRank); r >= x.floorRank; r--) {   // floorRank = age floor; never below it
         const L = LEVELS[r];
@@ -1011,10 +1402,10 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
       }
       if (x.isPitcher ? usedP.has(x) : usedH.has(x)) continue;
       // Keep-before-cut (user rules, FINAL): his own range is full. Rules for
-      // who takes a distant open seat: 25+ dev-done players may stash at ANY
+      // who takes a distant open seat: 27+ dev-done players may stash at ANY
       // level; a YOUNG player may only take an open seat BELOW A+ himself, or
       // displace a weaker filler inside his own range — with the displaced
-      // filler taking the distant seat ONLY if he's 25+ when that seat is at
+      // filler taking the distant seat ONLY if he's 27+ when that seat is at
       // A+ or above. "Never place young players as fillers at A+ and higher,
       // period." If none of that works, the youngster is a genuine cut (the
       // card's advice: sign a filler).
@@ -1049,7 +1440,7 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
         for (let j = 0; j < list.length; j++) {
           const o = list[j];
           if (!isFillerArm(o)) continue;                    // never displace a prospect
-          if (openHigh && !devDone(o)) continue;            // a high seat only takes a 25+ body
+          if (openHigh && !devDone(o)) continue;            // a high seat only takes a 27+ body
           const v = keepValue(o);
           if (v < keepValue(x) && v < dv) { dv = v; disp = o; dispList = list; dispLev = L; di = j; }
         }
@@ -1062,7 +1453,7 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
       } else if (lowOpen) {
         seatAt(x, lowOpen, true);                           // a LOW seat he may take himself
       }
-      // else: only high seats exist and no 25+ body to send — he stays a cut.
+      // else: only high seats exist and no 27+ body to send, so he stays a cut.
     }
   }
   for (const L of minors) if (levels[L]) levels[L].counts = cnt(levels[L].SP, levels[L].RP, levels[L].hitters, levels[L].bench);
@@ -1126,7 +1517,7 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   const pipeline = { C: 0, IF: 0, OF: 0, SP: 0, RP: 0 };
   for (const r of [...H, ...P]) {
     if (!placedAt[r.p["ID"]]) continue;
-    if (!(r.age != null && r.age <= 24 && r.pot != null && r.pot > 0)) continue;
+    if (!(r.age != null && r.age <= 26 && r.pot != null && r.pot > 0)) continue;   // young = 26 or under (turn-27 rule)
     const grp = r.isPitcher ? r.devRole : hitterBucket(r.p);
     if (grp in pipeline) pipeline[grp]++;
   }

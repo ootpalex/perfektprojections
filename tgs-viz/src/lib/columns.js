@@ -3,6 +3,32 @@
  * Based on actual extracted column names from the TGS sheets.
  */
 import { formatMoney } from './marketValue';
+import { DEV_FIELDS, GROW_KEEP, devShareTitle, devIsMl, devMlWords, devMlRangeNote, fmtGrow, fmtOdds, fmtVsTypical, fmtWaa } from './devSignals';
+import { orgAbbr } from './orgAbbr';
+
+// Dev signals (lib/devSignals.js): growth per game-year, Pot direction,
+// DEV-league odds of becoming an MLB regular, MLB % / Useful % / Good % (the
+// chance his peak reaches -1 / 0 / +1.5 WAA from where he is now: the share
+// of DEV players with his age, Pot, growth and a similar current whose gain
+// covered the distance, so a player already at the bar reads 100%; user,
+// 2026-09-24; MLB % = the chance he is ever anything in the majors), and
+// Exp peak (the peak WAA DEV players in the same cell actually reached),
+// for players aged 16-26.
+const DEV_SIGNAL_GROUP = {
+  label: 'Dev signals',
+  columns: DEV_FIELDS,
+};
+
+// Year by year (usePlayersWithFV): display WAA at age+1, +2, +3, +5 on the
+// projected path (the ML path where the row has one, else the measured DEV
+// path) and the age of the projected peak. Proj Potential stays
+// in the Value and Future Value groups.
+const YEAR_BY_YEAR_COLS = ['_yr1WAA', '_yr2WAA', '_yr3WAA', '_yr5WAA', '_peakAge'];
+const YEAR_BY_YEAR_GROUP = {
+  label: 'Year by year',
+  columns: YEAR_BY_YEAR_COLS,
+};
+const YEARS_OUT = { _yr1WAA: 1, _yr2WAA: 2, _yr3WAA: 3, _yr5WAA: 5 };
 
 // WAA columns for hitters (used by roster optimizer)
 export const HITTER_WAA_COLUMNS = [
@@ -40,7 +66,10 @@ export const HITTER_COLUMN_GROUPS = {
     // 'Fair AAV' sits here, right after the WAA splits, so one dollar figure is
     // visible by DEFAULT near the left edge. Full money detail stays in the
     // '$ Current' / '$ Future' groups.
-    columns: ['Max WAA wtd', 'Max WAA vR', 'Max WAA vL', '_offerMid', 'Price', '_ctrStatus', '_ctrLeft', '_owed', '_potentialWAA', '_rawPotentialWAA', '_toPeakWAA', 'Ovr', 'Pot'],
+    // Peak Pot (_rawPotentialWAA) and To Peak (_toPeakWAA) moved out of this
+    // default view into the 'Potential' group: the user asked for fewer
+    // default columns (2026-09-24).
+    columns: ['Max WAA wtd', 'Max WAA vR', 'Max WAA vL', '_offerMid', 'Price', '_ctrStatus', '_ctrLeft', '_owed', '_potentialWAA', 'Ovr', 'Pot'],
   },
   // Max WAA, split the way the rest of baseball reads it. Off = bat + legs,
   // Def = glove + the positional charge, both at the player's BEST position and both
@@ -61,8 +90,11 @@ export const HITTER_COLUMN_GROUPS = {
   },
   potential: {
     label: 'Potential',
-    columns: ['HT P', 'GAP P', 'POW P', 'EYE P', 'K P'],
+    // Peak Pot (the raw ceiling) and To Peak live here, not in the default
+    // Value view (user, 2026-09-24).
+    columns: ['HT P', 'GAP P', 'POW P', 'EYE P', 'K P', '_rawPotentialWAA', '_toPeakWAA'],
   },
+  devSignals: DEV_SIGNAL_GROUP,
   offense: {
     label: 'Offense',
     columns: ['wOBA vR', 'wOBA vL', 'wOBA wtd', 'OBP vR', 'OBP vL', 'OBP wtd', 'BatR wtd'],
@@ -111,6 +143,7 @@ export const HITTER_COLUMN_GROUPS = {
     label: 'Future Value',
     columns: ['_fvScale', '_futureValue', '_currentWAA', '_potentialWAA', '_peakWAA', '_toPeakWAA', '_yearsTilPeak'],
   },
+  yearByYear: YEAR_BY_YEAR_GROUP,
   personality: {
     label: 'Personality',
     columns: ['Int', 'WrkEthic', 'Greed', 'Loy', 'Lead'],
@@ -155,7 +188,10 @@ export const PITCHER_COLUMN_GROUPS = {
     // made relief prospects unevaluable at a glance. _potentialWAA is the
     // best-peak-ROLE projection (max of SP/RP potential, role-offset aware) —
     // the same Proj Peak the hitter table shows, never blank for a real arm.
-    columns: ['WAA wtd', 'WAA vR', 'WAA vL', '_offerMid', 'Price', '_ctrStatus', '_ctrLeft', '_owed', '_potentialWAA', '_rawPotentialWAA', '_toPeakWAA', 'Ovr', 'Pot'],
+    // Peak Pot (_rawPotentialWAA) and To Peak (_toPeakWAA) moved out of this
+    // default view into the 'Potential' group: the user asked for fewer
+    // default columns (2026-09-24).
+    columns: ['WAA wtd', 'WAA vR', 'WAA vL', '_offerMid', 'Price', '_ctrStatus', '_ctrLeft', '_owed', '_potentialWAA', 'Ovr', 'Pot'],
   },
   valueRP: {
     label: 'Value (RP)',
@@ -171,8 +207,11 @@ export const PITCHER_COLUMN_GROUPS = {
   },
   ratingsPot: {
     label: 'Potential',
-    columns: ['STU P', 'HRR P', 'PBABIP P', 'CON P'],
+    // Peak Pot (the raw ceiling) and To Peak live here, not in the default
+    // Value view (user, 2026-09-24).
+    columns: ['STU P', 'HRR P', 'PBABIP P', 'CON P', '_rawPotentialWAA', '_toPeakWAA'],
   },
+  devSignals: DEV_SIGNAL_GROUP,
   performance: {
     label: 'SP Performance',
     columns: ['wOBA vR', 'wOBA vL', 'wOBA wtd', 'RA/9 vR', 'RA/9 vL', 'RA/9 wtd'],
@@ -205,6 +244,7 @@ export const PITCHER_COLUMN_GROUPS = {
     label: 'Future Value',
     columns: ['_fvScale', '_futureValue', '_currentWAA', '_potentialWAA', '_peakWAA', '_toPeakWAA', '_yearsTilPeak'],
   },
+  yearByYear: YEAR_BY_YEAR_GROUP,
   draftValue: {
     label: 'Draft FV',
     columns: ['_draftRawFV', '_agePercentile', '_draftCeilingWAA', '_durability', '_highINT'],
@@ -234,7 +274,23 @@ export const PITCHER_COLUMN_GROUPS = {
 
 // Column formatting helpers
 export function formatCellValue(value, columnName) {
+  // Dev signals: blank (not '-') for a null value and for rows without an
+  // entry, so the columns stay quiet for the thousands of players outside
+  // the 16-22 window.
+  if (columnName === 'Dev_Grow') return fmtGrow(value);
+  if (columnName === 'Dev_Odds') return fmtOdds(value);
+  if (columnName === 'Dev_PeakMlb' || columnName === 'Dev_PeakUseful' || columnName === 'Dev_PeakGood') return fmtOdds(value);
+  if (columnName === 'Dev_VsTypical') return fmtVsTypical(value);
+  if (columnName === 'Dev_PotDir') return value === 'up' || value === 'flat' || value === 'down' ? value : '';
+  if (columnName === 'Dev_Flag') return value === 'keep' ? 'KEEP' : value === 'move' ? 'MOVE' : '';
+  if (columnName === 'Dev_PeakP50' || columnName === 'Dev_PeakVsListed') return fmtWaa(value);
+  if (columnName === 'Dev_PeakRange') return typeof value === 'string' ? value : '';
+
   if (value === null || value === undefined || value === '') return '-';
+
+  // ORG shows the three-letter code (HOU, not Houston Astros); "0" stays
+  // "0" so it still sorts as a group. The user asked for this (2026-09-24).
+  if (columnName === 'ORG') return orgAbbr(value);
 
   // Boolean flags (contract / roster status) — render Yes / - (React won't print raw booleans)
   const boolCols = ['NoTrade', 'OnDL', 'OnDL60', 'DFA', 'OnWaivers', 'IsMajorDeal'];
@@ -247,8 +303,14 @@ export function formatCellValue(value, columnName) {
 
   const num = parseFloat(value);
 
+  // Year by year: signed, one decimal ("+0.3", "-1.2").
+  if (YEARS_OUT[columnName] && !isNaN(num)) {
+    const v = Math.abs(num) < 0.05 ? 0 : num;
+    return (v > 0 ? '+' : '') + v.toFixed(1);
+  }
+
   const intCols = ['Age', 'Rank', 'Rank vR', 'Rank vL', 'Rank P', 'Rank RP', 'Ovr', 'Pot',
-    '_fvScale', '_draftFV', '_g5FV', '_hybridFV', '_yearsTilPeak',
+    '_fvScale', '_draftFV', '_g5FV', '_hybridFV', '_yearsTilPeak', '_peakAge', '_declineStart',
     '_hybridWFV', '_hybridWG5', '_hybridWDraft',
     'ContractYr', 'ContractYrs', 'MLBSvcYrs', 'MLBSvcDays', 'MLBSvcDaysTY', 'DLDays', '_ctrYears',
     'SPE', 'STE', 'RUN', 'STM', 'HLD',
@@ -349,7 +411,86 @@ export function formatCellValue(value, columnName) {
   return value;
 }
 
-export function getCellColorClass(value, columnName) {
+/**
+ * Tailwind color class for one cell. `row` is optional: the Dev_Grow
+ * threshold depends on the row's role (Dev_Role), hitter bar when unknown.
+ */
+export function getCellColorClass(value, columnName, row) {
+  // Dev signals
+  if (columnName === 'Dev_PotDir') {
+    return value === 'up' ? 'text-green-400' : value === 'down' ? 'text-red-400' : value === 'flat' ? 'text-slate-400' : '';
+  }
+  if (columnName === 'Dev_Flag') {
+    return value === 'keep' ? 'text-green-400 font-bold' : value === 'move' ? 'text-red-400 font-bold' : '';
+  }
+  if (columnName === 'Dev_Grow') {
+    const g = parseFloat(value);
+    if (isNaN(g)) return '';
+    const bar = GROW_KEEP[row && row.Dev_Role === 'P' ? 'P' : 'H'];
+    if (g >= bar) return 'text-green-400 font-semibold';
+    if (g <= 1) return 'text-red-400';
+    return 'text-slate-300';
+  }
+  if (columnName === 'Dev_Odds') {
+    const o = parseFloat(value);
+    if (isNaN(o)) return '';
+    if (o >= 0.5) return 'text-green-400 font-semibold';
+    if (o >= 0.25) return 'text-yellow-300';
+    if (o >= 0.1) return 'text-orange-400';
+    return 'text-red-400';
+  }
+  // MLB % (user, 2026-09-24, "if they will ever be anything in the mlb"):
+  // green at 0.6 or more, red at 0.25 or less, yellow between.
+  if (columnName === 'Dev_PeakMlb') {
+    const s = parseFloat(value);
+    if (isNaN(s)) return '';
+    if (s >= 0.6) return 'text-green-400 font-semibold';
+    if (s <= 0.25) return 'text-red-400';
+    return 'text-yellow-300';
+  }
+  // Useful % / Good % (user, 2026-09-24): green when most lookalikes made
+  // the bar, red when few did. Useful bars 0.5 / 0.2, Good bars 0.3 / 0.1.
+  if (columnName === 'Dev_PeakUseful' || columnName === 'Dev_PeakGood') {
+    const s = parseFloat(value);
+    if (isNaN(s)) return '';
+    const [hi, lo] = columnName === 'Dev_PeakUseful' ? [0.5, 0.2] : [0.3, 0.1];
+    if (s >= hi) return 'text-green-400 font-semibold';
+    if (s <= lo) return 'text-red-400';
+    return 'text-yellow-300';
+  }
+  if (columnName === 'Dev_VsTypical') {
+    const d = parseFloat(value);
+    if (isNaN(d)) return '';
+    if (d >= 40) return 'text-cyan-400 font-semibold';
+    if (d >= 15) return 'text-green-400';
+    if (d > -15) return 'text-slate-300';
+    if (d > -40) return 'text-orange-400';
+    return 'text-red-400';
+  }
+  // Exp peak: same palette as a WAA value.
+  if (columnName === 'Dev_PeakP50') {
+    const w = parseFloat(value);
+    if (isNaN(w)) return '';
+    if (w >= 5) return 'text-purple-400 font-bold';
+    if (w >= 3) return 'text-cyan-400 font-semibold';
+    if (w >= 1.5) return 'text-green-400';
+    if (w >= 0) return 'text-gray-300';
+    if (w >= -1) return 'text-orange-400';
+    return 'text-red-400';
+  }
+  // vs listed: green when DEV peers beat his listed peak by half a win,
+  // red when they fell half a win short.
+  if (columnName === 'Dev_PeakVsListed') {
+    const d = parseFloat(value);
+    if (isNaN(d)) return '';
+    if (d >= 0.5) return 'text-green-400 font-semibold';
+    if (d <= -0.5) return 'text-red-400';
+    return 'text-slate-300';
+  }
+  if (columnName === 'Dev_PeakRange') {
+    return typeof value === 'string' && value ? 'text-slate-400' : '';
+  }
+
   // String-based color coding (non-numeric)
   if (columnName === '_durability') {
     const durMap = {
@@ -491,20 +632,192 @@ export function getCellColorClass(value, columnName) {
   return '';
 }
 
+/**
+ * Hover text for one cell, or '' when the column has none.
+ * Dev_Odds carries the DEV grid cell and its sample size; Dev_PeakP50 the
+ * 25th to 75th pct band and its n; Dev_PeakVsListed the listed peak;
+ * Dev_PeakMlb / Dev_PeakUseful / Dev_PeakGood the chance from his current
+ * (devSignals.js devShareTitle: the bar, his current, the peak cell, its n
+ * and the slice of lookalikes it was read off, or "Already ..." when his
+ * current sits at the bar).
+ */
+export function getCellTitle(row, columnName) {
+  // ORG: the full team name on hover when the cell shows the code.
+  if (columnName === 'ORG') {
+    const raw = row?.ORG;
+    return typeof raw === 'string' && orgAbbr(raw) !== raw ? raw : '';
+  }
+  if (columnName === '_potentialWAA') {
+    // Proj Potential = current + the cell's typical GAIN (usePlayersWithFV
+    // _potentialSource: 'DEV cell' | 'measured curve' | 'model'). The old
+    // hover described the rejected cell-median LEVEL rule (user, 2026-09-24).
+    const src = row?._potentialSource;
+    if (src === 'ML') {
+      // ML (2026-09-25): ages 26 and under = his current (the line with the
+      // best WAR, the same line his money uses) + the ML median gain. Exp
+      // peak starts from the better of his SP and RP WAA lines instead, so a
+      // young arm whose relief line is better today can show a higher Exp
+      // peak than Proj Potential. Putting Proj Potential on that line mixed
+      // the relief line with the starter's WAR offset and inflated his money
+      // (checker, 2026-09-25), so it stays on the money line.
+      // 27 and over = the top of the ML path (five ML years, then the DEV
+      // curve). The cell method's number is shown for reference.
+      const words = devMlWords(row);
+      if (devIsMl(row)) {
+        const gain = fmtWaa(row.Dev_PeakGainP50) || '?';
+        const lo = fmtWaa(row.Dev_PeakGainP25), hi = fmtWaa(row.Dev_PeakGainP75);
+        const band = lo && hi ? `, p25 to p75 ${lo} to ${hi}` : '';
+        const cg = fmtWaa(row.Dev_CellGainP50);
+        const cell = cg ? `; cell method: his current ${cg}` : '; cell method: none';
+        const nowWords = row.Dev_Role === 'P'
+          ? 'his current WAA on the line his value uses (Exp peak starts from the better of his SP and RP lines, so it can read higher)'
+          : 'his WAA today (the same number as Exp peak)';
+        return `Where we project him to top out: ${nowWords} + the median gain from ${words} (${gain}${band}). It counts the players who wash out${cell}${devMlRangeNote(row)}`;
+      }
+      return `The top of his projected path: the next five years from ${words}, then the measured DEV curve`;
+    }
+    if (src === 'DEV cell') {
+      const gain = fmtWaa(row.Dev_PeakGainP50) || '?';
+      const lo = fmtWaa(row.Dev_PeakGainP25), hi = fmtWaa(row.Dev_PeakGainP75);
+      const band = lo && hi ? `, p25 to p75 ${lo} to ${hi}` : '';
+      // Since 2026-09-24 the gain is read off the lookalikes at a similar
+      // current when that slice has n >= 15 (Dev_ShareBasis "now tercile"),
+      // and a thin growth cell falls back to the pot-only cell (/any).
+      const potOnly = /\/any$/.test(row.Dev_PeakCell || '');
+      const similar = /now tercile/.test(row.Dev_ShareBasis || '');
+      const who = potOnly
+        ? (similar ? 'his age, Pot and a similar current (growth group thin)' : 'his age and Pot (growth group thin)')
+        : (similar ? 'his age, Pot, growth and a similar current' : 'his age, Pot and growth');
+      return `Where we project him to top out: his current WAA + the gain DEV players with ${who} typically made from here (${gain}${band}, group n ${row.Dev_PeakN ?? '?'})`;
+    }
+    if (src === 'measured curve') {
+      return 'Where we project him to top out: his current WAA + the share of his listed gap the measured curve says players his age still close';
+    }
+    return 'Model ceiling after the development haircut (no measured curve)';
+  }
+  if (YEARS_OUT[columnName] && Array.isArray(row?.Dev_MlD) && row?._potentialSource === 'ML') {
+    // ML path (2026-09-25): years 1..5 are current + the ML median change.
+    const a = Math.floor(parseFloat(row.Age));
+    const k = YEARS_OUT[columnName];
+    const d = row.Dev_MlD[k - 1];
+    const at = Number.isFinite(a) ? ` at age ${a + k}` : '';
+    // The ML change assumes he keeps playing (the path models learn only
+    // from players who stayed in the league), so for ages 26 and under the
+    // column is capped at Proj Potential, which counts the washouts.
+    const cap = devIsMl(row) ? '. Capped at his Proj Potential (the change assumes he keeps playing; Proj Potential counts the players who wash out)' : '';
+    return `Projected WAA${at}: current + the median change ${k} year${k > 1 ? 's' : ''} out (${fmtWaa(d)}) from ${devMlWords(row)}${cap}`;
+  }
+  if (YEARS_OUT[columnName]) {
+    const a = Math.floor(parseFloat(row?.Age));
+    return Number.isFinite(a)
+      ? `Projected WAA at age ${a + YEARS_OUT[columnName]} on the measured DEV path`
+      : 'Projected WAA on the measured DEV path';
+  }
+  if (columnName === '_peakAge') {
+    // ML rows (2026-09-25): the path is the ML's five years, then the DEV
+    // curve, capped at Proj Potential for ages 26 and under.
+    if (Array.isArray(row?.Dev_MlD) && row?._potentialSource === 'ML') {
+      const cap = devIsMl(row) ? ', capped at his Proj Potential' : '';
+      return `Age of the top of his projected path: the next five years from ${devMlWords(row)}, then the measured DEV curve${cap}`;
+    }
+    return 'Age of the top of his projected path on the measured DEV path';
+  }
+  if (columnName === '_declineStart') return 'First age his projected path sits 0.1 WAA or more below its peak';
+  if (!row) return '';
+  if (columnName === 'Dev_Odds') {
+    if (row.Dev_Odds === null || row.Dev_Odds === undefined) return '';
+    if (devIsMl(row)) {
+      // ML (2026-09-25): Make it % from the model, the cell's for reference.
+      const c = row.Dev_CellOdds;
+      const cell = c === null || c === undefined ? 'cell method: none'
+        : `cell method: ${fmtOdds(c)}${row.Dev_OddsN != null ? ` (n ${row.Dev_OddsN}${row.Dev_OddsCell ? `, DEV cell ${row.Dev_OddsCell}` : ''})` : ''}`;
+      return `Chance of an MLB season with 300+ PA or 150+ BF, from ${devMlWords(row)}; ${cell}${devMlRangeNote(row)}`;
+    }
+    const n = row.Dev_OddsN !== null && row.Dev_OddsN !== undefined ? `n ${row.Dev_OddsN}` : 'n unknown';
+    return row.Dev_OddsCell ? `${n}, DEV cell ${row.Dev_OddsCell}` : n;
+  }
+  // MLB % / Useful % / Good % (user, 2026-09-24): the chance his peak
+  // reaches the bar from where he is now, "Already ..." when his current
+  // sits at it (a player at 0+ WAA must not read under 100% useful). MLB %
+  // = the chance he is ever anything in the majors. Wording shared with the
+  // Org tab through devSignals.js devShareTitle.
+  if (columnName === 'Dev_PeakMlb') return devShareTitle(row, 'mlb');
+  if (columnName === 'Dev_PeakUseful') return devShareTitle(row, 'useful');
+  if (columnName === 'Dev_PeakGood') return devShareTitle(row, 'good');
+  if (columnName === 'Dev_PeakP50') {
+    if (row.Dev_PeakP50 === null || row.Dev_PeakP50 === undefined) return '';
+    if (devIsMl(row)) {
+      // ML (2026-09-25): his current + the ML median gain; cell for reference.
+      const range = row.Dev_PeakRange ? `, 25th to 75th pct ${row.Dev_PeakRange}` : '';
+      const cp = row.Dev_CellPeakP50;
+      const cell = cp === null || cp === undefined ? 'cell method: none' : `cell method: ${fmtWaa(cp)}`;
+      return `Expected peak WAA: his current + the median gain from ${devMlWords(row)}${range}; ${cell}${devMlRangeNote(row)}`;
+    }
+    const band = row.Dev_PeakRange ? `25th to 75th pct ${row.Dev_PeakRange}` : `median ${fmtWaa(row.Dev_PeakP50)}`;
+    const n = row.Dev_PeakN !== null && row.Dev_PeakN !== undefined ? `n ${row.Dev_PeakN}` : 'n unknown';
+    return `players like him in DEV: ${band}, ${n}`;
+  }
+  if (columnName === 'Dev_PeakRange') {
+    if (!row.Dev_PeakRange) return '';
+    if (devIsMl(row)) return `25th to 75th pct of his peak, from ${devMlWords(row)}`;
+    const n = row.Dev_PeakN !== null && row.Dev_PeakN !== undefined ? `n ${row.Dev_PeakN}` : 'n unknown';
+    return row.Dev_PeakCell ? `${n}, DEV cell ${row.Dev_PeakCell}` : n;
+  }
+  if (columnName === 'Dev_PeakVsListed') {
+    if (row.Dev_ListedPeak === null || row.Dev_ListedPeak === undefined) return '';
+    return `his listed peak potential is ${fmtWaa(row.Dev_ListedPeak)}`;
+  }
+  if (columnName === 'Dev_Grow') {
+    return row.Dev_Role ? 'Display steps gained per game-year, summed over the core skills' : '';
+  }
+  if (columnName === 'Dev_VsTypical') {
+    return row.Dev_Role ? 'Internal points above or below a typical DEV player of his age and Pot' : '';
+  }
+  if (columnName === 'Dev_PotDir') {
+    if (row.Dev_PotDelta === null || row.Dev_PotDelta === undefined) return '';
+    const d = row.Dev_PotDelta;
+    return `Pot ${d > 0 ? '+' : ''}${d} over the span`;
+  }
+  if (columnName === 'Dev_Flag') {
+    return row.Dev_Note || '';
+  }
+  return '';
+}
+
 export const COLUMN_LABELS = {
+  'Dev_Grow': 'Grow/yr',
+  'Dev_PotDir': 'Pot dir',
+  'Dev_Odds': 'Make it',
+  'Dev_PeakMlb': 'MLB %',
+  // Starter % / Star % (user, 2026-09-26: "i would define +1.5 WAA as a
+  // super star"): the 0 and +1.5 bars were labelled Useful and Good.
+  'Dev_PeakUseful': 'Starter %',
+  'Dev_PeakGood': 'Star %',
+  'Dev_PeakP50': 'Exp peak',
+  'Dev_PeakRange': 'Peak range',
+  'Dev_PeakVsListed': 'vs listed',
+  'Dev_VsTypical': 'vs typical',
+  'Dev_Flag': 'Flag',
   '_fvScale': 'FV',
   '_fvGap': 'Value Gap',
   'Ovr': 'OVR',
   'Pot': 'POT',
   '_futureValue': 'Future$',
   '_currentWAA': 'Curr WAA',
-  '_potentialWAA': 'Proj Potential',
-  '_rawPotentialWAA': 'Peak Potential',
+  // Short headers so the table fits (user, 2026-09-24).
+  '_potentialWAA': 'Proj Pot',
+  '_rawPotentialWAA': 'Peak Pot',
   'WAP': 'Peak SP',
   'WAP RP': 'Peak RP',
   '_peakWAA': 'Peak WAA',
   '_toPeakWAA': 'To Peak',
   '_yearsTilPeak': 'Yrs to Peak',
+  '_yr1WAA': 'Next yr',
+  '_yr2WAA': '+2 yr',
+  '_yr3WAA': '+3 yr',
+  '_yr5WAA': '+5 yr',
+  '_peakAge': 'Peak age',
+  '_declineStart': 'Decline from',
   '_maxWAA': 'Max WAA',
   'Best Pos': 'Pos',
   'Off Runs': 'Off Runs',
@@ -572,7 +885,7 @@ export const COLUMN_LABELS = {
   '_marketRole': 'Role $',
   '_bestWAA': 'Best WAA',
   // Contract / service
-  '_ctrLeft': 'Ctrl Yrs',
+  '_ctrLeft': 'Ctrl',
   '_owed': 'Owed',
   '_ctrStatus': 'Status',
   'Price': 'Salary',

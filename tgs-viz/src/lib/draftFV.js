@@ -20,9 +20,10 @@
  * Key inputs:
  *   - Hitters: 0.7·Off Runs + 0.3·Def Runs (current; 70/30 bat-glove per user), MAX WAA P (ceiling)
  *   - Pitchers: WAA wtd (current), WAP (ceiling)
- *   - _potentialWAA (projected peak): the ceiling after the development gap-factor and
- *     risk haircut, stamped upstream by usePlayersWithFV. Same units and anchors as the
- *     ceiling, so the two sit on one scale.
+ *   - _potentialWAA (projected peak): Proj Potential, stamped upstream by
+ *     usePlayersWithFV: from the ML model when the row has it (his WAA today + the ML
+ *     median gain), else his WAA today + the DEV cell gain or the measured curve. Same
+ *     units and anchors as the ceiling, so the two sit on one scale.
  *   - Prone column: Wrecked = undraftable, Fragile = 0.75; Normal/Durable/Iron Man = 1.0
  *   - WrkEthic column: H +1.5%, N even, L -1.5%
  *   - Int column: same, so H/H carries +3.0% and L/L carries -3.0%
@@ -444,8 +445,8 @@ export function calculateDraftFV(player, ageGroups, playerType, params = {}) {
   const ceilingScore = normalizeCeiling(ceiling, p.CEILING_FLOOR, p.CEILING_ANCHOR);
 
   // ---- Projected peak (the realistic ceiling) ----
-  // _potentialWAA is stamped by usePlayersWithFV upstream: the same ceiling AFTER the
-  // development gap-factor and risk haircut. Same units (WAA) and the same anchors, so
+  // _potentialWAA is stamped by usePlayersWithFV upstream: Proj Potential (the ML
+  // model's peak when present, else the DEV cell or the measured curve). Same units (WAA) and the same anchors, so
   // it lands on one scale with ceilingScore. Ceiling is the payoff, this is the payoff
   // discounted by how much of it he is actually expected to reach.
   const peakWAA = parseFloat(player._potentialWAA);

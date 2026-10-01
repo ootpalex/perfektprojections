@@ -27,17 +27,18 @@ body {
 }
 
 /* Custom table styles */
+/* Tighter cells and a smaller font so more columns fit (user, 2026-09-24). */
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
 }
 
 .data-table th {
   position: sticky;
   top: 0;
   background: #1e293b;
-  padding: 6px 8px;
+  padding: 5px 6px;
   text-align: left;
   font-weight: 600;
   color: #94a3b8;
@@ -54,7 +55,7 @@ body {
 }
 
 .data-table td {
-  padding: 4px 8px;
+  padding: 3px 6px;
   border-bottom: 1px solid #1e293b;
   white-space: nowrap;
 }
@@ -65,6 +66,57 @@ body {
 
 .data-table tr.selected td {
   background: #1e3a5f;
+}
+
+/* Sticky first column (Name): stays put while the table scrolls right
+   (user, 2026-09-24). The cell needs its own opaque background in every
+   row state, and a right edge so the boundary reads. The edge is a box
+   shadow, not a border: collapsed borders do not move with a sticky cell. */
+.data-table th.col-sticky {
+  left: 0;
+  z-index: 11;
+  box-shadow: inset -1px 0 0 #334155;
+}
+
+.data-table td.col-sticky {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: #0f172a;
+  box-shadow: inset -1px 0 0 #334155;
+}
+
+.data-table tr:hover td.col-sticky {
+  background: #1e293b;
+}
+
+.data-table tr.selected td.col-sticky {
+  background: #1e3a5f;
+}
+
+/* Per-column hide (user, 2026-09-24): a small x over the header's right
+   edge, shown on hover only, so it adds no width to the column. */
+.data-table th .col-hide {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: none;
+  padding: 1px;
+  border-radius: 3px;
+  line-height: 0;
+  background: #334155;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.data-table th:hover .col-hide {
+  display: block;
+}
+
+.data-table th .col-hide:hover {
+  background: #475569;
+  color: #f87171;
 }
 
 /* Rating color scale */

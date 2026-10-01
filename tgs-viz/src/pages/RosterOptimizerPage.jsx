@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { optimizeRoster, getMaxWAA, leagueWinOffset, isInjured, leagueHasInjuryData, playerKey } from '../lib/rosterOptimizer';
+import { optimizeRoster, getMaxWAA, leagueWinOffset, isInjured, leagueHasInjuryData, leagueHasPositionRatings, playerKey, canPlaySS, canPlayOF, canPlayAllIF, canPlayCFAndCornerOF } from '../lib/rosterOptimizer';
 import { LEAGUE_TEAMS } from './TeamStandingsPage';
 import { formatCellValue, getCellColorClass } from '../lib/columns';
 import PlayerDetail from '../components/PlayerDetail';
@@ -38,6 +38,7 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
   const [activeLineup, setActiveLineup] = useState('vR'); // 'vR' or 'vL'
   const [winModel, setWinModel] = useState('linear'); // linear | pythagorean | montecarlo | durability | levers
   const [excludeInjured, setExcludeInjured] = useState(false); // re-pick from healthy players only
+  const [winNow, setWinNow] = useState(false); // only play a man where his position rating has reached his potential
   const [clearedIds, setClearedIds] = useState([]); // DL players manually marked "back this sim" (playerKey list)
 
   const organizations = useMemo(() => {
@@ -77,6 +78,8 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
   // so a stale ON state can't leak across a league switch.
   const injuryDataAvailable = useMemo(() => leagueHasInjuryData(hitters, pitchers), [hitters, pitchers]);
   const injuredOn = excludeInjured && injuryDataAvailable;
+  const posRatingsAvailable = useMemo(() => leagueHasPositionRatings(hitters), [hitters]);
+  const winNowOn = winNow && posRatingsAvailable;
 
   // Manual "he's back this sim" overrides: DL players the user has clicked to treat as
   // healthy (OOTP shows them active before StatsPlus refreshes). Only meaningful while the
@@ -98,10 +101,11 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
       vrShare,
       excludeInjured: injuredOn,
       clearedInjured: clearedSet,
+      winNow: winNowOn,
       leagueOffset,
       league,   // B3: selects the league's real season length (measured: 162)
     });
-  }, [hitters, pitchers, orgFilter, levelFilter, vrShare, injuredOn, clearedSet, leagueOffset, league]);
+  }, [hitters, pitchers, orgFilter, levelFilter, vrShare, injuredOn, clearedSet, winNowOn, leagueOffset, league]);
 
   // Durability lens re-picks the roster on playing time — only compute when selected.
   // Composes on top of the injury filter: proneness haircuts apply to the healthy pool.
@@ -114,10 +118,11 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
       durabilityWeighted: true,
       excludeInjured: injuredOn,
       clearedInjured: clearedSet,
+      winNow: winNowOn,
       leagueOffset,
       league,   // B3
     });
-  }, [winModel, hitters, pitchers, orgFilter, levelFilter, vrShare, injuredOn, clearedSet, leagueOffset, league]);
+  }, [winModel, hitters, pitchers, orgFilter, levelFilter, vrShare, injuredOn, clearedSet, winNowOn, leagueOffset, league]);
 
   // "Out injured" strip: the DL players who WOULD have made the roster if we ignored
   // health — i.e. why the lineup differs. Needs the injury-blind roster to diff against.
@@ -127,6 +132,7 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
       teamOrg: orgFilter !== 'ALL' ? orgFilter : null,
       levelFilter: levelFilter !== 'ALL' ? levelFilter : null,
       vrShare,
+      winNow: winNowOn,
       leagueOffset,
       league,   // B3
     });
@@ -198,6 +204,32 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
   const splitLabel = activeLineup === 'vR' ? 'vs RHP' : 'vs LHP';
   const splitWAACol = activeLineup === 'vR' ? 'Max WAA vR' : 'Max WAA vL';
 
+  // The REAL bench for the lineup on screen: the 13 minus that lineup's nine.
+  // (The optimizer's role labels come from an "everyday nine by overall value"
+  // step that never looks at the two lineups, so it could tag a man who starts
+  // both ways as the flex bat.) Each man gets the job he can cover, and a note
+  // when he starts in the other lineup.
+  const activeBench = useMemo(() => {
+    const idOf = (h) => h.ID || h.Name;
+    const cur = (activeLineup === 'vR' ? roster.lineupVsRHP : roster.lineupVsLHP)?.battingOrder || [];
+    const other = (activeLineup === 'vR' ? roster.lineupVsLHP : roster.lineupVsRHP)?.battingOrder || [];
+    const starting = new Set(cur.map(e => idOf(e.player)));
+    const otherSpot = new Map(other.map(e => [idOf(e.player), e.position]));
+    const otherLabel = activeLineup === 'vR' ? 'vs LHP' : 'vs RHP';
+    const isC = (h) => { const e = h['C Eligible']; return e === true || e === 'True' || e === 'TRUE'; };
+    return (roster.rosteredHitters || []).filter(h => !starting.has(idOf(h))).map(h => {
+      const role = isC(h) ? 'Backup C'
+        : canPlayAllIF(h) ? 'Utility IF'
+        : canPlaySS(h) ? 'Backup IF'
+        : canPlayCFAndCornerOF(h) ? 'Utility OF'
+        : canPlayOF(h) ? 'Backup OF'
+        : 'Bench bat';
+      const covers = (h._positions || []).filter(x => x !== 'DH').join(' / ');
+      const alsoStarts = otherSpot.has(idOf(h)) ? `starts ${otherLabel} at ${otherSpot.get(idOf(h))}` : `bench ${otherLabel} too`;
+      return { player: h, role, note: `${alsoStarts}${covers ? ` · covers ${covers}` : ''}` };
+    });
+  }, [roster, activeLineup]);
+
   // Helper for bench rows
   const BenchRow = ({ player, role, note }) => {
     if (!player) return (
@@ -258,6 +290,24 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
           }`}>
           <Cross size={14} className={injuredOn ? 'text-white' : 'text-rose-400'} fill={injuredOn ? 'currentColor' : 'none'} />
           Exclude injured (DL)
+        </button>
+
+        {/* Win now: only play a man where his position rating has reached his potential */}
+        <button
+          onClick={() => posRatingsAvailable && setWinNow(v => !v)}
+          disabled={!posRatingsAvailable}
+          title={posRatingsAvailable
+            ? 'Win now: in the starting lineups a player can only be placed at a position where his OOTP position rating has reached his potential there. Nobody starts at a spot he is still learning or has never played. Bench roles use the normal rules. DH is always allowed.'
+            : 'No position ratings in this league\'s files.'}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+            !posRatingsAvailable
+              ? 'bg-slate-800/50 border-slate-700 text-slate-600 cursor-not-allowed'
+              : winNowOn
+                ? 'bg-amber-600 border-amber-500 text-white'
+                : 'bg-slate-800 border-slate-600 text-slate-300 hover:text-white hover:border-amber-500/60'
+          }`}>
+          <Trophy size={14} className={winNowOn ? 'text-white' : 'text-amber-400'} />
+          Win now
         </button>
 
         {/* Win-model selector */}
@@ -627,7 +677,8 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
         <div className="bg-slate-800/30 rounded-lg border border-slate-700/50">
           <div className="p-3 border-b border-slate-700/50 flex items-center gap-2">
             <Users className="text-green-400" size={16} />
-            <h2 className="text-sm font-bold text-white">Bench & Reserves</h2>
+            <h2 className="text-sm font-bold text-white">Bench {splitLabel}</h2>
+            <span className="text-xs text-slate-500">the 13 minus this lineup's nine</span>
           </div>
           <table className="data-table">
             <thead>
@@ -642,37 +693,16 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
               </tr>
             </thead>
             <tbody>
-              <BenchRow
-                player={roster.bench?.backupC}
-                role="Backup C"
-                note={roster.bench?.roleNotes?.backupC || 'Second catcher'}
-              />
-              <BenchRow
-                player={roster.bench?.utilityIF}
-                role="Utility IF"
-                note={roster.bench?.utilityIF
-                  ? `SS WAA ${(parseFloat(roster.bench.utilityIF['SS WAA wtd']) || 0).toFixed(1)} · ${roster.bench?.roleNotes?.utilityIF || 'true utility IF, covers SS/2B/3B'}`
-                  : (roster.bench?.roleNotes?.utilityIF || 'no utility IF available')}
-              />
-              <BenchRow
-                player={roster.bench?.utilityOF}
-                role="Utility OF"
-                note={roster.bench?.utilityOF
-                  ? `CF WAA ${(parseFloat(roster.bench.utilityOF['CF WAA wtd']) || 0).toFixed(1)} · ${roster.bench?.roleNotes?.utilityOF || 'true utility OF, covers CF + corner'}`
-                  : (roster.bench?.roleNotes?.utilityOF || 'no utility OF available')}
-              />
-              {roster.bench?.flexBat ? (
-                <BenchRow
-                  player={roster.bench.flexBat}
-                  role="Flex / Platoon"
-                  note={roster.bench?.platoonBat ? `+${roster.bench.platoonBat.waaAdvantage} WAA at ${roster.bench.platoonBat.platoonPosition} vs LHP (over ${roster.bench.platoonBat.replacesStarter})` : 'best available bat'}
-                />
-              ) : (
-                <tr><td colSpan={7} className="text-xs text-slate-500 italic">No flex bat available</td></tr>
+              {activeBench.length ? activeBench.map((b, i) => (
+                <BenchRow key={i} player={b.player} role={b.role} note={b.note} />
+              )) : (
+                <tr><td colSpan={7} className="text-xs text-slate-500 italic">No bench players</td></tr>
               )}
-              {roster.bench?.extraBench?.map((p, i) => (
-                <BenchRow key={i} player={p} role="Bench" note="Best available" />
-              ))}
+              {(roster.bench?.roleNotes?.backupC || roster.bench?.roleNotes?.utilityIF || roster.bench?.roleNotes?.utilityOF) && (
+                <tr><td colSpan={7} className="text-xs text-orange-400/80 italic">
+                  {[roster.bench.roleNotes.backupC, roster.bench.roleNotes.utilityIF, roster.bench.roleNotes.utilityOF].filter(Boolean).join(' · ')}
+                </td></tr>
+              )}
             </tbody>
           </table>
         </div>

@@ -1,6 +1,37 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react';
-import { formatCellValue, getCellColorClass, COLUMN_LABELS } from '../lib/columns';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { formatCellValue, getCellColorClass, getCellTitle, COLUMN_LABELS } from '../lib/columns';
 import { ChevronUp, ChevronDown, Search, X, Filter } from 'lucide-react';
+
+// Per-column hide (user, 2026-09-24): the set of hidden columns is kept in
+// localStorage under one key per table instance so a hide survives a reload
+// and does not bleed into another table. Every storage call is wrapped:
+// private windows and blocked site data throw.
+function hiddenStorageKey(storageKey) {
+  return storageKey ? `ptable.hidden.${storageKey}` : null;
+}
+
+function readHiddenCols(storageKey) {
+  const key = hiddenStorageKey(storageKey);
+  if (!key) return new Set();
+  try {
+    const raw = window.localStorage.getItem(key);
+    const list = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(list) ? list.filter(c => typeof c === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeHiddenCols(storageKey, cols) {
+  const key = hiddenStorageKey(storageKey);
+  if (!key) return;
+  try {
+    if (cols.size === 0) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, JSON.stringify(Array.from(cols)));
+  } catch {
+    // storage unavailable: the hide still applies for this visit
+  }
+}
 
 /**
  * High-performance player data table with virtual scrolling,
@@ -27,8 +58,19 @@ export default function PlayerTable({
   selectedPlayerId,
   maxRows = 500,
   positionViewMode = false, // When true, position dropdown remaps WAA columns instead of filtering
+  storageKey, // Optional. Names the localStorage slot for this table's hidden columns.
 }) {
   const [activeGroups, setActiveGroups] = useState(new Set(defaultActiveGroups));
+  // Columns the user hid with the x on the header (user, 2026-09-24).
+  const [hiddenCols, setHiddenCols] = useState(() => readHiddenCols(storageKey));
+  // The same PlayerTable instance serves several routes (Hitters, Draft
+  // Hitters, FA Hitters), so reload the set when the storage key changes.
+  const storageKeyRef = useRef(storageKey);
+  useEffect(() => {
+    if (storageKeyRef.current === storageKey) return;
+    storageKeyRef.current = storageKey;
+    setHiddenCols(readHiddenCols(storageKey));
+  }, [storageKey]);
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('desc');
   const [search, setSearch] = useState('');
@@ -54,8 +96,24 @@ export default function PlayerTable({
     return null;
   }, [positionViewMode, posFilter]);
 
+  const hideColumn = useCallback((col) => {
+    setHiddenCols(prev => {
+      const next = new Set(prev);
+      next.add(col);
+      writeHiddenCols(storageKey, next);
+      return next;
+    });
+  }, [storageKey]);
+
+  const resetHiddenColumns = useCallback(() => {
+    const next = new Set();
+    writeHiddenCols(storageKey, next);
+    setHiddenCols(next);
+  }, [storageKey]);
+
   // Get visible columns (deduplicated — columns may appear in multiple groups)
   // When posColumnMap is active, swap Max WAA columns for position-specific ones
+  // Columns the user hid from the header are left out.
   const visibleColumns = useMemo(() => {
     const cols = [];
     const seen = new Set();
@@ -63,7 +121,7 @@ export default function PlayerTable({
       if (activeGroups.has(key)) {
         for (const col of group.columns) {
           const mappedCol = posColumnMap?.[col] || col;
-          if (!seen.has(mappedCol)) {
+          if (!seen.has(mappedCol) && !hiddenCols.has(mappedCol)) {
             seen.add(mappedCol);
             cols.push(mappedCol);
           }
@@ -71,7 +129,7 @@ export default function PlayerTable({
       }
     }
     return cols;
-  }, [columnGroups, activeGroups, posColumnMap]);
+  }, [columnGroups, activeGroups, posColumnMap, hiddenCols]);
 
   // Unique values for filters
   const organizations = useMemo(() => {
@@ -174,6 +232,19 @@ export default function PlayerTable({
             {group.label}
           </button>
         ))}
+        {hiddenCols.size > 0 && (
+          <span className="ml-auto self-center text-xs text-slate-500">
+            {hiddenCols.size} hidden ·{' '}
+            <button
+              type="button"
+              onClick={resetHiddenColumns}
+              className="underline hover:text-slate-300"
+              title="Show every hidden column again"
+            >
+              reset
+            </button>
+          </span>
+        )}
       </div>
 
       {/* Filters */}
@@ -231,8 +302,10 @@ export default function PlayerTable({
         <table className="data-table">
           <thead>
             <tr>
-              {visibleColumns.map(col => (
-                <th key={col} onClick={() => handleSort(col)} title={col}>
+              {visibleColumns.map((col, idx) => (
+                // The first column stays put while the table scrolls right and
+                // cannot be hidden (user, 2026-09-24).
+                <th key={col} onClick={() => handleSort(col)} title={col} className={idx === 0 ? 'col-sticky' : undefined}>
                   <div className="flex items-center gap-1">
                     <span>{COLUMN_LABELS[col] || col}</span>
                     {sortKey === col && (
@@ -241,6 +314,16 @@ export default function PlayerTable({
                         : <ChevronUp size={12} />
                     )}
                   </div>
+                  {idx > 0 && (
+                    <button
+                      type="button"
+                      className="col-hide"
+                      title={`Hide ${COLUMN_LABELS[col] || col}`}
+                      onClick={(e) => { e.stopPropagation(); hideColumn(col); }}
+                    >
+                      <X size={11} />
+                    </button>
+                  )}
                 </th>
               ))}
             </tr>
@@ -255,13 +338,20 @@ export default function PlayerTable({
                   className={`cursor-pointer ${isSelected ? 'selected' : ''}`}
                   onClick={() => onPlayerClick?.(player)}
                 >
-                  {visibleColumns.map(col => {
+                  {visibleColumns.map((col, idx) => {
                     const raw = player[col];
                     const display = formatCellValue(raw, col);
-                    const colorClass = getCellColorClass(raw, col);
+                    const colorClass = getCellColorClass(raw, col, player);
+                    const title = getCellTitle(player, col);
+                    // Name: cut at 150px with the full name on hover; the
+                    // first cell of the row stays put while scrolling right
+                    // (user, 2026-09-24).
+                    const isName = col === 'Name';
+                    const cellClass = [colorClass, idx === 0 ? 'col-sticky' : ''].filter(Boolean).join(' ') || undefined;
+                    const cellTitle = title || (isName && raw ? String(raw) : undefined);
                     return (
-                      <td key={col} className={colorClass}>
-                        {display}
+                      <td key={col} className={cellClass} title={cellTitle}>
+                        {isName ? <span className="block max-w-[150px] truncate">{display}</span> : display}
                       </td>
                     );
                   })}
