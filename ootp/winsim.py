@@ -26,8 +26,13 @@ Usage
     python ootp/winsim.py --game 27 --grab                 # dump a screenshot to crop templates from
     python ootp/winsim.py --game 27 --master 6 --runs 3 --year 2026 --dry-run
     python ootp/winsim.py --game 27 --master 6 --runs 3 --year 2026
+
+Continuous mode (one long-lived league, simmed in place, no clone):
+    python ootp/winsim.py --league DEV --sim --dry-run           # print the plan
+    python ootp/winsim.py --league DEV --test-year               # set the date, no AUTO-PLAY
+    python ootp/winsim.py --league DEV --sim [--years N] [--start-year Y]
 """
-import sys, os, time, shutil, argparse, re, ctypes
+import sys, os, time, shutil, argparse, re, ctypes, statistics
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -73,7 +78,7 @@ GAMES = discover_games()
 
 # Leagues that must NEVER be simmed or cloned-as-master: the real leagues you play.
 # (A real league shows "no dumps" only because CSV export is off - that is NOT pristine.)
-PROTECTED = {"blm", "thegrandestsalami", "new game"}
+PROTECTED = {"blm", "thegrandestsalami", "new game", "regular game"}
 
 # Per-league setup lives here so a version move is a config edit, not a code change.
 PROFILES_PATH = HERE / "leagues.json"
@@ -86,7 +91,11 @@ DEFAULT_PROFILES = {
             "workbook": "The Sheets TGS/25 Regressions.xlsx",
             "note": "No pristine OOTP 26 baseline remains; regressions are frozen. "
                     "When TGS moves to OOTP 27+: set game to the new version and master to a "
-                    "fresh pristine TGS-settings baseline in that version's saved_games."}
+                    "fresh pristine TGS-settings baseline in that version's saved_games."},
+    "DEV": {"game": "27", "mode": "continuous", "folder": "DEV TESTS", "source": "dump",
+            "years": 5,
+            "note": "Plain OOTP 27 league, all teams AI, simmed in place year after year. "
+                    "Its yearly CSV dump is the data source (no clone, no StatsPlus)."}
 }
 
 def load_profiles():
@@ -127,10 +136,20 @@ MACRO = [
     ("auto_play",),   # Play -> Specified Date -> set year -> AUTO-PLAY (direct clicks, no Esc)
 ]
 
-def macro_images():
+MACRO_CONT = [               # continuous mode: the load only; auto-play follows in run_continuous
+    ("activate",),
+    ("dismiss", "nice_button"),
+    ("load_row",),        # FILE->Load Game, click the league's row, Enter
+    ("wait_reload",),     # the PLAY menu goes away while OOTP loads, then comes back
+    ("snap", "loaded"),   # ootp/_diag_loaded.png: which league came up
+]
+
+def macro_images(continuous=False):
     names = [ROW_ANCHOR, "file_menu", "load_game_item", "please_read", "play_menu",
-             "specified_date", "year_dropdown", f"year_{TARGET_YEAR}", "autoplay"]
-    for s in MACRO:
+             "specified_date", "year_dropdown", "autoplay"]
+    if not continuous:
+        names.append(f"year_{TARGET_YEAR}")
+    for s in (MACRO_CONT if continuous else MACRO):
         if s[0] in ("click", "wait", "dismiss"):
             names.append(s[1])
         elif s[0] == "menu":
@@ -425,6 +444,29 @@ def row_index_of(name):
         raise SystemExit(f"league {name!r} not found in {SAVED}\n  available: {', '.join(names)}")
     return names.index(name), len(names)
 
+MAX_VISIBLE_ROW = 25   # Load Game rows below this can sit off-screen; a click there is a guess
+
+def ingame_date(name):
+    """(month, day, year) of the in-game date OOTP lists for saved game `name`.
+    Read from saved_games.dat (the Load Game list's index). None when not found."""
+    try:
+        b = (SAVED / "saved_games.dat").read_bytes()
+    except OSError:
+        return None
+    key = re.escape(f"{name}.lg".encode("utf-8"))
+    best = None
+    for m in re.finditer(key, b):
+        if m.start() > 0 and b[m.start() - 1] == ord("\\"):
+            continue                                   # inside a full path, not the bare entry
+        tail = b[m.end(): m.end() + 200]
+        nxt = tail.find(b".lg")
+        if nxt >= 0:
+            tail = tail[:nxt]                          # stay inside this league's entry
+        d = re.search(rb"(\d{1,2})/(\d{1,2})/(\d{4})", tail)
+        if d:
+            best = (int(d[1]), int(d[2]), int(d[3]))
+    return best
+
 def keyboard_select_row(idx, total):
     press("up", total + 5); time.sleep(0.3)
     press("down", idx); time.sleep(0.2)
@@ -447,6 +489,11 @@ def load_by_row_click(name):
     fresh clone, named to sort first) and Baseline (near the top), both always on screen."""
     open_load_list()
     idx, total = row_index_of(name)
+    if idx > MAX_VISIBLE_ROW:
+        press("escape")
+        raise SystemExit(f"{name!r} is row {idx} of {total} in the Load Game list and may be "
+                         f"off-screen. Delete or rename saves so it sorts within the first "
+                         f"{MAX_VISIBLE_ROW} rows.")
     p = row_point(idx)
     if not p:
         raise TimeoutError("list header not located - can't compute row position")
@@ -513,15 +560,39 @@ def auto_play_to_year():
     time.sleep(0.3 * SLEEP_SCALE)
     click_img("autoplay")                                         # start the sim
 
-def run_macro(ctx):
+def wait_reload(gone_within=12.0, back_within=240.0):
+    """Wait for OOTP to finish loading a saved game. The PLAY menu leaves the screen while the
+    load runs and returns when the league is up. A load too fast to catch is treated as done."""
+    t0 = time.time()
+    gone = False
+    while time.time() - t0 < gone_within:
+        reg = ootp_window_bounds()
+        pt, _ = (locate("play_menu", reg) if reg else (None, 0.0))
+        if not pt:
+            gone = True
+            break
+        time.sleep(0.5)
+    if not gone:
+        print(f"    (PLAY menu never left the screen in {gone_within:.0f}s - assuming a fast load)")
+        time.sleep(4.0)
+        return
+    print("    loading ... (PLAY menu gone)")
+    wait_locate("play_menu", back_within, poll=1.0)
+    print(f"    league up after {time.time() - t0:.0f}s")
+    time.sleep(3.0)
+
+def run_macro(ctx, macro=None):
     import pyautogui
-    for step in MACRO:
+    for step in (macro or MACRO):
         op = step[0]
         if op == "activate":       activate_ootp()
         elif op == "sleep":        time.sleep(step[1] * SLEEP_SCALE)
         elif op == "click":        click_img(step[1])
         elif op == "dismiss":      click_if_present(step[1], timeout=step[2] if len(step) > 2 else 8)
         elif op == "auto_play":    auto_play_to_year()
+        elif op == "auto_play_cont": auto_play_continuous()
+        elif op == "wait_reload":  wait_reload()
+        elif op == "snap":         _snap(step[1])
         elif op == "menu":         open_menu(step[1], step[2], use_esc=True)
         elif op == "key":
             release_modifiers()
@@ -578,10 +649,11 @@ def clear_sim_blockers():
             activate_ootp(); release_modifiers(); pyautogui.press("enter"); hit = True
     return hit
 
-def wait_for_sim(lg, resume=None, timeout=SIM_TIMEOUT):
+def wait_for_sim(lg, resume=None, timeout=SIM_TIMEOUT, watch=None):
     # Watch dump_<year> files appear until we hit the sentinel (target-1). A mid-sim achievement
     # pop-up doesn't just pause auto-play, it ENDS it - so on a stall we clear the pop-up AND, if a
     # `resume` callback was given (auto_play_to_year), RE-ISSUE auto-play to carry the sim onward.
+    # `watch` (optional) runs every poll and may raise to abort the wait (continuous mode).
     if WAIT_MINUTES is not None:
         print(f"    waiting a fixed {WAIT_MINUTES} min ...")
         time.sleep(WAIT_MINUTES * 60); return True
@@ -597,6 +669,8 @@ def wait_for_sim(lg, resume=None, timeout=SIM_TIMEOUT):
             last_pop = now
             try: clear_sim_blockers()      # NICE!/PLEASE READ pop-ups pause auto-play mid-sim
             except Exception: pass
+        if watch:
+            watch()
         ly = latest_dump_year(lg)
         if ly != seen:
             seen, advanced, stuck_reissues = ly, now, 0     # real progress -> reset the stuck count
@@ -725,6 +799,508 @@ def run_one(master, clone_name, dry=False):
     click_if_present("nice_button", timeout=30)
     print(f"  OK {clone_name} done  (dumps: {dump_years(lg)})")
 
+# ---------------------------------------------------------------- continuous mode (one long-lived league)
+# A plain league simmed in place, year after year: no clone, no pristine check. Each run loads
+# it, auto-plays to 1/1/<target> and stops when dump_<target-1>_yearly is on disk. The year is
+# picked by READING the dialog's year list (its top row is the year the league sits in, the
+# rows step one year each), with digit glyphs cut out of that same list on the first run. So no
+# year_<NNNN>.png is ever needed, and a wrong league on screen is caught before AUTO-PLAY.
+CONT = {}                  # the active plan (continuous_plan)
+TEXT_BRIGHT = 150          # gray level that counts as text on OOTP's grey lists
+GLYPH_CANVAS = (16, 20)    # (w, h) every digit is centred on before comparing
+CHEVRON_W = 26             # right part of year_dropdown.png = a date box's chevron
+ACTIVITY_DIRS = ("", "temp", "news", "news/html", "news/html/leagues", "news/html/box_scores",
+                 "messages", "auto-save", "page_links")   # what OOTP writes while a league is open
+
+def digits_dir():
+    return BUTTONS / "digits"
+
+def _gray(img):
+    import cv2
+    return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+def _text_run(band, gap=6):
+    """(x0, x1) of the widest run of text columns in a gray strip, or None."""
+    import numpy as np
+    cols = np.where((band > TEXT_BRIGHT).any(axis=0))[0]
+    if len(cols) == 0:
+        return None
+    groups = [[int(cols[0])]]
+    for c in cols[1:]:
+        if c - groups[-1][-1] > gap:
+            groups.append([int(c)])
+        else:
+            groups[-1].append(int(c))
+    g = max(groups, key=lambda g: g[-1] - g[0])
+    return g[0], g[-1] + 1
+
+def _glyph(cell):
+    """One digit cell -> float canvas: tight crop, scaled to a fixed height, centred.
+    None when the cell holds no text."""
+    import cv2, numpy as np
+    rows = np.where((cell > TEXT_BRIGHT).any(axis=1))[0]
+    cols = np.where((cell > TEXT_BRIGHT).any(axis=0))[0]
+    if len(rows) == 0 or len(cols) == 0:
+        return None
+    g = cell[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1].astype("float32")
+    cw, ch = GLYPH_CANVAS
+    h = ch - 2
+    w = max(1, min(cw - 2, int(round(g.shape[1] * h / g.shape[0]))))
+    g = cv2.resize(g, (w, h), interpolation=cv2.INTER_CUBIC)
+    can = np.full((ch, cw), float(cell.min()), "float32")
+    x, y = (cw - w) // 2, (ch - h) // 2
+    can[y:y + h, x:x + w] = g
+    return can
+
+def _digit_cells(band, n=4):
+    """Split the widest text run of a gray strip into n equal digit cells, or None."""
+    ext = _text_run(band)
+    if not ext:
+        return None
+    xa, xb = ext
+    p = int(round((xb - xa + 1) / n))
+    if p < 4 or abs((xa + n * p - 1) - xb) > 2:
+        return None
+    return [band[:, xa + i * p: xa + i * p + p - 1] for i in range(n)]
+
+def _corr(a, b):
+    import numpy as np
+    a = a - a.mean()
+    b = b - b.mean()
+    d = float(np.linalg.norm(a) * np.linalg.norm(b)) or 1.0
+    return float((a * b).sum() / d)
+
+def load_glyphs():
+    """{'0': canvas, ..., '9': canvas} from buttons/digits/, or None until all ten exist."""
+    import cv2
+    out = {}
+    for d in "0123456789":
+        p = digits_dir() / f"{d}.png"
+        g = cv2.imread(str(p), cv2.IMREAD_GRAYSCALE) if p.exists() else None
+        if g is not None:
+            c = _glyph(g)
+            if c is not None:
+                out[d] = c
+    return out if len(out) == 10 else None
+
+def read_year(band, glyphs):
+    """OCR a four-digit year from a gray strip. Returns (year, worst_score), or (None, best)
+    when a digit is not a clear match."""
+    cells = _digit_cells(band)
+    if not cells:
+        return None, 0.0
+    text, worst = "", 1.0
+    for cell in cells:
+        g = _glyph(cell)
+        if g is None:
+            return None, 0.0
+        ranked = sorted(((_corr(g, t), d) for d, t in glyphs.items()), reverse=True)
+        (s1, d1), (s2, _) = ranked[0], ranked[1]
+        if s1 < 0.85 or s1 - s2 < 0.08:
+            return None, s1
+        text += d1
+        worst = min(worst, s1)
+    return int(text), worst
+
+def _row_band(pop, i):
+    """Gray strip of row i of an open list (see open_popup)."""
+    y = pop["rows_win"][i]
+    return _gray(pop["img"])[max(0, y - 9): y + 10, pop["x0"]:pop["x1"]]
+
+def harvest_glyphs(pop, first_year):
+    """Cut the digit glyphs 0-9 out of the open year list and save them to buttons/digits/.
+    Row i reads first_year + i; ten consecutive years show every digit. Every harvested row
+    must read back as its own label, or the set is rejected."""
+    import cv2, numpy as np
+    found = {}
+    for i in range(min(len(pop["rows_win"]), 14)):
+        cells = _digit_cells(_row_band(pop, i))
+        if not cells:
+            continue
+        for cell, ch in zip(cells, str(first_year + i)):
+            if ch in found:
+                continue
+            rows = np.where((cell > TEXT_BRIGHT).any(axis=1))[0]
+            cols = np.where((cell > TEXT_BRIGHT).any(axis=0))[0]
+            if len(rows) and len(cols):
+                found[ch] = cell[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
+    if len(found) < 10:
+        raise RuntimeError(f"only {len(found)} of 10 digits found in the year list "
+                           f"({len(pop['rows_win'])} rows) - see ootp/_diag_year_list.png")
+    d = digits_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    for ch, crop in found.items():
+        cv2.imwrite(str(d / f"{ch}.png"), crop)
+    glyphs = load_glyphs()
+    for i in range(min(len(pop["rows_win"]), 10)):
+        got, s = read_year(_row_band(pop, i), glyphs)
+        if got != first_year + i:
+            raise RuntimeError(f"digit self-check failed: row {i} reads {got} not {first_year + i} "
+                               f"({s:.2f}) - see ootp/_diag_year_list.png")
+    print(f"    digit glyphs 0-9 saved to {d} (rows labelled from {first_year}; self-check OK)")
+    return glyphs
+
+def _check_list_with_templates(pop, first_year):
+    """First run only: prove the year list starts at first_year with any year_<NNNN>.png that
+    falls on it. Raises when that row does not show the year the template says."""
+    import cv2
+    checked = False
+    for tpath in sorted(BUTTONS.glob("year_*.png")):
+        tag = tpath.stem.split("_", 1)[1]
+        if not tag.isdigit():
+            continue
+        j = int(tag) - first_year
+        if not 0 <= j < len(pop["rows_win"]):
+            continue
+        tmpl = cv2.imread(str(tpath))
+        y = pop["rows_win"][j]
+        crop = pop["img"][max(0, y - 12): y + 13, pop["x0"]:pop["x1"]]
+        if tmpl is None or crop.shape[0] < tmpl.shape[0] or crop.shape[1] < tmpl.shape[1]:
+            continue
+        res = cv2.matchTemplate(_edges(_gray(crop)), _edges(_gray(tmpl)), cv2.TM_CCOEFF_NORMED)
+        _, s, _, _ = cv2.minMaxLoc(res)
+        if s < MATCH_CONF:
+            press("escape")
+            raise SystemExit(f"row {j} of the year list should read {tag} if the list starts at "
+                             f"{first_year}, but {tpath.name} does not match there ({s:.2f}). "
+                             f"Wrong league on screen, or the saved date is off. Nothing was clicked.")
+        print(f"    year list row {j} reads {tag} ({s:.2f}) - list confirmed to start at {first_year}")
+        checked = True
+    if not checked:
+        print(f"    (no year_<NNNN>.png falls on this list; glyph labels rest on the saved date {first_year})")
+
+def dialog_boxes():
+    """Click points inside the day, month and year boxes of the AUTO-PLAY TO DATE dialog.
+    The boxes sit one row above the AUTO-PLAY button and each ends in a chevron; the chevron
+    (cut from year_dropdown.png) is matched along that row. Measured offsets are the fallback."""
+    import cv2
+    (ax, ay), _ = wait_locate("autoplay", 10)
+    guess = [(ax - 38, ay - 31.5), (ax + 78, ay - 31.5), (ax + 162, ay - 31.5)]
+    pts = None
+    tmpl = cv2.imread(str(BUTTONS / "year_dropdown.png"))
+    win = ootp_window_bounds()
+    if tmpl is not None and win:
+        chev = tmpl[:, tmpl.shape[1] - CHEVRON_W:]
+        x0 = max(win[0], int(ax - 110)); y0 = max(win[1], int(ay - 52))
+        x1 = min(win[0] + win[2], int(ax + 230)); y1 = min(win[1] + win[3], int(ay - 10))
+        img, _ = grab((x0, y0, x1 - x0, y1 - y0))
+        res = cv2.matchTemplate(_edges(_gray(img)), _edges(_gray(chev)), cv2.TM_CCOEFF_NORMED)
+        hits = []
+        for _ in range(3):
+            _, mv, _, ml = cv2.minMaxLoc(res)
+            if mv < 0.8:
+                break
+            hits.append((x0 + ml[0] + chev.shape[1] / 2, y0 + ml[1] + chev.shape[0] / 2, mv))
+            cv2.rectangle(res, (ml[0] - 15, ml[1] - 10), (ml[0] + 15, ml[1] + 10), 0, -1)
+        if len(hits) == 3:
+            hits.sort()
+            print("    date boxes (chevrons): " + ", ".join(f"({x:.0f},{y:.0f}) {s:.2f}" for x, y, s in hits))
+            pts = [(x, y) for x, y, _ in hits]
+    if pts is None:
+        print("    date boxes: chevrons not all found, using measured offsets from AUTO-PLAY")
+        pts = guess
+    return [(x - 12, y) for x, y in pts]     # a point inside each box, left of its chevron
+
+def open_popup(pt, label):
+    """Click the closed box at pt and read the list that opens: the screen region that changed
+    is the list, its bright lines are the rows. Returns rows (screen points, top to bottom),
+    the rows' window y, the list's window x-extent and the grab it was read from."""
+    import cv2, numpy as np
+    reg = ootp_window_bounds()
+    if not reg:
+        raise TimeoutError("OOTP window not found")
+    before, _ = grab(reg)
+    do_click(*pt)
+    time.sleep(1.2 * SLEEP_SCALE)
+    after, _ = grab(reg)
+    g0 = _gray(before).astype("int16")
+    g1 = _gray(after).astype("int16")
+    bx = int(pt[0] - reg[0])
+    changed = (np.abs(g1 - g0) > 30).astype("uint8")
+    lo, hi = max(0, bx - 150), min(changed.shape[1], bx + 150)
+    changed[:, :lo] = 0
+    changed[:, hi:] = 0
+    changed = cv2.dilate(changed, np.ones((9, 9), "uint8"))
+    n, _, stats, _ = cv2.connectedComponentsWithStats(changed)
+    if n < 2:
+        raise TimeoutError(f"{label}: nothing opened after the click")
+    i = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    x0, y0, w, h = (int(v) for v in stats[i, :4])
+    x1, y1 = x0 + w, y0 + h
+    prof = (g1[y0:y1, x0:x1] > TEXT_BRIGHT).sum(axis=1)
+    rows, r0 = [], None
+    for y, v in enumerate(prof):
+        if v >= 2 and r0 is None:
+            r0 = y
+        elif v < 2 and r0 is not None:
+            if y - r0 >= 5:
+                rows.append(y0 + (r0 + y) / 2)
+            r0 = None
+    if r0 is not None and len(prof) - r0 >= 5:
+        rows.append(y0 + (r0 + len(prof)) / 2)
+    if len(rows) < 2:
+        raise TimeoutError(f"{label}: a list opened ({w}x{h}) but no rows were found")
+    pitch = statistics.median(b - a for a, b in zip(rows, rows[1:]))
+    if not 14 <= pitch <= 34:
+        raise TimeoutError(f"{label}: row pitch {pitch:.1f}px looks wrong ({len(rows)} rows)")
+    cx = reg[0] + (x0 + x1) / 2
+    print(f"    {label}: {len(rows)} rows, pitch {pitch:.1f}px, first row at y={reg[1] + rows[0]:.0f}")
+    return dict(rows=[(cx, reg[1] + y) for y in rows], rows_win=[int(round(y)) for y in rows],
+                x0=x0, x1=x1, img=after, reg=reg, pitch=pitch)
+
+def set_date_jan1(target, expect_year):
+    """In the AUTO-PLAY TO DATE dialog, set 1 / January / target. Reads the year list first:
+    its top row is the year the loaded league sits in and must be within a year of
+    expect_year, or nothing is clicked (that means the wrong league is on screen)."""
+    day_pt, mon_pt, year_pt = dialog_boxes()
+    reg = ootp_window_bounds()
+    def box_strip():
+        img, _ = grab(reg)
+        x, y = int(year_pt[0] - reg[0]), int(year_pt[1] - reg[1])
+        return _gray(img)[max(0, y - 10): y + 11, max(0, x - 50): x - 6]
+    strip_before = box_strip()
+    pop = open_popup(year_pt, "year list")
+    glyphs = load_glyphs()
+    if glyphs is None:
+        _check_list_with_templates(pop, expect_year)
+        _snap("year_list")
+        glyphs = harvest_glyphs(pop, expect_year)
+    shown, sc = read_year(_row_band(pop, 0), glyphs)
+    if shown is None:
+        _snap("year_list")
+        press("escape")
+        raise SystemExit(f"cannot read the top of the year list (score {sc:.2f}) - see "
+                         f"ootp/_diag_year_list.png. Nothing was clicked.")
+    if abs(shown - expect_year) > 1:
+        press("escape")
+        raise SystemExit(f"the league on screen sits in {shown}, expected about {expect_year}. "
+                         f"Is {CONT.get('folder', '?')!r} really the loaded league? Nothing was clicked.")
+    k = target - shown
+    if k < 1:
+        press("escape")
+        raise SystemExit(f"target {target} is not after the league's year {shown}")
+    if k >= len(pop["rows"]):
+        press("escape")
+        raise SystemExit(f"{target} is below the visible year list ({len(pop['rows'])} rows from "
+                         f"{shown}); use fewer --years")
+    print(f"    year list starts at {shown} ({sc:.2f}); click row {k} = {target}")
+    do_click(*pop["rows"][k])
+    time.sleep(0.8 * SLEEP_SCALE)
+    strip_after = box_strip()
+    got, s2 = read_year(strip_after, glyphs)
+    if got is not None and got != target:
+        press("escape")
+        raise SystemExit(f"the year box reads {got} after the pick, not {target}. Nothing was auto-played.")
+    if got is None:
+        import numpy as np
+        same = strip_after.shape == strip_before.shape and \
+            float(np.abs(strip_after.astype("int16") - strip_before.astype("int16")).mean()) < 2.0
+        if same:
+            press("escape")
+            raise SystemExit("the year box did not change after the pick. Nothing was auto-played.")
+        print(f"    year box changed but reads unclear ({s2:.2f}); trusting the list click")
+    else:
+        print(f"    year box reads {got} ({s2:.2f})")
+    for pt, label in ((mon_pt, "month list"), (day_pt, "day list")):
+        p = open_popup(pt, label)
+        do_click(*p["rows"][0])                 # January / 1: the top row of each list
+        time.sleep(0.6 * SLEEP_SCALE)
+
+def _expected_dialog_year():
+    ys = dump_years(CONT["lg"])
+    return ys[-1] + 1 if ys else CONT["dialog_year"]
+
+def auto_play_continuous():
+    """Play -> Specified Date -> 1/1/<target> (read off the screen) -> AUTO-PLAY."""
+    click_img("play_menu")
+    time.sleep(1.0 * SLEEP_SCALE)
+    reg = ootp_window_bounds()
+    pt, s = (locate("specified_date", reg) if reg else (None, 0.0))
+    if not pt:
+        raise TimeoutError(f"'specified_date' not visible after Play menu (best {s:.2f})")
+    print(f"    click specified_date ({s:.2f})")
+    do_click(*pt)
+    time.sleep(1.2 * SLEEP_SCALE)
+    set_date_jan1(TARGET_YEAR, _expected_dialog_year())
+    time.sleep(0.3 * SLEEP_SCALE)
+    click_img("autoplay")
+
+def wait_dump_settled(d, quiet=15, timeout=900):
+    """Return once nothing under dump folder d has changed for `quiet` seconds."""
+    last, since, t0 = None, time.time(), time.time()
+    while time.time() - t0 < timeout:
+        sig = tuple((p.name, p.stat().st_size) for p in sorted(d.rglob("*")) if p.is_file())
+        if sig != last:
+            last, since = sig, time.time()
+        elif time.time() - since >= quiet:
+            return True
+        time.sleep(3)
+    return False
+
+def _touch_time(lg):
+    """Newest mtime among the folders OOTP writes while a league is open."""
+    t = 0.0
+    for sub in ACTIVITY_DIRS:
+        try:
+            t = max(t, (lg / sub if sub else lg).stat().st_mtime)
+        except OSError:
+            pass
+    return t
+
+def make_wrong_league_watch(lg, t_start):
+    """wait_for_sim watch: if another saved game's folder starts changing while ours does not,
+    OOTP is simming the wrong league. Raise at once so the user can stop it."""
+    others = [league_dir(n) for n in saved_league_names() if league_dir(n) != lg]
+    def watch():
+        if _touch_time(lg) > t_start:
+            return
+        for o in others:
+            if _touch_time(o) > t_start:
+                press("escape")
+                raise SystemExit(f"OOTP is writing into {o.stem!r}, not {lg.stem!r}: the WRONG league is "
+                                 f"being simmed. Stop OOTP now (Esc, or close it WITHOUT saving) and "
+                                 f"check the Load Game row with --test-load \"{lg.stem}\".")
+    return watch
+
+def _year_range(ys):
+    return f"{ys[0]}-{ys[-1]}" if len(ys) > 1 else (str(ys[0]) if ys else "none")
+
+def continuous_plan(a, prof):
+    """Work out this run: which league, the first season to sim, the target year."""
+    folder = a.folder or prof.get("folder")
+    if not folder:
+        raise SystemExit("continuous mode needs the league's saved-game name: add \"folder\" to the "
+                         "profile in leagues.json or pass --folder")
+    guard(folder)
+    # never sim a profile's pristine clone master in place: that spends it
+    try:
+        import json as _json
+        _profs = _json.loads(Path(PROFILES_PATH).read_text(encoding="utf-8"))
+        _masters = {str(v.get("master")).strip().lower() for v in _profs.values()
+                    if isinstance(v, dict) and v.get("master")}
+    except Exception:
+        _masters = set()
+    if folder.strip().lower() in _masters:
+        raise SystemExit(f"{folder!r} is a pristine clone master in leagues.json; continuous mode "
+                         "would spend it. Clone it under another name first.")
+    lg = league_dir(folder)
+    if not lg.exists():
+        raise SystemExit(f"league {folder!r} not found at {lg}\n  available: {', '.join(saved_league_names())}")
+    years = int(a.years if a.years is not None else prof.get("years", 5))
+    if years < 1:
+        raise SystemExit("--years must be at least 1")
+    have = dump_years(lg)
+    date = ingame_date(folder)
+    if have:
+        first, dialog_year, why = have[-1] + 1, have[-1] + 1, f"latest dump is {have[-1]}"
+    elif a.start_year is not None:
+        first, why = a.start_year, "--start-year"
+        dialog_year = date[2] if date else first
+    elif date:
+        m, d, y = date
+        first, dialog_year = (y + 1 if m >= 11 else y), y
+        why = f"in-game date {m}/{d}/{y} in saved_games.dat"
+    else:
+        raise SystemExit(f"{folder!r} has no dumps yet and its in-game date could not be read: "
+                         f"pass --start-year <first season to sim>")
+    return dict(folder=folder, lg=lg, years=years, have=have, date=date,
+                first=first, target=first + years, dialog_year=dialog_year, why=why)
+
+def run_continuous(a, prof, ver):
+    global TARGET_YEAR, LEAGUE_START_YEAR, RESUME_AFTER, NOSTART_ABORT, MAX_STUCK_REISSUE, CONT
+    plan = continuous_plan(a, prof)
+    CONT = plan
+    TARGET_YEAR, LEAGUE_START_YEAR = plan["target"], plan["first"]
+    RESUME_AFTER = int(prof.get("resume_after", 600))        # a full league needs minutes per season
+    NOSTART_ABORT = int(prof.get("nostart_abort", 1800))
+    MAX_STUCK_REISSUE = int(prof.get("max_reissues", 6))
+    lg, folder, target = plan["lg"], plan["folder"], plan["target"]
+    idx, total = row_index_of(folder)
+    print(f"winsim CONTINUOUS: OOTP {ver} | {lg}")
+    print(f"  dumps on disk: {_year_range(plan['have'])}")
+    if plan["date"]:
+        m, d, y = plan["date"]
+        print(f"  in-game date listed by OOTP: {m}/{d}/{y}")
+    print(f"  first season {plan['first']} ({plan['why']}); {plan['years']} season(s) "
+          f"{plan['first']}-{target - 1}; auto-play to 1/1/{target}")
+    print(f"  Load Game row {idx}/{total}; the date dialog should open on {plan['dialog_year']}; "
+          f"completion = dump_{target - 1}_yearly")
+    if a.dry_run:
+        print("\nDRY RUN - nothing clicked.")
+        print(f"  steps: FILE -> Load Game -> click row {idx} ({folder!r}) -> Enter -> wait for the load\n"
+              f"         Play -> Specified Date -> read the year list (top row must be about "
+              f"{plan['dialog_year']}) -> click row {target - plan['dialog_year']} = {target}\n"
+              f"         month -> January, day -> 1 -> AUTO-PLAY -> wait for dump_{target - 1}_yearly "
+              f"-> wait for it to finish writing")
+        print(f"  buttons required: {', '.join(macro_images(continuous=True))}")
+        print(f"  digit glyphs: {'present' if load_glyphs() else 'not yet (cut from the year list on the first run)'}")
+        return
+    import pyautogui
+    pyautogui.FAILSAFE = True
+    pyautogui.PAUSE = 0.3
+    reset_input()
+    activate_ootp()
+    if not _cursor_moves():
+        raise SystemExit(
+            "\n  Can't move the mouse to control OOTP.\n"
+            "  This almost always means OOTP is running AS ADMINISTRATOR, so Windows\n"
+            "  blocks a normal program from clicking it. Two fixes (either works):\n"
+            "    - Right-click 'Sim Dev League.bat' -> Run as administrator, OR\n"
+            "    - Close OOTP and reopen it normally (not as admin), then try again.\n"
+            + ("  (You are NOT running this as admin right now.)\n" if not is_admin() else ""))
+    if a.test_year:
+        print(f"TEST YEAR: Play -> Specified Date -> set 1/1/{target} (NO auto-play), snapshot, cancel.")
+        for _ in range(4):
+            press("escape"); time.sleep(0.35)
+        click_img("play_menu"); time.sleep(1.0 * SLEEP_SCALE)
+        reg = ootp_window_bounds()
+        pt, s = (locate("specified_date", reg) if reg else (None, 0.0))
+        if not pt:
+            print(f"    specified_date not found (best {s:.2f})"); return
+        do_click(*pt); time.sleep(1.2 * SLEEP_SCALE)
+        set_date_jan1(target, plan["dialog_year"])
+        time.sleep(0.4); _snap("after_setyear")
+        for _ in range(2):
+            press("escape"); time.sleep(0.3)
+        print(f"\nTEST YEAR done - check ootp\\_diag_after_setyear.png: the dialog should read "
+              f"1 / January / {target}. Nothing was simmed.")
+        return
+    print("Abort: slam mouse into a screen corner (FAILSAFE) or Ctrl-C.")
+    keep_awake()
+    before = dump_years(lg)
+    try:
+        print(f"\n  driving OOTP: load {folder} -> auto-play to 1/1/{target} ...")
+        run_macro({"league": folder}, macro=MACRO_CONT)
+        t_start = time.time()          # after the load: writes from here on come from the sim
+        auto_play_continuous()
+        print(f"  sim launched; waiting for dump_{target - 1}_yearly ...")
+        if not wait_for_sim(lg, resume=auto_play_continuous, watch=make_wrong_league_watch(lg, t_start)):
+            raise SystemExit(f"{folder}: sim did not reach {target} in time")
+        d = lg / "dump" / f"dump_{target - 1}_yearly"
+        print("  last dump is on disk; waiting for OOTP to finish writing it ...")
+        if not wait_dump_settled(d):
+            print("  (the dump kept changing for 15 min; continuing anyway)")
+        time.sleep(2.0)
+        click_if_present("nice_button", timeout=30)
+    except KeyboardInterrupt:
+        raise
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(f"\n  !! {folder} FAILED: {e}")
+        try:
+            activate_ootp()
+            for _ in range(3):
+                press("escape"); time.sleep(0.4)
+        except Exception:
+            pass
+        raise SystemExit(1)
+    after = dump_years(lg)
+    new = sorted(set(after) - set(before))
+    print(f"\nDONE. {folder}: banked {len(new)} season(s): {_year_range(new)}   (on disk: {_year_range(after)})")
+    if after:
+        print(f"  next run starts at season {after[-1] + 1}.")
+
 # ---------------------------------------------------------------- main
 def main():
     global SAVED, WIN_TITLE, TARGET_YEAR, LEAGUE_START_YEAR, SLEEP_SCALE, WAIT_MINUTES, BUTTONS
@@ -759,6 +1335,12 @@ def main():
                     "saved-games list so we can see what ORDER OOTP shows them in (vs our alphabetical index)")
     ap.add_argument("--test-load", default=None, help="diagnostic: LOAD this saved game by double-clicking its "
                     "computed row, then snapshot (verifies deterministic row-position loading)")
+    ap.add_argument("--sim", action="store_true", help="CONTINUOUS mode: sim the profile's own league in place "
+                    "(no clone), --years seasons per run; needs a profile with \"folder\"")
+    ap.add_argument("--years", type=int, default=None, help="continuous mode: seasons to sim this run "
+                    "(profile default, else 5)")
+    ap.add_argument("--folder", default=None, help="continuous mode: the league's saved-game name "
+                    "(overrides the profile's \"folder\")")
     a = ap.parse_args()
 
     if a.games:
@@ -804,6 +1386,11 @@ def main():
         print(f"saved_games: {SAVED}")
         if not SAVED.exists():
             raise SystemExit("  (does not exist)")
+        folders = {}
+        if PROFILES_PATH.exists():
+            for pid, p in load_profiles().items():
+                if p.get("folder"):
+                    folders[p["folder"].strip().lower()] = pid
         for n in saved_league_names():
             lg = league_dir(n)
             ys = dump_years(lg)
@@ -812,6 +1399,10 @@ def main():
             if protected:
                 # no dump/ dir here just means CSV export is off - NOT that it's unsimmed
                 tag = "REAL LEAGUE - never sim, never clone"
+            elif n.strip().lower() in folders:
+                tag = (f"CONTINUOUS league (profile {folders[n.strip().lower()]}) - "
+                       f"dumps {ys[0]}-{ys[-1]}" if ys else
+                       f"CONTINUOUS league (profile {folders[n.strip().lower()]}) - no dumps yet")
             elif not ys:
                 tag = "PRISTINE -> clonable master"
             else:
@@ -879,6 +1470,10 @@ def main():
             else:
                 print(f"  [NOT FOUND {s:.2f}] {n}  (wrong screen showing, or recapture it)")
         print("\n(Buttons for screens not currently showing read NOT FOUND - that's expected.)")
+        return
+
+    if a.sim or (a.test_year and (a.folder or prof.get("folder"))):
+        run_continuous(a, prof, ver)
         return
 
     if not a.master:

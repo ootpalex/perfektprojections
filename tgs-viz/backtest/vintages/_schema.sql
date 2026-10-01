@@ -7,7 +7,7 @@ CREATE TABLE pulls(
         source_files TEXT,
         n_players INTEGER,
         content_hash TEXT,
-        ingested_at TEXT,
+        ingested_at TEXT, game_date TEXT,
         UNIQUE(league, real_date));
 
 CREATE TABLE ratings(

@@ -15,5 +15,16 @@
     "target_year": 2026,
     "workbook": "The Sheets TGS/25 Regressions.xlsx",
     "note": "New pristine OOTP 26 baseline 'Baseline.lg' (old one renamed 1Baseline). If this baseline has DIFFERENT players than the existing TGS regressions, it is a fresh dataset - see ingester player-id check. When TGS moves to OOTP 27+: set game to the new version and master to a fresh pristine TGS baseline there."
+  },
+  "DEV": {
+    "game": "27",
+    "mode": "continuous",
+    "folder": "DEV TESTS",
+  "league": "DEV TESTS",
+    "source": "dump",
+    "years": 5,
+    "resume_after": 600,
+    "nostart_abort": 1800,
+    "note": "Plain OOTP 27 league, every team AI-controlled, simmed in place year after year (winsim --sim). Its yearly CSV dump is the data source: true ratings, personalities, stats. No clone, no StatsPlus. Never delete its dump folder."
   }
 }

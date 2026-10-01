@@ -32,11 +32,15 @@ import sqlite3
 import argparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(HERE, "ratings_history.db")
-OUT_DIR = os.path.join(HERE, "vintages")
+# tgs-viz/backtest by default; RATINGS_ARCHIVE_ROOT (tests only) moves both
+_ROOT = os.environ.get("RATINGS_ARCHIVE_ROOT") or HERE
+DB_PATH = os.path.join(_ROOT, "ratings_history.db")
+OUT_DIR = os.path.join(_ROOT, "vintages")
 
+# game_date = the pull's in-game date (pull_order.py sorts by it). An older DB
+# without the column exports it blank; --restore reads blank as NULL.
 PULL_COLS = ["pull_id", "league", "real_date", "real_ts", "source",
-             "source_files", "n_players", "content_hash", "ingested_at"]
+             "source_files", "n_players", "content_hash", "ingested_at", "game_date"]
 
 
 def _cols(con, table):
@@ -47,11 +51,14 @@ def _slug(real_date, pull_id):
     return f"{real_date}_p{pull_id}.csv.gz"
 
 
-def export(db_path=DB_PATH, out_dir=OUT_DIR):
+def export(db_path=DB_PATH, out_dir=OUT_DIR, leagues=None):
+    """leagues: only these leagues' folders (None = every league)."""
     if not os.path.exists(db_path):
         raise SystemExit(f"no database at {db_path} — nothing to export")
     con = sqlite3.connect(db_path)
     rcols = _cols(con, "ratings")
+    have = set(_cols(con, "pulls"))
+    sel = ",".join(c if c in have else f"NULL AS {c}" for c in PULL_COLS)
 
     os.makedirs(out_dir, exist_ok=True)
     ddl = [s for (s,) in con.execute(
@@ -59,9 +66,11 @@ def export(db_path=DB_PATH, out_dir=OUT_DIR):
     with open(os.path.join(out_dir, "_schema.sql"), "w", encoding="utf-8") as fh:
         fh.write(";\n\n".join(ddl) + ";\n")
 
-    pulls = list(con.execute(f"select {','.join(PULL_COLS)} from pulls order by pull_id"))
+    pulls = list(con.execute(f"select {sel} from pulls order by pull_id"))
     by_league = {}
     for p in pulls:
+        if leagues and p[1] not in leagues:
+            continue
         by_league.setdefault(p[1], []).append(p)
 
     written = skipped = 0
@@ -112,6 +121,8 @@ def restore(db_path=DB_PATH, out_dir=OUT_DIR):
     con = sqlite3.connect(db_path)
     with open(schema, encoding="utf-8") as fh:
         con.executescript(fh.read())
+    if "game_date" not in _cols(con, "pulls"):     # a schema saved before the column existed
+        con.execute("ALTER TABLE pulls ADD COLUMN game_date TEXT")
 
     # CSV has no NULL: an empty field is a missing rating, not the string "".
     def _row(vals):
