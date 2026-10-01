@@ -1,13 +1,13 @@
 {
  "league": "BLM",
- "fitted_at": "2026-08-11T19:51:07",
- "source": "engine/fielding_curves_fit.py over calib/BLM archive + 25 Metadata.xlsx live population (offsets)",
+ "fitted_at": "2026-10-01T12:28:25",
+ "source": "engine/fielding_curves_fit.py over calib/BLM archive + live population (offsets) from tgs-viz\\engine\\calib\\BLM\\metadata_inputs CSVs (season 2058, in-game date 2058-12-30, ratings pull statsplus_blm_20260913-1942.json, CSVs saved 2026-10-01 12:28)",
  "positions": {
   "1B": {
    "rng": "IF RNG",
    "x2": "HT",
    "m2": 0.00051774723759938,
-   "offset": 0.0951735535012275,
+   "offset": 0.09690626550225252,
    "knots": [
     [
      35.0,
@@ -43,7 +43,7 @@
     ]
    ],
    "gt_pm": 0.8668944801168462,
-   "live_ip_coverage": 0.9998606444420358,
+   "live_ip_coverage": 0.9991908200460847,
    "plays_cell": "T5",
    "rpp_cell": "H38",
    "elig_min_rng": 20,
@@ -102,7 +102,7 @@
    "rng": "IF RNG",
    "x2": "IF ARM",
    "m2": 0.0003524331578031011,
-   "offset": 0.01215538989147749,
+   "offset": 0.00666332404163477,
    "knots": [
     [
      45.0,
@@ -138,7 +138,7 @@
     ]
    ],
    "gt_pm": 0.6624665129483267,
-   "live_ip_coverage": 0.9998371853218692,
+   "live_ip_coverage": 1.0,
    "plays_cell": "T8",
    "rpp_cell": "H38",
    "elig_min_rng": 50,
@@ -197,7 +197,7 @@
    "rng": "IF RNG",
    "x2": "IF ARM",
    "m2": 0.002160906873700184,
-   "offset": 0.15051090379689566,
+   "offset": 0.15069916991122403,
    "knots": [
     [
      35.0,
@@ -233,7 +233,7 @@
     ]
    ],
    "gt_pm": 0.8035309066875651,
-   "live_ip_coverage": 0.9996742468898334,
+   "live_ip_coverage": 1.0,
    "plays_cell": "T12",
    "rpp_cell": "H38",
    "elig_min_rng": 40,
@@ -292,7 +292,7 @@
    "rng": "IF RNG",
    "x2": "IF ARM",
    "m2": 0.0016928926733525234,
-   "offset": 0.10530394101161995,
+   "offset": 0.10612991398592443,
    "knots": [
     [
      55.0,
@@ -320,7 +320,7 @@
     ]
    ],
    "gt_pm": 0.7270063732056106,
-   "live_ip_coverage": 0.9996275316210135,
+   "live_ip_coverage": 1.0,
    "plays_cell": "T15",
    "rpp_cell": "H38",
    "elig_min_rng": 60,
@@ -367,7 +367,7 @@
    "rng": "OF RNG",
    "x2": null,
    "m2": null,
-   "offset": -0.012372832539691427,
+   "offset": -0.005252319433307959,
    "knots": [
     [
      35.0,
@@ -403,7 +403,7 @@
     ]
    ],
    "gt_pm": 0.5912230400420082,
-   "live_ip_coverage": 0.9997057457023386,
+   "live_ip_coverage": 1.0,
    "plays_cell": "T18",
    "rpp_cell": "H39",
    "elig_min_rng": 50,
@@ -462,7 +462,7 @@
    "rng": "OF RNG",
    "x2": null,
    "m2": null,
-   "offset": -0.018894222645895964,
+   "offset": -0.014357797893206108,
    "knots": [
     [
      60.0,
@@ -486,7 +486,7 @@
     ]
    ],
    "gt_pm": 0.6426926209332012,
-   "live_ip_coverage": 0.999906939231318,
+   "live_ip_coverage": 1.0,
    "plays_cell": "T22",
    "rpp_cell": "H39",
    "elig_min_rng": 60,
@@ -527,7 +527,7 @@
    "rng": "OF RNG",
    "x2": null,
    "m2": null,
-   "offset": 0.0016511017645285317,
+   "offset": 0.0024126508340777657,
    "knots": [
     [
      40.0,
@@ -563,7 +563,7 @@
     ]
    ],
    "gt_pm": 0.5729083203094262,
-   "live_ip_coverage": 0.9999302795788887,
+   "live_ip_coverage": 1.0,
    "plays_cell": "T26",
    "rpp_cell": "H39",
    "elig_min_rng": 50,
@@ -621,51 +621,51 @@
  },
  "gate_matrix_worst_runs": {
   "1B": {
-   "piecewise": 0.7778418529324036,
+   "piecewise": 0.8106104802190468,
    "pair": [
     65,
     70
    ],
-   "linear": 3.883981800978867
+   "linear": 4.047604716799832
   },
   "2B": {
    "piecewise": 0.0,
    "pair": [],
-   "linear": 14.835869662161583
+   "linear": 12.192899822981841
   },
   "3B": {
-   "piecewise": 0.8056356574464067,
+   "piecewise": 0.9698538442174701,
    "pair": [
     60,
     65
    ],
-   "linear": 5.573555039197566
+   "linear": 6.709650610372846
   },
   "SS": {
-   "piecewise": 0.40356349866024743,
+   "piecewise": 0.32709862740481555,
    "pair": [
     60,
     75
    ],
-   "linear": 8.240551036471306
+   "linear": 6.67917921724224
   },
   "LF": {
    "piecewise": 0.0,
    "pair": [],
-   "linear": 10.865003946532857
+   "linear": 12.14025155557593
   },
   "CF": {
    "piecewise": 0.0,
    "pair": [],
-   "linear": 11.871285095737335
+   "linear": 10.671819633059311
   },
   "RF": {
-   "piecewise": 0.8136502973514204,
+   "piecewise": 0.8573378397283795,
    "pair": [
     60,
     75
    ],
-   "linear": 13.43394788802021
+   "linear": 14.15526043415729
   }
  }
 }

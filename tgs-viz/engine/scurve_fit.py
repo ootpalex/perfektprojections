@@ -14,14 +14,22 @@ Method (audit D1, verifier-corrected transport adapted to a continuous curve):
      run the curve away; direction (sign of B) is enforced per block.
   3. Transport to the live frame:
         live_rate(r) = fitted(r) - E_BFwtd,live[fitted(r)] + league_actual_rate
-     with the live population and league rates read straight from the league's
-     25 Metadata.xlsx (SP/RP Data + SP/RP Ratings tabs, READ-ONLY), blended
-     vR/vL by the role's OVR-vR BF share exactly like the sheet's anchors.
+     with the live population and league rates read from the league's
+     calib/<LG>/metadata_inputs CSVs (SP/RP Data + SP/RP Ratings, written by
+     ingest/metadata_inputs.py from the latest pull) when they exist, else
+     from 25 Metadata.xlsx (same tabs, READ-ONLY), blended vR/vL by the
+     role's OVR-vR BF share exactly like the sheet's anchors.
      By construction the BF-weighted projected league rate over the live
      population equals the league's actual rate.
-  4. Emit calib/<LG>/scurves-preview.json (a NEW side file — nothing live is
-     touched). pitchers.py evaluates these curves only when the JSON is
-     explicitly passed (opt-in); the live pipeline is unchanged.
+  4. The two-segment line gets the same level step: twoline_offset = league
+     actual rate - its BF-weighted mean over the live population (constants
+     read from The Sheet Pitchers.xlsx, which sync_datapoints.py has just
+     updated). Slopes and the 50 kink stay.
+  5. Real-season gate data (live_gate): both curves priced for every pitcher
+     of the role's Data tab, each level-matched, bucket RMSE vs his actual
+     season rate. promote_scurves.py picks the curve per block from it.
+  6. Emit calib/<LG>/scurves-preview.json (a NEW side file — nothing live is
+     touched). promote_scurves.py turns it into the live scurves.json.
 
 Usage:
   python tgs-viz/engine/scurve_fit.py --league TGS
@@ -37,8 +45,12 @@ from collections import defaultdict
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import calibrate as C  # noqa: E402  (pool machinery reused verbatim)
+import metadata_calibrate as M  # noqa: E402  (metadata_inputs CSV loaders)
+import pitchers as P  # noqa: E402  (the engine's two-segment line)
 
 REPO = os.path.dirname(os.path.dirname(HERE))
+META_CSVS = ("SP_Data.csv", "RP_Data.csv", "SP_Ratings.csv", "RP_Ratings.csv")
+STAT_COLS = ("BF", "AB", "1B", "2B", "3B", "HR", "BB", "IBB", "K", "HP", "SF")
 
 # block key -> (vR rating col, vL rating col, direction, y-rate fn name)
 BLOCKS = {
@@ -261,9 +273,29 @@ def _read_table(ws, hdr_row=2):
     return hdr, rows[hdr_row:]
 
 
+def _league_rates(T):
+    """League rates of one role from its Data tab totals."""
+    return {
+        "uBB": (T["BB"] - T["IBB"]) / (T["BF"] - T["IBB"] - T["HP"]),
+        "HR":  T["HR"] / (T["BF"] - T["HP"] - T["BB"]),
+        "SO":  T["K"] / (T["BF"] - T["HP"] - T["BB"]),
+        "HHR": (T["1B"] + T["2B"] + T["3B"]) / (T["AB"] - T["HR"] + T["SF"] - T["K"]),
+    }
+
+
 def read_metadata(league):
-    """25 Metadata.xlsx SP/RP Data + Ratings tabs. READ-ONLY. Returns per role:
-    league actual rates + the two ratings tables (list of dicts) + OVR-vR share."""
+    """The live population: SP/RP Data + Ratings. READ-ONLY. Returns per role:
+    league actual rates + the two ratings tables (list of dicts) + OVR-vR share.
+
+    Source: calib/<LG>/metadata_inputs CSVs when they exist (built from the
+    latest pull by ingest/metadata_inputs.py; the pipeline never writes the
+    workbook's ratings tabs, so those go stale), else 25 Metadata.xlsx."""
+    d = M.live_inputs(league, META_CSVS)
+    if d:
+        print(f"  live population: {M.inputs_label(d, META_CSVS)}")
+        return _read_metadata_csv(d)
+    print(f"  live population: The Sheets {league}/25 Metadata.xlsx tabs "
+          f"(no metadata_inputs CSVs for {league})")
     from openpyxl import load_workbook
     path = os.path.join(REPO, f"The Sheets {league}", "25 Metadata.xlsx")
     wb = load_workbook(path, read_only=True, data_only=True)
@@ -279,17 +311,12 @@ def read_metadata(league):
                 continue
             nrows += 1
             rec = {}
-            for c in ("BF", "AB", "1B", "2B", "3B", "HR", "BB", "IBB", "K", "HP", "SF"):
+            for c in STAT_COLS:
                 v = _num(r[idx[c]]) or 0.0
                 T[c] += v
                 rec[c] = v
             per_id[_num(r[idx["ID"]])] = rec
-        rates = {
-            "uBB": (T["BB"] - T["IBB"]) / (T["BF"] - T["IBB"] - T["HP"]),
-            "HR":  T["HR"] / (T["BF"] - T["HP"] - T["BB"]),
-            "SO":  T["K"] / (T["BF"] - T["HP"] - T["BB"]),
-            "HHR": (T["1B"] + T["2B"] + T["3B"]) / (T["AB"] - T["HR"] + T["SF"] - T["K"]),
-        }
+        rates = _league_rates(T)
         # ratings tabs: vR table = cols 1..14, vL table = cols 18..31 (both carry
         # all rating cols; BF is BF vs that side) — same layout both leagues.
         hdr2, rows2 = _read_table(wb[f"{role} Ratings"])
@@ -315,6 +342,111 @@ def read_metadata(league):
         }
     wb.close()
     return out
+
+
+def _read_metadata_csv(d):
+    """read_metadata() from a metadata_inputs folder, through the loaders
+    metadata_calibrate.py uses for the metadata anchors (same tables)."""
+    out = {}
+    for role in ("SP", "RP"):
+        T = defaultdict(float)
+        per_id = {}
+        nrows = 0
+        for r in M.load_single(os.path.join(d, f"{role}_Data.csv")):
+            pid = _num(r.get("ID"))
+            if pid is None:
+                continue
+            nrows += 1
+            rec = {}
+            for c in STAT_COLS:
+                v = _num(r.get(c)) or 0.0
+                T[c] += v
+                rec[c] = v
+            per_id[pid] = rec
+
+        def tab(rows):
+            recs = []
+            for r in rows:
+                vid, bf = _num(r.get("ID")), _num(r.get("BF"))
+                if vid is None or bf is None:
+                    continue
+                rec = {h: _num(v) for h, v in r.items()}
+                rec["ID"], rec["BF"] = vid, bf
+                recs.append(rec)
+            return recs
+        vr_rows, vl_rows = M.load_vr_vl(os.path.join(d, f"{role}_Ratings.csv"))
+        vr, vl = tab(vr_rows), tab(vl_rows)
+        bf_vr = sum(x["BF"] for x in vr)
+        bf_vl = sum(x["BF"] for x in vl)
+        out[role] = {
+            "rates": _league_rates(T), "vr": vr, "vl": vl,
+            "share": bf_vr / (bf_vr + bf_vl),
+            "stat_rows": nrows, "T": dict(T), "per_id": per_id,
+        }
+    return out
+
+
+def _live_rate(s, blk):
+    """(season rate, denominator) of one block from a Data-tab stat record."""
+    if blk == "SO":
+        den, y_num = s["BF"] - s["HP"] - s["BB"], s["K"]
+    elif blk == "uBB":
+        den, y_num = s["BF"] - s["IBB"] - s["HP"], s["BB"] - s["IBB"]
+    elif blk == "HR":
+        den, y_num = s["BF"] - s["HP"] - s["BB"], s["HR"]
+    else:  # HHR
+        den, y_num = s["AB"] - s["HR"] + s["SF"] - s["K"], s["1B"] + s["2B"] + s["3B"]
+    return (y_num / den if den > 0 else None), den
+
+
+def live_gate(mrole, blk, xcol, xcol_vl, f_sig, f_two):
+    """Real-season check of the S-curve vs the two-segment line for one block
+    (promote_scurves.py chooses per block from it). Engine frame: each curve
+    at the pitcher's raw vR and vL rating, blended by the role's vR share;
+    actual = his season rate in this role, weight = the rate's denominator.
+    Each curve's own weighted mean miss is removed first (level-matched), so
+    only the shape is compared. Buckets: 5-point vR-rating rungs."""
+    share = mrole["share"]
+    rat_vr = {x["ID"]: x.get(xcol) for x in mrole["vr"]}
+    rat_vl = {x["ID"]: x.get(xcol_vl) for x in mrole["vl"]}
+    pts = []
+    for pid, s in mrole["per_id"].items():
+        rv, rl = rat_vr.get(pid), rat_vl.get(pid)
+        if rv is None and rl is None:
+            continue
+        rv = float(rv if rv is not None else rl)
+        rl = float(rl if rl is not None else rv)
+        y, den = _live_rate(s, blk)
+        if den <= 0:
+            continue
+        pts.append((rv, y, den,
+                    share * f_sig(rv) + (1 - share) * f_sig(rl),
+                    share * f_two(rv) + (1 - share) * f_two(rl)))
+    W = sum(w for _, _, w, _, _ in pts)
+    if W <= 0:
+        return None
+    bias_s = sum(w * (ps - y) for _, y, w, ps, _ in pts) / W
+    bias_t = sum(w * (pt - y) for _, y, w, _, pt in pts) / W
+    b = defaultdict(lambda: [0, 0.0, 0.0, 0.0, 0.0])   # rung -> n, w, w*y, w*sig, w*two
+    for r, y, w, ps, pt in pts:
+        rung = round(r / 5) * 5
+        if not (SUPPORT[0] <= rung <= SUPPORT[1]):
+            continue
+        a = b[rung]
+        a[0] += 1
+        a[1] += w
+        a[2] += w * y
+        a[3] += w * (ps - bias_s)
+        a[4] += w * (pt - bias_t)
+    wb = sum(a[1] for a in b.values())
+
+    def rmse(k):
+        return math.sqrt(sum(a[1] * (a[2] / a[1] - a[k] / a[1]) ** 2 for a in b.values()) / wb)
+    return {"n": len(pts), "w": W, "bias_sigmoid": bias_s, "bias_twoline": bias_t,
+            "rmse_sigmoid": rmse(3), "rmse_twoline": rmse(4),
+            "buckets": {str(int(r)): {"n": a[0], "w": a[1], "emp": a[2] / a[1],
+                                      "sig": a[3] / a[1], "two": a[4] / a[1]}
+                        for r, a in sorted(b.items())}}
 
 
 def live_points(mrole, blk, xcol, xcol_vl):
@@ -445,10 +577,17 @@ def main():
     print(f"  pool fidelity vs constants-latest.json: worst rel diff {worst:.2e} "
           f"({'OK' if worst < 1e-6 else '!! POOLS DIFFER FROM LIVE FIT'})")
 
-    print(f"== {lg}: live metadata (25 Metadata.xlsx, read-only) ==")
+    print(f"== {lg}: live population (read-only) ==")
     meta = read_metadata(lg)
+    # the engine's two-segment constants, as pitchers.py reads them (the
+    # Recalibrate bats run sync_datapoints.py before this step)
+    dp_live = P.scan_consts(os.path.join(REPO, f"The Sheets {lg}", "The Sheet Pitchers.xlsx"))[0]
 
-    result = {"league": lg, "support": list(SUPPORT), "roles": {}}
+    src = M.live_inputs(lg, META_CSVS)
+    result = {"league": lg, "support": list(SUPPORT),
+              "live_source": (M.inputs_label(src, META_CSVS) if src
+                              else f"The Sheets {lg}/25 Metadata.xlsx"),
+              "roles": {}}
     for role in ("SP", "RP"):
         pool = pools[role]
         mrole = meta[role]
@@ -569,6 +708,16 @@ def main():
                       + (1 - mrole["share"]) * live_mean(f, mrole["vl"], xcol_vl))
             offset = mrole["rates"][blk] - E_live
 
+            # the same level step for the two-segment line: its BF-weighted
+            # mean over the live population becomes the league's actual rate
+            def f_two(r, role=role, blk=blk):
+                return P.twoline_rate(dp_live, role, blk, r)
+            E_two = (mrole["share"] * live_mean(f_two, mrole["vr"], xcol)
+                     + (1 - mrole["share"]) * live_mean(f_two, mrole["vl"], xcol_vl))
+            tl_offset = mrole["rates"][blk] - E_two
+            gate = live_gate(mrole, blk, xcol, xcol_vl,
+                             lambda r: f(r) + offset, lambda r: f_two(r) + tl_offset)
+
             # bucket residual table (ARCHIVE frame: the clone-shape fit vs the
             # empirical bucket means vs the current two-line fit)
             rows = []
@@ -600,6 +749,15 @@ def main():
             for rung, n, bf, emp, sig, two in rows:
                 print(f"      r={rung:3.0f} n={n:4d}  emp={emp:.4f}  sig={sig:.4f} "
                       f"({sig-emp:+.4f})  two={two:.4f} ({two-emp:+.4f})")
+            print(f"       two-line level offset {tl_offset:+.5f} (its live mean "
+                  f"{E_two:.5f} vs league {mrole['rates'][blk]:.5f})")
+            if gate:
+                gain = 1.0 - gate["rmse_sigmoid"] / gate["rmse_twoline"] if gate["rmse_twoline"] > 0 else 0.0
+                print(f"       live-season gate ({gate['n']} pitchers, level-matched bucketRMSE): "
+                      f"sigmoid={gate['rmse_sigmoid']:.5f} twoline={gate['rmse_twoline']:.5f} "
+                      f"(S-curve {gain:+.1%} vs two-line)")
+            else:
+                print("       live-season gate: no live points")
 
             result["roles"][role]["blocks"][blk] = {
                 "A": fit["A"], "B": fit["B"], "k": fit_k, "m": fit_m,
@@ -614,6 +772,8 @@ def main():
                 "live_scale": {"a": a_sc, "c": c_sc, "sse_ratio": sse_live / sse_id,
                                "n_live": len(lpts)},
                 "bucket_rmse_sigmoid": wr_sig, "bucket_rmse_twoline": wr_two,
+                "twoline_offset": tl_offset, "twoline_E_live": E_two,
+                "live_gate": gate,
                 "buckets": {str(int(rung)): {"n": n, "bf": bf, "emp": emp,
                                              "sig": sig, "two": two}
                             for rung, n, bf, emp, sig, two in rows},

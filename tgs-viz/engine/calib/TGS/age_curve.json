@@ -1,198 +1,207 @@
 {
  "league": "TGS",
+ "calibration": "TGS",
  "window": [
-  "2026-05-31_p10.csv.gz",
-  "2026-09-10_p62.csv.gz"
+  "2041-01-01_p564.csv.gz",
+  "2026-10-01_p568.csv.gz"
  ],
- "span_years": 1.516,
+ "span_years": 1.748,
  "pairs": {
-  "used": 39,
-  "zero_time": 1,
+  "used": 42,
+  "zero_time": 7,
   "contaminated": 0
  },
- "players": 9481,
+ "players": 10263,
  "curve": {
   "16": {
-   "n": 972,
-   "players": 112,
-   "years": 37.4,
-   "mean": 0.1112,
-   "closure": 0.0136,
-   "n_gap": 972
+   "n": 986,
+   "players": 113,
+   "years": 42.8,
+   "mean": 0.1631,
+   "closure": 0.0201,
+   "n_gap": 986
   },
   "17": {
-   "n": 2956,
-   "players": 271,
-   "years": 112.1,
-   "mean": 0.1806,
-   "closure": 0.025,
-   "n_gap": 2956
+   "n": 3515,
+   "players": 369,
+   "years": 138.2,
+   "mean": 0.2115,
+   "closure": 0.0297,
+   "n_gap": 3515
   },
   "18": {
-   "n": 15141,
-   "players": 1270,
-   "years": 571.2,
-   "mean": 0.7838,
-   "closure": 0.1535,
-   "n_gap": 15141
+   "n": 17944,
+   "players": 1876,
+   "years": 702.8,
+   "mean": 0.7998,
+   "closure": 0.1644,
+   "n_gap": 17944
   },
   "19": {
-   "n": 34585,
-   "players": 2175,
-   "years": 1257.5,
-   "mean": 0.6495,
-   "closure": 0.155,
-   "n_gap": 34585
+   "n": 37117,
+   "players": 2454,
+   "years": 1452.2,
+   "mean": 0.6703,
+   "closure": 0.1618,
+   "n_gap": 37117
   },
   "20": {
-   "n": 34882,
-   "players": 2214,
-   "years": 1253.8,
-   "mean": 0.708,
-   "closure": 0.2093,
-   "n_gap": 34874
+   "n": 37698,
+   "players": 2438,
+   "years": 1458.9,
+   "mean": 0.7296,
+   "closure": 0.2199,
+   "n_gap": 37694
   },
   "21": {
-   "n": 31576,
-   "players": 2084,
-   "years": 1139.9,
-   "mean": 0.5334,
-   "closure": 0.2109,
-   "n_gap": 31325
+   "n": 34756,
+   "players": 2365,
+   "years": 1343.1,
+   "mean": 0.5553,
+   "closure": 0.2249,
+   "n_gap": 34530
   },
   "22": {
-   "n": 30304,
-   "players": 1998,
-   "years": 1108.1,
-   "mean": 0.3995,
-   "closure": 0.2276,
-   "n_gap": 29282
+   "n": 33176,
+   "players": 2260,
+   "years": 1298.1,
+   "mean": 0.4274,
+   "closure": 0.245,
+   "n_gap": 31901
   },
   "23": {
-   "n": 29224,
-   "players": 1886,
-   "years": 1076.0,
-   "mean": 0.2337,
-   "closure": 0.177,
-   "n_gap": 26791
+   "n": 31652,
+   "players": 2127,
+   "years": 1246.7,
+   "mean": 0.2464,
+   "closure": 0.1901,
+   "n_gap": 28293
   },
   "24": {
-   "n": 26380,
-   "players": 1856,
-   "years": 994.4,
-   "mean": 0.1162,
-   "closure": 0.1275,
-   "n_gap": 21932
+   "n": 28448,
+   "players": 2000,
+   "years": 1140.6,
+   "mean": 0.118,
+   "closure": 0.1323,
+   "n_gap": 22579
   },
   "25": {
-   "n": 24417,
-   "players": 1774,
-   "years": 943.3,
-   "mean": -0.0028,
-   "closure": 0.0366,
-   "n_gap": 16696
+   "n": 26103,
+   "players": 1915,
+   "years": 1066.3,
+   "mean": -0.0039,
+   "closure": 0.0547,
+   "n_gap": 17230
   },
   "26": {
-   "n": 24397,
-   "players": 1757,
-   "years": 937.8,
-   "mean": -0.0693,
-   "closure": -0.0196,
-   "n_gap": 13711
+   "n": 26084,
+   "players": 1892,
+   "years": 1061.4,
+   "mean": -0.0598,
+   "closure": 0.0078,
+   "n_gap": 14010
   },
   "27": {
-   "n": 21158,
-   "players": 1566,
-   "years": 823.6,
+   "n": 22721,
+   "players": 1686,
+   "years": 932.5,
    "mean": -0.1137,
-   "closure": -0.0999,
-   "n_gap": 9721
+   "closure": -0.0913,
+   "n_gap": 10138
   },
   "28": {
-   "n": 16898,
-   "players": 1057,
-   "years": 609.0,
-   "mean": -0.1593,
-   "closure": -0.1772,
-   "n_gap": 7730
+   "n": 18160,
+   "players": 1161,
+   "years": 707.4,
+   "mean": -0.1492,
+   "closure": -0.1164,
+   "n_gap": 8185
   },
   "29": {
-   "n": 8317,
-   "players": 600,
-   "years": 279.9,
-   "mean": -0.1911,
-   "closure": -0.2018,
-   "n_gap": 4256
+   "n": 9672,
+   "players": 702,
+   "years": 358.1,
+   "mean": -0.1795,
+   "closure": -0.1955,
+   "n_gap": 4734
   },
   "30": {
-   "n": 3612,
-   "players": 267,
-   "years": 133.2,
-   "mean": -0.1545,
-   "closure": -0.096,
-   "n_gap": 320
+   "n": 4157,
+   "players": 331,
+   "years": 161.6,
+   "mean": -0.1354,
+   "closure": 0.1444,
+   "n_gap": 217
   },
   "31": {
-   "n": 2208,
-   "players": 179,
-   "years": 78.0,
-   "mean": -0.2764,
-   "closure": -0.0788,
-   "n_gap": 135
-  },
-  "32": {
-   "n": 1462,
-   "players": 105,
-   "years": 55.2,
-   "mean": -0.3175,
-   "closure": -0.4123,
-   "n_gap": 133
-  },
-  "33": {
-   "n": 1291,
-   "players": 96,
-   "years": 48.8,
-   "mean": -0.1668,
-   "closure": -0.2391,
+   "n": 2551,
+   "players": 195,
+   "years": 98.1,
+   "mean": -0.2565,
+   "closure": 0.879,
    "n_gap": 53
   },
-  "34": {
-   "n": 938,
-   "players": 62,
-   "years": 33.2,
-   "mean": -0.2332,
-   "closure": -0.2716,
-   "n_gap": 68
-  },
-  "35": {
-   "n": 354,
-   "players": 26,
-   "years": 12.4,
-   "mean": -0.2431,
-   "closure": -0.7185,
+  "32": {
+   "n": 1534,
+   "players": 113,
+   "years": 61.6,
+   "mean": -0.2761,
+   "closure": 2.7121,
    "n_gap": 27
   },
-  "36": {
-   "n": 144,
-   "players": 10,
-   "years": 4.6,
-   "mean": -0.1991,
+  "33": {
+   "n": 1378,
+   "players": 99,
+   "years": 55.8,
+   "mean": -0.1636,
    "closure": null,
-   "n_gap": 1
+   "n_gap": 11
+  },
+  "34": {
+   "n": 992,
+   "players": 63,
+   "years": 38.1,
+   "mean": -0.213,
+   "closure": -1.0223,
+   "n_gap": 26
+  },
+  "35": {
+   "n": 453,
+   "players": 36,
+   "years": 16.8,
+   "mean": -0.2169,
+   "closure": 0.3047,
+   "n_gap": 26
+  },
+  "36": {
+   "n": 169,
+   "players": 12,
+   "years": 6.1,
+   "mean": -0.0762,
+   "closure": null,
+   "n_gap": 0
   },
   "37": {
-   "n": 54,
-   "players": 4,
-   "years": 2.0,
-   "mean": -0.0402,
+   "n": 67,
+   "players": 5,
+   "years": 2.5,
+   "mean": 0.1301,
    "closure": null,
    "n_gap": 4
   },
+  "38": {
+   "n": 31,
+   "players": 2,
+   "years": 1.0,
+   "mean": 0.0561,
+   "closure": null,
+   "n_gap": 0
+  },
   "41": {
-   "n": 62,
+   "n": 55,
    "players": 3,
    "years": 2.0,
-   "mean": 0.0804,
+   "mean": 0.0611,
    "closure": null,
    "n_gap": 0
   }

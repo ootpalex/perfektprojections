@@ -1,0 +1,41 @@
+Team,Avg RHB,Avg LHB,Average,Doubles,Triples,HR RHB,HR LHB,Home Runs,Capacity,Stadium Type,Surface
+Anaheim Angels,1.010,0.990,1.003,0.955,1.015,1.210,1.190,1.203,"45,000",Outdoor,Grass
+Arizona Diamondbacks,1.010,1.050,1.024,1.090,1.730,1.010,1.090,1.038,"45,000",Retractable Roof,Grass
+Baltimore Orioles,1.050,1.040,1.047,0.980,0.890,1.270,1.180,1.239,"45,000",Outdoor,Grass
+Boston Red Sox,0.980,0.980,0.980,0.990,0.430,1.050,1.100,1.068,"45,000",Outdoor,Grass
+Chicago Cubs,1.000,0.980,0.993,0.990,0.915,1.220,1.200,1.213,"45,000",Outdoor,Grass
+Chicago White Sox,0.940,0.990,0.958,0.810,0.490,1.370,1.180,1.304,"45,000",Outdoor,Grass
+Cincinnati Reds,1.000,0.980,0.993,0.990,0.915,1.220,1.200,1.213,"45,000",Outdoor,Grass
+Cleveland Guardians,0.980,0.910,0.956,0.860,1.080,0.770,0.710,0.749,"45,000",Outdoor,Grass
+Colorado Rockies,1.170,1.160,1.167,1.265,2.060,1.140,1.190,1.158,"45,000",Outdoor,Grass
+Florida Marlins,0.960,0.960,0.960,0.835,0.460,0.980,0.980,0.980,"45,000",Retractable Roof,Grass
+Fukuoka Vipers,0.988,1.000,0.992,0.925,0.906,1.044,1.044,1.044,"45,000",Outdoor,Artificial Turf
+Hiroshima Phoenix,0.983,0.977,0.981,0.992,1.021,1.053,1.095,1.068,"45,000",Outdoor,Artificial Turf
+Houston Astros,1.060,1.050,1.057,1.390,1.230,0.940,0.910,0.930,"45,000",Retractable Roof,Grass
+Kansai Cubs,0.966,0.955,0.962,0.929,0.959,1.121,1.175,1.140,"45,000",Outdoor,Grass
+Kansas City Monarchs,1.030,1.020,1.027,1.095,1.045,0.980,0.930,0.963,"45,000",Outdoor,Grass
+Kansas City Royals,0.980,0.970,0.977,0.890,0.805,1.140,1.100,1.126,"45,000",Retractable Roof,Grass
+Kyoto Aces,1.035,1.022,1.030,1.173,1.217,0.885,0.949,0.908,"45,000",Dome,Artificial Turf
+Los Angeles Dodgers,1.030,1.020,1.027,1.095,1.045,0.980,0.930,0.963,"45,000",Outdoor,Grass
+Milwaukee Brewers,0.980,0.970,0.977,1.005,0.950,1.040,1.120,1.068,"45,000",Retractable Roof,Grass
+Minnesota Twins,0.980,0.950,0.970,0.985,1.320,0.740,0.580,0.684,"45,000",Outdoor,Grass
+Montreal Expos,1.090,1.090,1.090,1.075,1.330,1.110,1.130,1.117,"45,000",Outdoor,Grass
+Nagoya Dolphins,0.986,0.978,0.983,0.996,1.025,1.050,1.103,1.069,"45,000",Dome,Artificial Turf
+New York Mets,1.170,1.160,1.167,1.265,2.060,1.140,1.190,1.158,"45,000",Outdoor,Grass
+New York Yankees,1.010,1.000,1.007,0.895,0.745,1.070,1.180,1.109,"45,000",Outdoor,Grass
+Oakland Athletics,1.060,1.020,1.046,1.315,1.040,0.820,0.870,0.838,"45,000",Outdoor,Grass
+Osaka Bulls,1.070,0.990,1.042,1.010,1.450,1.060,0.920,1.011,"45,000",Dome,Artificial Turf
+Philadelphia Phillies,0.980,0.950,0.970,0.985,1.320,0.740,0.580,0.684,"45,000",Outdoor,Grass
+Pittsburgh Pirates,1.030,0.980,1.013,1.045,0.635,1.060,0.850,0.987,"45,000",Outdoor,Grass
+Saitama Panthers,0.978,0.971,0.976,0.990,1.018,1.067,1.106,1.080,"45,000",Dome,Artificial Turf
+San Diego Padres,0.940,0.950,0.944,0.950,0.910,0.920,0.800,0.878,"45,000",Outdoor,Grass
+Sapporo Bruisers,0.986,0.977,0.983,1.001,1.030,1.046,1.106,1.067,"45,000",Dome,Artificial Turf
+Sendai Woodpeckers,1.007,0.980,0.998,1.069,1.100,0.916,1.114,0.986,"45,000",Outdoor,Grass
+St. Louis Cardinals,1.170,1.160,1.167,1.265,2.060,1.140,1.190,1.158,"45,000",Outdoor,Grass
+Tampa Bay Devil Rays,1.000,1.010,1.004,1.020,1.265,1.020,0.860,0.964,"45,000",Dome,Artificial Turf
+Texas Rangers,0.980,0.910,0.956,0.860,1.080,0.770,0.710,0.749,"45,000",Retractable Roof,Grass
+Tokyo Golden Kites,1.022,1.008,1.017,1.123,1.164,0.934,0.994,0.955,"45,000",Dome,Artificial Turf
+Tokyo Jaguars,0.979,0.969,0.976,0.982,1.010,1.069,1.125,1.089,"45,000",Outdoor,Artificial Turf
+Toronto Blue Jays,0.990,0.990,0.990,1.065,0.870,1.080,1.140,1.101,"45,000",Retractable Roof,Artificial Turf
+Washington Nationals,1.020,1.060,1.034,1.315,1.040,0.870,0.820,0.853,"45,000",Outdoor,Grass
+Yokohama Astrals,0.970,0.940,0.960,0.970,1.200,0.740,0.590,0.688,"45,000",Outdoor,Artificial Turf

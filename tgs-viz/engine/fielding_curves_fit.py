@@ -22,8 +22,9 @@ Method (NOTHING INVENTED):
      via weighted PAVA. The curve is the piecewise-linear interpolation
      through the isotonic bucket means (flat beyond the observed support).
   3. Transport: offset = the LIVE position population's innings-weighted mean
-     of  curve(RNG) + x2*m2  (populations + innings read straight from the
-     league's 25 Metadata.xlsx Fielding Data/Fielding Ratings tabs,
+     of  curve(RNG) + x2*m2  (populations + innings read from the league's
+     calib/<LG>/metadata_inputs Fielding_Data/Fielding_Ratings CSVs when they
+     exist, else its 25 Metadata.xlsx Fielding Data/Fielding Ratings tabs,
      READ-ONLY). The engine evaluates  curve(RNG) + x2*m2 - offset, so the
      ip-weighted league-mean PM-term is 0 BY CONSTRUCTION — the Phase A
      anchor property survives exactly (the linear anchors only achieved it
@@ -51,6 +52,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import calibrate as C  # noqa: E402
+import metadata_calibrate as M  # noqa: E402  (metadata_inputs CSV loaders)
 from hitter_tails_fit import pava  # noqa: E402  (same weighted PAVA)
 
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -105,7 +107,49 @@ def height_cm(ht):
         return None
 
 
+LIVE_CSVS = ("Fielding_Data.csv", "Fielding_Ratings.csv")
+
+
 def read_live(league):
+    """The live population (READ-ONLY): per-position live [(id, innings)] from
+    Fielding Data + per-id ratings from Fielding Ratings, plus a source label.
+
+    Source: calib/<LG>/metadata_inputs CSVs when they exist (built from the
+    latest pull by ingest/metadata_inputs.py; the pipeline never writes the
+    workbook's tabs, so those go stale), else the 25 Metadata.xlsx tabs."""
+    d = M.live_inputs(league, LIVE_CSVS)
+    if d:
+        pos_ip, ratings = _read_live_csv(d)
+        return pos_ip, ratings, M.inputs_label(d, LIVE_CSVS)
+    pos_ip, ratings = _read_live_xlsx(league)
+    return pos_ip, ratings, f"The Sheets {league}/25 Metadata.xlsx tabs (no metadata_inputs CSVs for {league})"
+
+
+def _read_live_csv(d):
+    """read_live() from a metadata_inputs folder, through metadata_calibrate's
+    loaders (the same tables the metadata fielding anchors use)."""
+    pos_ip = {}
+    for pos, rows in M.load_fielding(os.path.join(d, "Fielding_Data.csv")).items():
+        pairs = []
+        for r in rows:
+            pid = _num(r.get("ID"))
+            ip = dollarde(r.get("IP"))
+            if pid is not None and ip > 0:
+                pairs.append((int(pid), ip))
+        pos_ip[pos] = pairs
+    ratings = {}
+    for r in M.load_single(os.path.join(d, "Fielding_Ratings.csv")):
+        pid = _num(r.get("ID"))
+        if pid is None:
+            continue
+        rec = {col: _num(r[col]) for col in ("IF RNG", "IF ARM", "OF RNG") if col in r}
+        if "HT" in r:
+            rec["HT"] = height_cm(r["HT"])
+        ratings[int(pid)] = rec
+    return pos_ip, ratings
+
+
+def _read_live_xlsx(league):
     """25 Metadata.xlsx (READ-ONLY): per-position live [(id, innings)] from the
     Fielding Data tab + per-id ratings from the Fielding Ratings tab."""
     from openpyxl import load_workbook
@@ -189,13 +233,16 @@ def fit_league(league):
     _, _, fld = C.drop_partial_final_season(bat, pit, fld)
     del bat, pit
 
-    print(f"=== {league}: live population (25 Metadata.xlsx, read-only) ===")
-    pos_ip, live_ratings = read_live(league)
+    print(f"=== {league}: live population (read-only) ===")
+    pos_ip, live_ratings, live_src = read_live(league)
+    print(f"  live population: {live_src}")
+    xlsx = live_src.startswith(f"The Sheets {league}/25 Metadata.xlsx")
 
     out = {"league": league,
            "fitted_at": datetime.datetime.now().isoformat(timespec="seconds"),
            "source": f"engine/fielding_curves_fit.py over calib/{league} archive "
-                     "+ 25 Metadata.xlsx live population (offsets)",
+                     + ("+ 25 Metadata.xlsx live population (offsets)" if xlsx
+                        else f"+ live population (offsets) from {live_src}"),
            "positions": {}}
     worst_fid = 0.0
     gate_worst = {}

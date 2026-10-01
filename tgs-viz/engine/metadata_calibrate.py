@@ -61,6 +61,7 @@ import json
 import os
 import re
 import sys
+import time
 
 POSITIONS = ["C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"]
 # 'Fielding Calc' row 25 "Standarized IP per POS" (sic): C 1000, everyone else 1200
@@ -211,6 +212,36 @@ def _by_id(rows, valfn):
         i = int(num(r["ID"]))
         out[i] = out.get(i, 0.0) + valfn(r)
     return out
+
+
+# ---------------------------------------------------------------- live inputs for the fit tools
+
+def live_inputs(league, names):
+    """calib/<LEAGUE>/metadata_inputs when every CSV in `names` is there, else
+    None. ingest/metadata_inputs.py writes these from the latest StatsPlus pull;
+    it never updates the ratings tabs of 25 Metadata.xlsx, so the fit tools
+    (scurve_fit.py, fielding_curves_fit.py) read the CSVs first. A league with
+    no metadata_inputs folder keeps reading 25 Metadata.xlsx."""
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calib", league, "metadata_inputs")
+    if all(os.path.exists(os.path.join(d, n)) for n in names):
+        return d
+    return None
+
+
+def inputs_label(d, names):
+    """One log line for a metadata_inputs folder: season, in-game date and
+    ratings pull from its manifest.json, and when the CSVs were written."""
+    try:
+        with open(os.path.join(d, "manifest.json"), encoding="utf-8") as fh:
+            man = json.load(fh)
+    except (OSError, ValueError):
+        man = {}
+    saved = max(os.path.getmtime(os.path.join(d, n)) for n in names)
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    pull = os.path.basename(man.get("pull") or "") or "?"
+    return (f"{os.path.relpath(d, repo)} CSVs (season {man.get('season', '?')}, "
+            f"in-game date {man.get('in_game_date', '?')}, ratings pull {pull}, "
+            f"CSVs saved {time.strftime('%Y-%m-%d %H:%M', time.localtime(saved))})")
 
 # ---------------------------------------------------------------- run environment
 

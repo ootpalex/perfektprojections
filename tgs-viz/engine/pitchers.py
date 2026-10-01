@@ -81,11 +81,110 @@ def num(v):
 
 
 def load_scurves(path):
-    """Load a scurve_fit.py scurves-preview.json -> the `scurves` dict compute()
-    accepts: {"SP": {block: params}, "RP": {block: params}}. OPT-IN ONLY — the
-    live pipeline never passes this, so it keeps today's two-segment output."""
+    """Load a scurve_fit.py scurves-preview.json or a promote_scurves.py
+    scurves.json -> the `scurves` dict compute() accepts:
+    {"SP": {block: params}, "RP": {block: params}}. OPT-IN ONLY: the
+    sheet-fidelity validator never passes this.
+
+    scurves.json is chosen per block (promote_scurves.py): a block missing
+    from a role runs the two-segment line, and a role may have no blocks.
+    Its "twoline_offsets" (per role, per block) come back under "_twoline";
+    compute() adds them to the two-segment lines so those match the live
+    league's level. Files without them (previews, older scurves.json) give
+    no "_twoline" key."""
     data = json.load(open(path, encoding="utf-8"))
-    return {role: data["roles"][role]["blocks"] for role in ("SP", "RP")}
+    roles = data.get("roles") or {}
+    out = {role: dict((roles.get(role) or {}).get("blocks") or {}) for role in ("SP", "RP")}
+    tl = {role: dict((roles.get(role) or {}).get("twoline_offsets") or {}) for role in ("SP", "RP")}
+    if any(tl.values()):
+        out["_twoline"] = tl
+    return out
+
+
+PITCH_TYPES = ["FB", "SL", "CB", "CH", "CT", "SI", "SP", "KC", "KN", "SC", "FO", "CC"]
+ROLE_STUFF_FEATURES = ("n", "g1", "g2", "mean", "top2_gap", "best_gap", "stu")
+# One offset per displayed listed-role stuff level (20, 25, ..., 60 or more;
+# 20 is the floor, where a listed reliever never gains) on top of the linear
+# terms (the "stu" slope then only acts inside the pooled 60+ level):
+# the gain is not linear in the stuff level (review 2026-09-26: a single
+# linear term under-predicted 50+ stuff arms and kept rising past 75).
+ROLE_STUFF_LEVELS = (20, 25, 30, 35, 40, 45, 50, 55, 60)
+
+
+def role_stuff_level(stu):
+    """Displayed stuff level bin of the role-stuff model: 20 or less -> 20,
+    60 or more -> 60, else the nearest 5."""
+    b = int(round(float(stu) / 5.0)) * 5
+    return min(max(b, ROLE_STUFF_LEVELS[0]), ROLE_STUFF_LEVELS[-1])
+
+
+def arsenal_features(grades, stu):
+    """Arsenal features of the role-stuff model (role_stuff_fit.py): pitch
+    count, best and second grade, mean grade, top-two mean minus the mean,
+    best minus the mean of the rest, and the displayed stuff of the listed
+    role. grades: {pitch: grade}; zero / blank grades are pitches he lacks.
+    None when he has no graded pitch or no stuff."""
+    g = sorted((float(v) for v in (grades or {}).values() if v not in (None, "") and float(v) > 0),
+               reverse=True)
+    if not g or stu is None:
+        return None
+    n = len(g)
+    g1, g2 = g[0], (g[1] if n > 1 else g[0])
+    mean = sum(g) / n
+    rest = g[1:] if n > 1 else g
+    return {"n": n, "g1": g1, "g2": g2, "mean": mean, "top2_gap": (g1 + g2) / 2 - mean,
+            "best_gap": g1 - sum(rest) / len(rest), "stu": float(stu)}
+
+
+def role_stuff_gain(model, grades, stu):
+    """Expected stuff gain as a reliever (display points) from one fitted
+    view of calib/<LEAGUE>/role_stuff.json, or None when the arsenal is
+    unknown. Version 2 models carry a level offset per displayed stuff level
+    (level_coef); the first form had a linear "stu" feature instead."""
+    f = arsenal_features(grades, stu)
+    if f is None or not model:
+        return None
+    v = model.get("intercept", 0.0) + sum(c * f[k] for k, c in zip(model["features"], model["coef"]))
+    lc = model.get("level_coef")
+    if lc:
+        v += float(lc.get(str(role_stuff_level(f["stu"])), 0.0))
+    lo, hi = model.get("clip", (0.0, 15.0))
+    return min(max(v, lo), hi)
+
+
+def _pos_grades(grades):
+    return {k: float(v) for k, v in (grades or {}).items() if v not in (None, "") and float(v) > 0}
+
+
+def role_stuff_observed(role_stuff, pid, name, listed_sp, grades, stu, pot=False):
+    """What OOTP actually did for THIS pitcher (review 2026-09-26): the gain
+    of his own archived SP <-> RP switch when it had the same pitch grades
+    and the same stuff in his listed role (for pot=True: the potential
+    grades and STU P). None when there is no such switch."""
+    obs = (role_stuff or {}).get("observed") or {}
+    rows = obs.get(str(pid)) if pid is not None else None
+    if not rows or stu is None:
+        return None
+    mine = _pos_grades(grades)
+    for o in rows:
+        if o.get("name") != name:
+            continue
+        if _pos_grades(o.get("pot_grades" if pot else "grades")) != mine:
+            continue
+        sp_k, rp_k = ("sp_stu_p", "rp_stu_p") if pot else ("sp_stu", "rp_stu")
+        if o.get(sp_k) is None or o.get(rp_k) is None:
+            continue
+        if float(o[sp_k if listed_sp else rp_k]) != float(stu):
+            continue
+        return float(o[rp_k]) - float(o[sp_k])
+    return None
+
+
+def load_role_stuff(path):
+    """Load a role_stuff_fit.py calib/<LEAGUE>/role_stuff.json. OPT-IN, the
+    same contract as load_currency: the live pipeline passes it, the
+    sheet-fidelity validator never does."""
+    return json.load(open(path, encoding="utf-8"))
 
 
 def load_currency(path):
@@ -96,8 +195,73 @@ def load_currency(path):
     return json.load(open(path, encoding="utf-8"))
 
 
-def compute(p, dp, filt, park_aa, scurves=None, currency=None):
+# Data Points cells of the two role stat lines (SP: present-day starter, RP:
+# present-day reliever; the P lines reuse them).
+SP_CFG = dict(
+    role="SP",
+    HBP_k="K10",
+    uBB_anchor="H5", uBB_sh="C3", uBB_ih="B3", uBB_sl="E3", uBB_il="D3", uBB_k="K3",
+    SO_anchor="H2", SO_sh="C7", SO_ih="B7", SO_sl="E7", SO_il="D7", SO_k="K5",
+    stu_delta=0, stu_delta_rp=-5, stu_lo_adj=True,
+    HR_anchor="H3", HR_sh="C5", HR_ih="B5", HR_sl="E5", HR_il="D5", HR_k="K4",
+    HH_anchor="H4", HH_sh="C9", HH_ih="B9", HH_sl="E9", HH_il="D9", HH_k="K6",
+    xbh_k="K7", t3b_k="K8",
+    hld_anchor="I2", sbat_k="K12", sbpct_k="K9",
+    woba_w=["H12", "H13", "H14", "H15", "H16", "H17", "H18", "H19"],
+    scale="I31", ra9_base="H41",
+)
+RP_CFG = dict(
+    role="RP",
+    HBP_k="K22",
+    uBB_anchor="H10", uBB_sh="C14", uBB_ih="B14", uBB_sl="E14", uBB_il="D14", uBB_k="K15",
+    SO_anchor="H7", SO_sh="C18", SO_ih="B18", SO_sl="E18", SO_il="D18", SO_k="K17",
+    # audit B6 (INTENTIONAL divergence from the sheet): the sheet's RP <50 branch
+    # drops the +5 starter-STU bonus (stu_lo_adj was False here) while its SP-block
+    # mirror keeps the -5 in both branches, proving intent. A starter at STU 40 lost
+    # 5·E18 of K% and his relief floor cliffed at the 50 crossing; the engine now
+    # applies the adjusted STU in BOTH branches.
+    stu_delta=5, stu_delta_rp=0, stu_lo_adj=True,
+    HR_anchor="H8", HR_sh="C16", HR_ih="B16", HR_sl="E16", HR_il="D16", HR_k="K16",
+    HH_anchor="H9", HH_sh="C20", HH_ih="B20", HH_sl="E20", HH_il="D20", HH_k="K18",
+    xbh_k="K19", t3b_k="K20",
+    # INTENTIONAL divergence from the sheet: the sheet's 'SB% vR/vL RP' formulas
+    # add Data Points K9 — the SP block's league SB% — while their SBAT sibling
+    # in the same formula pair correctly adds the RP block's K24. K21 is the RP
+    # league SB% and had no reader anywhere; the RP line now adds its own rate,
+    # like every other constant in RP_CFG.
+    hld_anchor="I7", sbat_k="K24", sbpct_k="K21",
+    woba_w=["K29", "K30", "K31", "K32", "K33", "K34", "K35", "K36"],
+    scale="I29", ra9_base="H42",
+)
+# rate block -> its cell-name prefix in SP_CFG / RP_CFG
+TWOLINE_PREFIX = {"uBB": "uBB", "SO": "SO", "HR": "HR", "HHR": "HH"}
+
+
+def twoline_rate(dp, role, blk, r):
+    """One block's two-segment rate line at rating r, as statline() prices it
+    with no level offset, no role-stuff shift and no handedness multiplier.
+    scurve_fit.py uses it to level the line on the live population."""
+    cfg = SP_CFG if role == "SP" else RP_CFG
+    pf = TWOLINE_PREFIX[blk]
+    g = lambda k: float(dp[cfg[f"{pf}_{k}"]])
+    if r >= 50:
+        return (r - g("anchor")) * g("sh") + g("ih") + g("k")
+    return (r - g("anchor")) * g("sl") + g("il") + g("k")
+
+
+def compute(p, dp, filt, park_aa, scurves=None, currency=None, role_stuff=None):
     """p: dict of rating inputs + meta (incl. _row). Returns dict of computed outputs.
+
+    role_stuff (OPT-IN, 2026-09-26 — INTENTIONAL divergence from the sheet
+    when passed): a role_stuff_fit.py dict (calib/<LEAGUE>/role_stuff.json).
+    The sheet moves every pitcher's stuff a flat 5 for the other role (-5 for
+    a listed reliever on the starter lines, +5 for a listed starter on the
+    reliever lines). With role_stuff the move is his own expected gain from
+    his arsenal and listed-role stuff (measured on the league's role switches:
+    about half never change a notch). p may carry "_grades" / "_pot_grades"
+    ({pitch: grade}) and "_stu" (overall displayed stuff); a pitcher without
+    them keeps the flat 5. When role_stuff is None the output is bit-identical
+    to the sheet.
 
     Faithful port: every branch / quirk mirrors the sheet's array formulas.
 
@@ -106,6 +270,11 @@ def compute(p, dp, filt, park_aa, scurves=None, currency=None):
     fitted+transported logistic  A + B/(1+e^(-k(r-m))) + offset  (rating clamped
     to the fitted support) instead of the two-segment anchor lines. Everything
     downstream (XBH/3B split, SBAT, wOBA weights, RA/9, WAA) is unchanged.
+    A block missing from scurves[role] keeps the two-segment line; when
+    scurves carries "_twoline" ({role: {block: offset}}, from scurves.json),
+    that offset is added to the block's two-segment rate so the line matches
+    the live league's level (scurve_fit.py measures it the same way as the
+    S-curve's own offset). Slopes and the 50 kink are unchanged.
     When scurves is None (default) the output is bit-identical to the sheet.
 
     currency (OPT-IN, audit D2 + D9 — INTENTIONAL divergence from the sheet
@@ -138,6 +307,46 @@ def compute(p, dp, filt, park_aa, scurves=None, currency=None):
     T = (p.get("T") or "").strip()      # throws R/L/S
     POS = (p.get("POS") or "").strip()
     is_sp = POS == "SP"
+
+    # Role-stuff shifts (opt-in, see the docstring): None keeps the sheet's
+    # flat 5. Current lines use the current arsenal and overall stuff; the P
+    # lines the potential arsenal and STU P. Order: his own archived switch
+    # when it matches (what OOTP did), else the model, else the view's mean
+    # gain (no pitch grades on the row, e.g. the first archived pulls). A
+    # listed reliever never goes below the 20 floor on the starter line, and
+    # a maxed pitcher's potential gain is at least his current gain (review
+    # 2026-09-26: the archive shows STU P gains >= STU gains for maxed arms).
+    def _gain(view, grades_key, stu_val, pot):
+        if not role_stuff:
+            return None
+        g = role_stuff_observed(role_stuff, p.get("_id"), p.get("_name"), is_sp,
+                                p.get(grades_key), stu_val, pot=pot)
+        if g is None:
+            model = (role_stuff.get("models") or {}).get(view)
+            g = role_stuff_gain(model, p.get(grades_key), stu_val)
+            if g is None and model and model.get("mean_gain") is not None:
+                g = float(model["mean_gain"])
+        if g is not None and not is_sp and stu_val is not None:
+            g = min(g, max(0.0, float(stu_val) - 20.0))
+        return g
+
+    stu_now = p.get("_stu")
+    if stu_now is None and p.get("STU vR") is not None and p.get("STU vL") is not None:
+        stu_now = (p["STU vR"] + p["STU vL"]) / 2.0
+    gain_now = _gain("sp_view" if is_sp else "rp_view", "_grades", stu_now, False)
+    gain_pot = _gain("pot_sp_view" if is_sp else "pot_rp_view", "_pot_grades", p.get("STU P"), True)
+    if (gain_now is not None and gain_pot is not None and stu_now is not None and p.get("STU P") is not None
+            and float(stu_now) == float(p["STU P"])
+            and _pos_grades(p.get("_grades")) == _pos_grades(p.get("_pot_grades"))):
+        gain_pot = max(gain_pot, gain_now)
+    sign = 1.0 if is_sp else -1.0
+    sh = lambda gv: None if gv is None else sign * gv
+    if is_sp:
+        shift_sp_line, shift_rp_line = None, sh(gain_now)
+        shift_sp_line_p, shift_rp_line_p = None, sh(gain_pot)
+    else:
+        shift_sp_line, shift_rp_line = sh(gain_now), None
+        shift_sp_line_p, shift_rp_line_p = sh(gain_pot), None
     row = p.get("_row", 2)
     EPS = row / 10000000.0
 
@@ -151,9 +360,14 @@ def compute(p, dp, filt, park_aa, scurves=None, currency=None):
     # ---------------- generic role stat-line builder ----------------
     # cfg carries all the row/col anchors + league-adj cells that differ
     # between SP and RP blocks. handed picks HR/H-HR handedness multipliers.
-    def statline(CON, STU, HRR, PBABIP, BF, cfg, handed):
+    def statline(CON, STU, HRR, PBABIP, BF, cfg, handed, stu_shift=None):
         # opt-in fitted S-curves for this cfg's regression block (audit D1)
         sc = (scurves or {}).get(cfg.get("role")) or {}
+        # level offsets for the blocks that stay on the two-segment line
+        tlo = ((scurves or {}).get("_twoline") or {}).get(cfg.get("role")) or {}
+
+        def tl(blk, v):
+            return v + tlo[blk] if blk in tlo else v
 
         def sc_rate(blk, r):
             c = sc[blk]
@@ -177,30 +391,33 @@ def compute(p, dp, filt, park_aa, scurves=None, currency=None):
         if "uBB" in sc:
             uBB = sc_rate("uBB", CON) * (BF - HBP)
         elif CON >= 50:
-            uBB = ((CON - g(cfg["uBB_anchor"])) * g(cfg["uBB_sh"]) + g(cfg["uBB_ih"]) + g(cfg["uBB_k"])) * (BF - HBP)
+            uBB = tl("uBB", (CON - g(cfg["uBB_anchor"])) * g(cfg["uBB_sh"]) + g(cfg["uBB_ih"]) + g(cfg["uBB_k"])) * (BF - HBP)
         else:
-            uBB = ((CON - g(cfg["uBB_anchor"])) * g(cfg["uBB_sl"]) + g(cfg["uBB_il"]) + g(cfg["uBB_k"])) * (BF - HBP)
+            uBB = tl("uBB", (CON - g(cfg["uBB_anchor"])) * g(cfg["uBB_sl"]) + g(cfg["uBB_il"]) + g(cfg["uBB_k"])) * (BF - HBP)
         uBB = max(uBB, 0.0)
         # SO (STU): POS adjusts the rating used. The sheet's RP/P-RP <50 branch
         # uses the *bare* STU (cfg stu_lo_adj flags it) — that was audit bug B6;
         # all cfgs now set stu_lo_adj=True so the adjustment holds in both branches.
-        stu_adj = STU + cfg["stu_delta"] if is_sp else STU + cfg["stu_delta_rp"]
+        delta = cfg["stu_delta"] if is_sp else cfg["stu_delta_rp"]
+        if stu_shift is not None and delta != 0:    # role_stuff: his own gain instead of the flat 5
+            delta = stu_shift
+        stu_adj = STU + delta
         if "SO" in sc:
             SO = sc_rate("SO", stu_adj) * (BF - uBB - HBP)
         elif stu_adj >= 50:
-            SO = ((stu_adj - g(cfg["SO_anchor"])) * g(cfg["SO_sh"]) + g(cfg["SO_ih"]) + g(cfg["SO_k"])) * (BF - uBB - HBP)
+            SO = tl("SO", (stu_adj - g(cfg["SO_anchor"])) * g(cfg["SO_sh"]) + g(cfg["SO_ih"]) + g(cfg["SO_k"])) * (BF - uBB - HBP)
         else:
             stu_lo = stu_adj if cfg["stu_lo_adj"] else STU
-            SO = ((stu_lo - g(cfg["SO_anchor"])) * g(cfg["SO_sl"]) + g(cfg["SO_il"]) + g(cfg["SO_k"])) * (BF - uBB - HBP)
+            SO = tl("SO", (stu_lo - g(cfg["SO_anchor"])) * g(cfg["SO_sl"]) + g(cfg["SO_il"]) + g(cfg["SO_k"])) * (BF - uBB - HBP)
         SO = max(SO, 0.0)
         # HR (HRR): + handedness multiplier
         hr_mult = handed["hr"]
         if "HR" in sc:
             HR = sc_rate("HR", HRR) * (BF - uBB - HBP) * hr_mult
         elif HRR >= 50:
-            HR = ((HRR - g(cfg["HR_anchor"])) * g(cfg["HR_sh"]) + g(cfg["HR_ih"]) + g(cfg["HR_k"])) * (BF - uBB - HBP) * hr_mult
+            HR = tl("HR", (HRR - g(cfg["HR_anchor"])) * g(cfg["HR_sh"]) + g(cfg["HR_ih"]) + g(cfg["HR_k"])) * (BF - uBB - HBP) * hr_mult
         else:
-            HR = ((HRR - g(cfg["HR_anchor"])) * g(cfg["HR_sl"]) + g(cfg["HR_il"]) + g(cfg["HR_k"])) * (BF - uBB - HBP) * hr_mult
+            HR = tl("HR", (HRR - g(cfg["HR_anchor"])) * g(cfg["HR_sl"]) + g(cfg["HR_il"]) + g(cfg["HR_k"])) * (BF - uBB - HBP) * hr_mult
         HR = max(HR, 0.0)
         # H-HR (PBABIP): + babip handedness multiplier
         bab_mult = handed["bab"]
@@ -208,9 +425,9 @@ def compute(p, dp, filt, park_aa, scurves=None, currency=None):
         if "HHR" in sc:
             HHR = sc_rate("HHR", PBABIP) * rem * bab_mult
         elif PBABIP >= 50:
-            HHR = ((PBABIP - g(cfg["HH_anchor"])) * g(cfg["HH_sh"]) + g(cfg["HH_ih"]) + g(cfg["HH_k"])) * rem * bab_mult
+            HHR = tl("HHR", (PBABIP - g(cfg["HH_anchor"])) * g(cfg["HH_sh"]) + g(cfg["HH_ih"]) + g(cfg["HH_k"])) * rem * bab_mult
         else:
-            HHR = ((PBABIP - g(cfg["HH_anchor"])) * g(cfg["HH_sl"]) + g(cfg["HH_il"]) + g(cfg["HH_k"])) * rem * bab_mult
+            HHR = tl("HHR", (PBABIP - g(cfg["HH_anchor"])) * g(cfg["HH_sl"]) + g(cfg["HH_il"]) + g(cfg["HH_k"])) * rem * bab_mult
         HHR = max(HHR, 0.0)
         # XBH-HR = H-HR * Kxbh * Filters!E9 ; 3B = XBH * K3b * Filters!E10
         XBH = HHR * g(cfg["xbh_k"]) * f("E9")
@@ -235,28 +452,34 @@ def compute(p, dp, filt, park_aa, scurves=None, currency=None):
         return dict(HBP=HBP, uBB=uBB, SO=SO, HR=HR, HHR=HHR, XBH=XBH, T3B=T3B, D2B=D2B,
                     S1B=S1B, SBAT=SBAT, SBpct=SBpct, SB=SB, CS=CS, wOBA=wOBA, RA9=RA9)
 
+    def statline_mix(CON, STU, HRR, PBABIP, BF, cfg, handed, stu_shift=None):
+        """statline with a role-stuff shift priced the way OOTP moves the
+        display: 0 or 5 (or 10) points, never 2.5. An expected gain g is the
+        blend of the two whole notches around it, weight q = frac(g/5) on the
+        upper one (review 2026-09-26: BLM's two-segment SO lines do not meet
+        at 50, so pricing a fractional rating in (45, 50) came out above the
+        flat 5). g = 5 gives exactly the flat 5."""
+        if stu_shift is None:
+            return statline(CON, STU, HRR, PBABIP, BF, cfg, handed)
+        sgn = 1.0 if stu_shift >= 0 else -1.0
+        x = abs(stu_shift) / 5.0
+        k = math.floor(x)
+        q = x - k
+        lo = statline(CON, STU, HRR, PBABIP, BF, cfg, handed, stu_shift=sgn * 5.0 * k)
+        if q < 1e-9:
+            return lo
+        hi = statline(CON, STU, HRR, PBABIP, BF, cfg, handed, stu_shift=sgn * 5.0 * (k + 1))
+        return {key: (1.0 - q) * lo[key] + q * hi[key] for key in lo}
+
     def waa(ra9, ip, ra9_base, waa_const):
         return ((ra9_base - ra9) * (ip / 9.0)) / waa_const + EPS
 
     # ================= SP block (present-day starter) =================
-    SP_CFG = dict(
-        role="SP",
-        HBP_k="K10",
-        uBB_anchor="H5", uBB_sh="C3", uBB_ih="B3", uBB_sl="E3", uBB_il="D3", uBB_k="K3",
-        SO_anchor="H2", SO_sh="C7", SO_ih="B7", SO_sl="E7", SO_il="D7", SO_k="K5",
-        stu_delta=0, stu_delta_rp=-5, stu_lo_adj=True,
-        HR_anchor="H3", HR_sh="C5", HR_ih="B5", HR_sl="E5", HR_il="D5", HR_k="K4",
-        HH_anchor="H4", HH_sh="C9", HH_ih="B9", HH_sl="E9", HH_il="D9", HH_k="K6",
-        xbh_k="K7", t3b_k="K8",
-        hld_anchor="I2", sbat_k="K12", sbpct_k="K9",
-        woba_w=["H12", "H13", "H14", "H15", "H16", "H17", "H18", "H19"],
-        scale="I31", ra9_base="H41",
-    )
     # handedness: HR uses Filters C11 (vR) / D11 (vL); H-HR uses C8 (vR) / D8 (vL)
-    sp_R = statline(p["CON vR"], p["STU vR"], p["HRR vR"], p["PBABIP vR"], H31, SP_CFG,
-                    handed=dict(hr=f("C11"), bab=f("C8")))
-    sp_L = statline(p["CON vL"], p["STU vL"], p["HRR vL"], p["PBABIP vL"], H31, SP_CFG,
-                    handed=dict(hr=f("D11"), bab=f("D8")))
+    sp_R = statline_mix(p["CON vR"], p["STU vR"], p["HRR vR"], p["PBABIP vR"], H31, SP_CFG,
+                    handed=dict(hr=f("C11"), bab=f("C8")), stu_shift=shift_sp_line)
+    sp_L = statline_mix(p["CON vL"], p["STU vL"], p["HRR vL"], p["PBABIP vL"], H31, SP_CFG,
+                    handed=dict(hr=f("D11"), bab=f("D8")), stu_shift=shift_sp_line)
 
     def emit(prefix, sR, sL, woba_share_func, ip, ra9_base, waa_const, scale, exp=2.0):
         for suf, s in (("vR", sR), ("vL", sL)):
@@ -302,36 +525,13 @@ def compute(p, dp, filt, park_aa, scurves=None, currency=None):
         out["wOBA wtd"] = out["RA/9 wtd"] = out["WAA wtd"] = None
 
     # ================= RP block (present-day reliever) =================
-    RP_CFG = dict(
-        role="RP",
-        HBP_k="K22",
-        uBB_anchor="H10", uBB_sh="C14", uBB_ih="B14", uBB_sl="E14", uBB_il="D14", uBB_k="K15",
-        SO_anchor="H7", SO_sh="C18", SO_ih="B18", SO_sl="E18", SO_il="D18", SO_k="K17",
-        # audit B6 (INTENTIONAL divergence from the sheet): the sheet's RP <50 branch
-        # drops the +5 starter-STU bonus (stu_lo_adj was False here) while its SP-block
-        # mirror keeps the -5 in both branches, proving intent. A starter at STU 40 lost
-        # 5·E18 of K% and his relief floor cliffed at the 50 crossing; the engine now
-        # applies the adjusted STU in BOTH branches.
-        stu_delta=5, stu_delta_rp=0, stu_lo_adj=True,
-        HR_anchor="H8", HR_sh="C16", HR_ih="B16", HR_sl="E16", HR_il="D16", HR_k="K16",
-        HH_anchor="H9", HH_sh="C20", HH_ih="B20", HH_sl="E20", HH_il="D20", HH_k="K18",
-        xbh_k="K19", t3b_k="K20",
-        # INTENTIONAL divergence from the sheet: the sheet's 'SB% vR/vL RP' formulas
-        # add Data Points K9 — the SP block's league SB% — while their SBAT sibling
-        # in the same formula pair correctly adds the RP block's K24. K21 is the RP
-        # league SB% and had no reader anywhere; the RP line now adds its own rate,
-        # like every other constant in RP_CFG.
-        hld_anchor="I7", sbat_k="K24", sbpct_k="K21",
-        woba_w=["K29", "K30", "K31", "K32", "K33", "K34", "K35", "K36"],
-        scale="I29", ra9_base="H42",
-    )
-    rp_R = statline(p["CON vR"], p["STU vR"], p["HRR vR"], p["PBABIP vR"], H32, RP_CFG,
-                    handed=dict(hr=f("C11"), bab=f("C8")))
+    rp_R =statline_mix(p["CON vR"], p["STU vR"], p["HRR vR"], p["PBABIP vR"], H32, RP_CFG,
+                    handed=dict(hr=f("C11"), bab=f("C8")), stu_shift=shift_rp_line)
     # audit B11 (INTENTIONAL divergence from the sheet): the sheet's RP vL HR/H-HR
     # formulas reference the vR handedness filters (C11/C8); the engine uses the true
     # vL multipliers D11/D8 — same as the SP block's vL line (+3.8% HR-vL in BLM fixed).
-    rp_L = statline(p["CON vL"], p["STU vL"], p["HRR vL"], p["PBABIP vL"], H32, RP_CFG,
-                    handed=dict(hr=f("D11"), bab=f("D8")))
+    rp_L = statline_mix(p["CON vL"], p["STU vL"], p["HRR vL"], p["PBABIP vL"], H32, RP_CFG,
+                    handed=dict(hr=f("D11"), bab=f("D8")), stu_shift=shift_rp_line)
     emit(" RP", rp_R, rp_L, share_by_T, g("H34"), g("H42"), g("H30"), g("I29"), ra9_exp["RP"])
 
     # ================= P blocks (potential, SPLIT-AWARE) =================
@@ -367,9 +567,11 @@ def compute(p, dp, filt, park_aa, scurves=None, currency=None):
                      ("1B", "S1B"), ("SBAT", "SBAT"), ("SB%", "SBpct"), ("SB", "SB"),
                      ("CS", "CS"))
 
-        def pot_block(cfg, anchor, suffix, role, ip_k, base_k, scale_k):
-            pR = statline(conR, stuR, hrrR, babR, anchor, cfg, handed=dict(hr=f("C11"), bab=f("C8")))
-            pL = statline(conL, stuL, hrrL, babL, anchor, cfg, handed=dict(hr=f("D11"), bab=f("D8")))
+        def pot_block(cfg, anchor, suffix, role, ip_k, base_k, scale_k, stu_shift=None):
+            pR = statline_mix(conR, stuR, hrrR, babR, anchor, cfg, handed=dict(hr=f("C11"), bab=f("C8")),
+                          stu_shift=stu_shift)
+            pL = statline_mix(conL, stuL, hrrL, babL, anchor, cfg, handed=dict(hr=f("D11"), bab=f("D8")),
+                          stu_shift=stu_shift)
             for k, src in POT_STATS:
                 out[f"{k}{suffix}"] = share_by_T(pR[src], pL[src])
             woba = share_by_T(pR["wOBA"], pL["wOBA"])
@@ -378,13 +580,13 @@ def compute(p, dp, filt, park_aa, scurves=None, currency=None):
             out[f"RA/9{suffix}"] = ra9
             return waa(ra9, g(ip_k), g(base_k), g("H30"))
 
-        out["WAP"] = pot_block(SP_CFG, H31, " P", "SP", "H33", "H41", "I31")
+        out["WAP"] = pot_block(SP_CFG, H31, " P", "SP", "H33", "H41", "I31", stu_shift=shift_sp_line_p)
         if not starter:   # non-starter -> no starter-potential projection either
             for k, _ in POT_STATS:
                 out[f"{k} P"] = None
             out["wOBA P"] = out["RA/9 P"] = out["WAP"] = None
 
-        out["WAP RP"] = pot_block(RP_CFG, H32, " P RP", "RP", "H34", "H42", "I29")
+        out["WAP RP"] = pot_block(RP_CFG, H32, " P RP", "RP", "H34", "H42", "I29", stu_shift=shift_rp_line_p)
     return out
 
 

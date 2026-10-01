@@ -283,24 +283,40 @@ LEAGUE_DIRS = {"TGS": "The Sheets TGS", "BLM": "The Sheets BLM"}
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+def _metadata_json_path(league):
+    """calib/<LG>/metadata-latest.json: the metadata Data Points computed by
+    engine/metadata_calibrate.py from StatsPlus (ingest/metadata_inputs.py).
+    When it exists it is the league's live metadata; 25 Metadata.xlsx is then
+    only the paste target for the SP/RP tabs and may be stale elsewhere."""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "calib", league,
+                        "metadata-latest.json")
+
+
 def pitch_anchors(league):
-    """{'SP'/'RP': {rating column: anchor rating}} read READ-ONLY out of that
-    league's own 25 Metadata.xlsx 'Data Points' (labels col S, values col T —
-    the same layout ingest/sync_datapoints.py pushes into the Pitchers sheet).
+    """{'SP'/'RP': {rating column: anchor rating}} read READ-ONLY from the
+    league's metadata Data Points (labels col S, values col T — the same layout
+    ingest/sync_datapoints.py pushes into the Pitchers sheet): the StatsPlus-built
+    calib/<LG>/metadata-latest.json when it exists, else 25 Metadata.xlsx.
     Raises rather than guessing: a fit centred on anything but the consumer's
     anchor is the defect this guards against."""
-    from openpyxl import load_workbook
-    path = os.path.join(REPO, LEAGUE_DIRS[league], "25 Metadata.xlsx")
-    wb = load_workbook(path, read_only=True, data_only=True)
-    ws = wb["Data Points"]
     out, role = {"SP": {}, "RP": {}}, None
-    for lab, val in ws.iter_rows(min_col=19, max_col=20, values_only=True):   # S, T
+    jpath = _metadata_json_path(league)
+    if os.path.exists(jpath):
+        import json
+        cells = json.load(open(jpath, encoding="utf-8"))["cells"]
+        pairs = [(cells.get(f"S{r}"), cells.get(f"T{r}")) for r in range(1, 400)]
+    else:
+        from openpyxl import load_workbook
+        path = os.path.join(REPO, LEAGUE_DIRS[league], "25 Metadata.xlsx")
+        wb = load_workbook(path, read_only=True, data_only=True)
+        pairs = list(wb["Data Points"].iter_rows(min_col=19, max_col=20, values_only=True))   # S, T
+        wb.close()
+    for lab, val in pairs:
         lab = lab.strip() if isinstance(lab, str) else lab
         if lab in PITCH_ANCHOR_SECTIONS:
             role = PITCH_ANCHOR_SECTIONS[lab]
         elif role and lab in PITCH_ANCHOR_COLS and isinstance(val, (int, float)):
             out[role][PITCH_ANCHOR_COLS[lab]] = float(val)
-    wb.close()
     for r, cols in out.items():
         missing = set(PITCH_ANCHOR_COLS.values()) - set(cols)
         if missing:

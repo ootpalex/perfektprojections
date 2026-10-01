@@ -1,0 +1,40 @@
+{
+ "league": "BLM",
+ "slug": "blm",
+ "season": 2058,
+ "in_game_date": "2058-12-30",
+ "league_ids": [
+  "144"
+ ],
+ "pull": "C:\\Users\\perfe\\Desktop\\TGS Projections\\tgs-viz\\ingest\\.cache\\history\\statsplus_blm_20260913-1942.json",
+ "counts": {
+  "Hitting_Data": 550,
+  "Pitching_Data": 523,
+  "Fielding_Data": [
+   102,
+   184,
+   172,
+   169,
+   158,
+   205,
+   159,
+   196
+  ],
+  "Batter_Ratings_vR": 547,
+  "Batter_Ratings_vL": 533,
+  "hitters_not_in_pull": 3,
+  "Fielding_Ratings": 546,
+  "fielders_not_in_pull": 3,
+  "SP_Ratings_vR": 267,
+  "SP_Ratings_vL": 266,
+  "RP_Ratings_vR": 391,
+  "RP_Ratings_vL": 391,
+  "SP_Data": 267,
+  "RP_Data": 392
+ },
+ "paste_check": {
+  "exact": 519,
+  "partial": 0,
+  "absent": 0
+ }
+}

@@ -1,6 +1,6 @@
 {
  "league": "BLM",
- "fitted_at": "2026-08-11T19:51:05",
+ "fitted_at": "2026-10-01T12:28:23",
  "source": "engine/hitter_tails_fit.py over calib/BLM archive (pivot1 pools, PA-weighted bucket means, anchored PAVA)",
  "support": [
   20.0,

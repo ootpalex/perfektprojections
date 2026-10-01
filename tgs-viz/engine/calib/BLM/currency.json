@@ -1,6 +1,6 @@
 {
  "league": "BLM",
- "fitted_at": "2026-08-05T16:09:57",
+ "fitted_at": "2026-10-01T12:28:26",
  "source": "engine/currency_fit.py over calib/BLM clone archive (7 clones x 2016-2026 seasons)",
  "ra9_exponent": {
   "SP": 2.183,
@@ -15,8 +15,8 @@
  "rpw": 10.036,
  "games": 154.0,
  "luck_sd_wins": 6.37,
- "sp_workload": 0.93,
- "rp_workload": 0.99,
+ "sp_workload": 0.922,
+ "rp_workload": 0.982,
  "rpw_specs": {
   "A_W_on_RD": 10.4,
   "B_RD_on_W": 9.686,
@@ -26,8 +26,8 @@
   "sp_top5_ip": 869.5,
   "rp_top8_ip": 555.6,
   "model_ip": {
-   "sp": 935.1,
-   "rp": 561.0
+   "sp": 943.3,
+   "rp": 566.0
   },
   "nclone": 7
  },

@@ -1,222 +1,223 @@
 {
  "league": "BLM",
+ "calibration": "BLM",
  "window": [
-  "2026-05-31_p1.csv.gz",
-  "2026-09-08_p58.csv.gz"
+  "2051-01-01_p570.csv.gz",
+  "2026-10-01_p569.csv.gz"
  ],
- "span_years": 1.162,
+ "span_years": 1.454,
  "pairs": {
-  "used": 20,
-  "zero_time": 0,
+  "used": 27,
+  "zero_time": 5,
   "contaminated": 0
  },
- "players": 12523,
+ "players": 12534,
  "curve": {
   "15": {
-   "n": 53,
-   "players": 49,
-   "years": 5.3,
-   "mean": -0.3487,
-   "closure": -0.0733,
-   "n_gap": 53
+   "n": 63,
+   "players": 54,
+   "years": 5.5,
+   "mean": -0.4547,
+   "closure": -0.0978,
+   "n_gap": 63
   },
   "16": {
-   "n": 7383,
-   "players": 1455,
-   "years": 415.1,
-   "mean": -0.3819,
-   "closure": -0.098,
-   "n_gap": 7310
+   "n": 9477,
+   "players": 1587,
+   "years": 495.2,
+   "mean": -0.3205,
+   "closure": -0.077,
+   "n_gap": 9390
   },
   "17": {
-   "n": 15436,
-   "players": 2156,
-   "years": 894.1,
-   "mean": -0.2791,
-   "closure": -0.0703,
-   "n_gap": 15350
+   "n": 20450,
+   "players": 2372,
+   "years": 1095.0,
+   "mean": -0.2282,
+   "closure": -0.054,
+   "n_gap": 20325
   },
   "18": {
-   "n": 17205,
-   "players": 2246,
-   "years": 1000.5,
-   "mean": -0.0261,
-   "closure": -0.0261,
-   "n_gap": 17186
+   "n": 23069,
+   "players": 2437,
+   "years": 1234.2,
+   "mean": 0.0046,
+   "closure": -0.0141,
+   "n_gap": 23028
   },
   "19": {
-   "n": 19374,
-   "players": 2189,
-   "years": 1084.6,
-   "mean": 0.0678,
-   "closure": -0.0148,
-   "n_gap": 19374
+   "n": 25792,
+   "players": 2431,
+   "years": 1341.5,
+   "mean": 0.0751,
+   "closure": -0.0046,
+   "n_gap": 25792
   },
   "20": {
-   "n": 18031,
-   "players": 2145,
-   "years": 1032.0,
-   "mean": 0.1573,
-   "closure": 0.0104,
-   "n_gap": 17980
+   "n": 23976,
+   "players": 2394,
+   "years": 1267.8,
+   "mean": 0.1335,
+   "closure": 0.0135,
+   "n_gap": 23911
   },
   "21": {
-   "n": 16557,
-   "players": 2147,
-   "years": 937.0,
-   "mean": 0.1717,
-   "closure": 0.0192,
-   "n_gap": 16250
+   "n": 22655,
+   "players": 2404,
+   "years": 1179.9,
+   "mean": 0.1492,
+   "closure": 0.0247,
+   "n_gap": 22265
   },
   "22": {
-   "n": 19228,
-   "players": 2259,
-   "years": 1101.3,
-   "mean": 0.0558,
-   "closure": -0.0154,
-   "n_gap": 18500
+   "n": 25615,
+   "players": 2525,
+   "years": 1355.5,
+   "mean": 0.0636,
+   "closure": 0.0033,
+   "n_gap": 24719
   },
   "23": {
-   "n": 19591,
-   "players": 2251,
-   "years": 1088.5,
-   "mean": -0.096,
-   "closure": -0.0825,
-   "n_gap": 18128
+   "n": 26197,
+   "players": 2510,
+   "years": 1356.0,
+   "mean": -0.0493,
+   "closure": -0.057,
+   "n_gap": 24233
   },
   "24": {
-   "n": 16191,
-   "players": 1855,
-   "years": 903.0,
-   "mean": -0.1848,
-   "closure": -0.1378,
-   "n_gap": 13704
+   "n": 21576,
+   "players": 2101,
+   "years": 1120.5,
+   "mean": -0.1179,
+   "closure": -0.0736,
+   "n_gap": 18270
   },
   "25": {
-   "n": 11702,
-   "players": 1400,
-   "years": 640.8,
-   "mean": -0.2386,
-   "closure": -0.1956,
-   "n_gap": 9028
+   "n": 15905,
+   "players": 1559,
+   "years": 803.7,
+   "mean": -0.1533,
+   "closure": -0.1169,
+   "n_gap": 12096
   },
   "26": {
-   "n": 8443,
-   "players": 1041,
-   "years": 474.3,
-   "mean": -0.3538,
-   "closure": -0.2988,
-   "n_gap": 5816
+   "n": 9929,
+   "players": 1035,
+   "years": 500.9,
+   "mean": -0.1976,
+   "closure": -0.1332,
+   "n_gap": 6452
   },
   "27": {
-   "n": 5869,
-   "players": 729,
-   "years": 320.9,
-   "mean": -0.2825,
-   "closure": -0.2892,
-   "n_gap": 3190
+   "n": 5943,
+   "players": 708,
+   "years": 323.7,
+   "mean": -0.1922,
+   "closure": -0.1721,
+   "n_gap": 2798
   },
   "28": {
-   "n": 4009,
-   "players": 479,
-   "years": 223.3,
-   "mean": -0.2629,
-   "closure": -0.3947,
-   "n_gap": 1508
+   "n": 5104,
+   "players": 517,
+   "years": 266.8,
+   "mean": -0.1701,
+   "closure": -0.1585,
+   "n_gap": 1873
   },
   "29": {
-   "n": 2872,
-   "players": 369,
-   "years": 158.9,
-   "mean": -0.2947,
-   "closure": -0.2311,
-   "n_gap": 959
+   "n": 3868,
+   "players": 418,
+   "years": 200.2,
+   "mean": -0.1742,
+   "closure": -0.0628,
+   "n_gap": 1095
   },
   "30": {
-   "n": 1988,
-   "players": 263,
-   "years": 114.0,
-   "mean": -0.3701,
-   "closure": -0.4034,
-   "n_gap": 127
+   "n": 2639,
+   "players": 293,
+   "years": 141.0,
+   "mean": -0.2589,
+   "closure": 0.0343,
+   "n_gap": 113
   },
   "31": {
-   "n": 1294,
-   "players": 187,
-   "years": 71.3,
-   "mean": -0.3878,
-   "closure": -0.095,
-   "n_gap": 116
+   "n": 1747,
+   "players": 212,
+   "years": 90.7,
+   "mean": -0.301,
+   "closure": 0.2835,
+   "n_gap": 72
   },
   "32": {
-   "n": 949,
-   "players": 149,
-   "years": 56.4,
-   "mean": -0.5625,
-   "closure": -0.9867,
-   "n_gap": 68
+   "n": 1208,
+   "players": 157,
+   "years": 67.4,
+   "mean": -0.4367,
+   "closure": -0.1169,
+   "n_gap": 42
   },
   "33": {
-   "n": 821,
-   "players": 123,
-   "years": 47.6,
-   "mean": -0.2488,
-   "closure": -0.1869,
-   "n_gap": 37
+   "n": 1072,
+   "players": 132,
+   "years": 58.2,
+   "mean": -0.1727,
+   "closure": null,
+   "n_gap": 15
   },
   "34": {
-   "n": 631,
-   "players": 79,
-   "years": 34.6,
-   "mean": -0.3923,
-   "closure": -0.0032,
-   "n_gap": 66
+   "n": 838,
+   "players": 85,
+   "years": 43.3,
+   "mean": -0.2832,
+   "closure": 0.0945,
+   "n_gap": 28
   },
   "35": {
-   "n": 433,
-   "players": 51,
-   "years": 23.1,
-   "mean": -0.3271,
-   "closure": null,
-   "n_gap": 19
+   "n": 532,
+   "players": 53,
+   "years": 26.4,
+   "mean": -0.1958,
+   "closure": -1.2616,
+   "n_gap": 25
   },
   "36": {
-   "n": 216,
-   "players": 34,
-   "years": 12.4,
-   "mean": -0.1829,
+   "n": 255,
+   "players": 35,
+   "years": 14.0,
+   "mean": -0.1179,
    "closure": null,
-   "n_gap": 6
+   "n_gap": 18
   },
   "37": {
    "n": 121,
-   "players": 18,
-   "years": 7.4,
-   "mean": -0.3271,
+   "players": 17,
+   "years": 7.2,
+   "mean": -0.1795,
    "closure": null,
-   "n_gap": 0
+   "n_gap": 1
   },
   "38": {
-   "n": 132,
-   "players": 13,
-   "years": 6.2,
-   "mean": -0.2198,
+   "n": 146,
+   "players": 12,
+   "years": 6.9,
+   "mean": -0.1574,
    "closure": null,
    "n_gap": 0
   },
   "39": {
-   "n": 54,
-   "players": 5,
-   "years": 2.6,
-   "mean": -0.0583,
+   "n": 70,
+   "players": 7,
+   "years": 3.2,
+   "mean": -0.0414,
    "closure": null,
-   "n_gap": 0
+   "n_gap": 1
   },
   "40": {
-   "n": 33,
+   "n": 43,
    "players": 3,
-   "years": 1.6,
-   "mean": -0.1028,
+   "years": 2.1,
+   "mean": -0.0658,
    "closure": null,
    "n_gap": 0
   }

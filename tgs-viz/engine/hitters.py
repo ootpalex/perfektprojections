@@ -421,45 +421,51 @@ def compute(p, dp, filt, park, league="TGS", currency=None, tails=None, fielding
     out["Off Runs"], out["Def Runs"] = off_def(
         best_pos, out["BSR wtd"], out["BatR wtd"], out["DH BatR wtd"], out["wOBA wtd"])
 
-    # ---- POTENTIAL (prospect ceiling): split-aware line from P-ratings ----
+    # ---- POTENTIAL (prospect ceiling): split-aware lines from P-ratings ----
     # OOTP publishes potential WITHOUT splits, so a P rating is one number per skill.
-    # It reads on the vR basis (measured over fully-developed hitters, where potential
-    # must equal current: mean abs error vs vR 1.20 TGS / 2.37 BLM, vs the platoon-
-    # weighted average 1.31 / 2.39, vs vL 2.13 / 3.41 — vR wins in both leagues).
-    # The current line is built twice (vR and vL) and weighted, so it banks the
-    # player's platoon advantage; a one-line potential banks none of it. For a maxed
-    # player that difference IS the whole gap, which is how a ceiling landed under a
-    # floor. So give the potential line the player's OWN measured platoon shape —
-    # potential vL = P + (current vL - current vR) — and run both lines through the
-    # same split_stats/woba/wsb/ubr path the current line uses, weighted by the same
-    # platoon share. Nothing is fitted or tuned here; the gap is read off his ratings.
+    # Where that number sits was re-measured 2026-09-22 on developed (30+) hitters
+    # with a >=5-pt current split, both leagues: the published P (and the one-number
+    # overall current) is the platoon BLEND of the two splits, rounded to the 5-pt
+    # display step — the same answer pitchers.py measured for arms. Exact matches:
+    # blend-round5 77% TGS / 75% BLM vs "= vR" 73% / 65%. On a 5-pt split the blend
+    # rounds to the vR number (which is what an earlier, unrounded comparison read
+    # as "P is on the vR basis"); on a 10-pt split it lands on the middle ~2/3 of
+    # the time; on 15+ it lands between the splits ~85%.
+    # So the peak keeps the player's OWN current lean around P: with s = the same
+    # H24/H23/H25 platoon share used for the current line and lean = vR - vL,
+    #     peak_vR = P + (1-s)*lean      peak_vL = P - s*lean
+    # (the s-weighted blend of the two peak lines is exactly P). Both lines run
+    # through the same split_stats/woba/wsb/ubr path as the current line, weighted
+    # by the same share. Nothing is fitted or tuned here. INTENTIONAL divergence
+    # from the sheet, whose P cells are one flat line; a zero-lean hitter is
+    # unchanged to the digit.
     EYEp, POWp, Kp, HTp, GAPp = (p.get(k) for k in ("EYE P", "POW P", "K P", "HT P", "GAP P"))
     out["MAX WAA P"] = None
     out["Off Runs P"] = None
     if None not in (EYEp, POWp, Kp, HTp, GAPp):
-        def vl_of(pot, cur_vR, cur_vL):
-            # Fallback to today's shapeless behaviour when a current split is missing.
+        def peak(pot, cur_vR, cur_vL):
+            # Fallback to a flat line when a current split is missing.
             if cur_vR is None or cur_vL is None:
-                return pot
-            # Carrying the platoon gap can INVENT a rating the model was never fitted on:
-            # TGS publishes no hitting rating above 80 at all (0 of 102,495 slots), yet the
-            # derived vL reached 85 and 90, and those slots landed on 4 of the TGS and 9 of
-            # the BLM draft top-25 — the most visible rankings resting on the least
-            # supported arithmetic. Cap at the B11/B1 support end (80, same as the RUN and
-            # STE input clamps above), but never below a rating this player actually
+                return pot, pot
+            lean = cur_vR - cur_vL
+            # Carrying the lean can INVENT a rating the model was never fitted on:
+            # TGS publishes no hitting rating above 80 at all (0 of 102,495 slots), yet a
+            # derived split reached 85 and 90, and those slots landed on 4 of the TGS and
+            # 9 of the BLM draft top-25 — the most visible rankings resting on the least
+            # supported arithmetic. Cap at the B11/B1 support end (80, same as the RUN
+            # and STE input clamps above), but never below a rating this player actually
             # carries, so BLM's genuine 85s and 90s are not clipped.
             cap = max(80.0, cur_vR, cur_vL, pot)
-            return min(pot + (cur_vL - cur_vR), cap)
+            return min(pot + (1 - share) * lean, cap), min(pot - share * lean, cap)
 
+        eyeR, eyeL = peak(EYEp, p["EYE vR"], p["EYE vL"])
+        powR, powL = peak(POWp, p["POW vR"], p["POW vL"])
+        kR, kL = peak(Kp, p["K vR"], p["K vL"])
+        htR, htL = peak(HTp, p["BA vR"], p["BA vL"])
+        gapR, gapL = peak(GAPp, p["GAP vR"], p["GAP vL"])
         SPE = p["SPE"]
-        pR = split_stats("vR", EYEp, POWp, Kp, HTp, GAPp, SPE)
-        pL = split_stats("vL",
-                         vl_of(EYEp, p["EYE vR"], p["EYE vL"]),
-                         vl_of(POWp, p["POW vR"], p["POW vL"]),
-                         vl_of(Kp, p["K vR"], p["K vL"]),
-                         vl_of(HTp, p["BA vR"], p["BA vL"]),
-                         vl_of(GAPp, p["GAP vR"], p["GAP vL"]),
-                         SPE)
+        pR = split_stats("vR", eyeR, powR, kR, htR, gapR, SPE)
+        pL = split_stats("vL", eyeL, powL, kL, htL, gapL, SPE)
         out["wOBA P"] = wobaP = wtd(woba(pR), woba(pL))
         out["BatR P"] = BatRp = ((wobaP - g("H29")) / g("H20")) * PA
         dhwobaP = wtd(dh_woba(pR), dh_woba(pL))
