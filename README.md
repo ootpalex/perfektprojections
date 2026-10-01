@@ -111,8 +111,8 @@ projection stat lines behind every number one click away.
 A recurring theme: wherever a constant could be measured from the game instead of guessed, it was.
 
 - The platoon basis of OOTP's published potential ratings was measured over fully developed
-  players — hitters' potentials read on the vs-RHP line, pitchers' on the platoon blend — and both
-  engines build split-aware peak lines from each player's own current lean.
+  players: both hitters' and pitchers' potentials sit on the platoon blend (about 72/28 vR/vL, shown
+  in 5-point steps), and both engines build split-aware peak lines from each player's own current lean.
 - Development is measured per year of age, not per pull: each pull pair's in-game length comes
   from the fraction of players who had a birthday inside it, and a player's change is credited to
   the age he actually was. The measured curve independently confirmed the league's development

@@ -67,6 +67,22 @@ python ootp/winsim.py --league BLM --runs 3             # clone 6.lg -> blm-run0
 Abort any time: slam the mouse into a screen corner (pyautogui FAILSAFE) or Ctrl-C.
 Ctrl-C stops winsim but **not** OOTP's in-flight sim.
 
+## Continuous mode (the DEV TESTS league)
+
+One long-lived OOTP 27 league, every team AI-controlled, simmed in place year after year. No
+clone, no pristine check, no year_NNNN.png: the tool reads the year list in the AUTO-PLAY dialog
+off the screen (digit glyphs are cut from that list on the first run into `buttons/digits/`) and
+refuses to auto-play when the league on screen sits in the wrong year. Profile `DEV` in
+`leagues.json` names the saved game (`folder`). Dumps are never deleted or moved.
+
+```bash
+python ootp/winsim.py --league DEV --sim --dry-run          # the plan, nothing clicked
+python ootp/winsim.py --league DEV --test-load "DEV TESTS"  # first time: does the row click load it?
+python ootp/winsim.py --league DEV --test-year              # first time: date picker, no AUTO-PLAY
+python ootp/winsim.py --league DEV --sim --years 5          # sim 5 seasons from the last dump + 1
+```
+`Sim Dev League.bat` (repo root) runs the sim, then banks the dumps and rebuilds the DEV trends.
+
 ## Ingest
 
 ```bash
