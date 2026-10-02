@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 TESTS = os.path.dirname(os.path.abspath(__file__))
 TOOLS = os.path.dirname(TESTS)
@@ -88,6 +89,39 @@ class Doctor(unittest.TestCase):
         self.assertEqual(rows["settings"]["status"], "fail")
         self.assertIn("settings.local.json", rows["settings"]["detail"])
         self.assertIn("Reset local settings", rows["settings"]["fix"])
+
+    def test_ml_packages_check_xgboost(self):
+        """The ML interpreter check asks for xgboost too (peak.py trains the gain
+        models with it) and rates a missing one like the other ML packages: warn,
+        with the pip fix. In process, with the interpreter probes faked."""
+        if TOOLS not in sys.path:
+            sys.path.insert(0, TOOLS)
+        import doctor
+        asked = []
+
+        def fake_missing(argv, names):
+            asked.append((list(argv), list(names)))
+            return [n for n in names if n == "xgboost"]
+
+        interp = {"main": ["python"], "ml": ["py", "-3.14"]}
+        probe = {"ok": True, "version": (3, 14, 0), "executable": "python.exe"}
+        for missing in (True, False):
+            asked.clear()
+            with mock.patch.object(doctor.ST, "interp", side_effect=lambda k: list(interp[k])), \
+                    mock.patch.object(doctor, "probe_python", return_value=dict(probe)), \
+                    mock.patch.object(doctor, "missing_modules",
+                                      side_effect=fake_missing if missing else (lambda argv, names: [])):
+                d = doctor.Doctor()
+                doctor.check_python(d)
+            row = next(r for r in d.rows if r["id"] == "python.ml.packages")
+            if missing:
+                self.assertIn((["py", "-3.14"], ["numpy", "pandas", "sklearn", "xgboost"]), asked)
+                self.assertEqual(row["status"], "warn")
+                self.assertIn("missing xgboost", row["detail"])
+                self.assertEqual(row["fix"], "Run: py -3.14 -m pip install -r requirements-ml.txt")
+            else:
+                self.assertEqual(row["status"], "ok")
+                self.assertIn("xgboost", row["detail"])
 
     def test_jobs_row(self):
         try:

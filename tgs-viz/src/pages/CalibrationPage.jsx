@@ -43,16 +43,24 @@ function Block({ b, showSheet }) {
   // Where does the live engine actually depart from the sheet's own fit? For
   // hitters that is only the audited tail regions; for pitchers the S-curve
   // replaces the line everywhere. Stating it beats making the reader infer it.
+  // Each run of departing ratings is its own range: a block with a low and a
+  // high tail (extra-base hits: 20-35 and 70-80) must not read as one 20-80
+  // range when the middle matches the sheet. A matching rating ends a run;
+  // a rating with no model or sheet value is skipped.
   const departs = useMemo(() => {
     if (!hasSheet) return null;
-    let same = 0; const at = [];
-    for (const x of b.rows) {
+    let same = 0; const runs = []; let run = null;
+    const rows = [...b.rows].sort((p, q) => Number(p.r) - Number(q.r));
+    for (const x of rows) {
       if (x.model === null || x.model === undefined || x.sheet === null || x.sheet === undefined) continue;
-      if (Math.abs(x.model - x.sheet) < 1e-9) same += 1; else at.push(x.r);
+      if (Math.abs(x.model - x.sheet) < 1e-9) { same += 1; run = null; continue; }
+      if (run) run[1] = x.r; else { run = [x.r, x.r]; runs.push(run); }
     }
-    if (!at.length) return { text: 'identical to the sheet at every rating', all: false };
+    if (!runs.length) return { text: 'identical to the sheet at every rating', all: false };
     if (!same) return { text: 'replaces the sheet line across the whole range', all: true };
-    return { text: 'same as the sheet except ratings ' + Math.min(...at) + '-' + Math.max(...at), all: false };
+    const parts = runs.map(([lo, hi]) => (lo === hi ? String(lo) : lo + '-' + hi));
+    const list = parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1] : parts[0];
+    return { text: 'same as the sheet except ratings ' + list, all: false };
   }, [b, hasSheet]);
 
   return (
@@ -209,7 +217,7 @@ export default function CalibrationPage({ league }) {
           against what the projections say (<span className="text-purple-300">purple</span>)
           {tab !== 'ladder' && <> and what the sheet&apos;s own fit alone would say (<span className="text-amber-300">amber</span>)</>}.
           {tab === 'hitters' && ' The two are the SAME except in the tail regions the sims proved the straight line was missing.'}
-          {tab === 'pitchers' && ' Here the fitted S-curve replaces the two straight lines across the whole range.'}
+          {tab === 'pitchers' && ' Each block shown runs on its fitted S-curve. In BLM, a block that did not beat the two lines on the live season stays on them, moved to the league\'s level, and is not shown.'}
           {tab === 'ladder'
             ? ' Measured on the LIVE season, out of sample — the honest test.'
             : ' Measured on the calibration archive.'}

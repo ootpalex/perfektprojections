@@ -94,11 +94,12 @@ const pnum = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : n
 // MLB % on minors rows (user, 2026-09-24, "if they will ever be anything in
 // the mlb first and foremost"): the chance the player's eventual peak
 // reaches -1 WAA (an MLB-level player: a 5th starter or bench bat) from
-// where he is now, the share of his DEV lookalikes (same age, Pot, growth
-// and a similar current) whose gain covered the distance; a player already
-// at the bar reads 100% (user, 2026-09-24: "there are a ton of guys who are
-// already at 0+ WAA that are getting like tagged as less than 100%").
-// Useful % (0) and Good % (+1.5) sit in the hover. These, not Make it %,
+// where he is now, from the ML model (devMl.js), else the share of his DEV
+// lookalikes (same age, Pot, growth and a similar current) whose gain
+// covered the distance; a player already at the bar reads 100% (user,
+// 2026-09-24: "there are a ton of guys who are already at 0+ WAA that are
+// getting like tagged as less than 100%").
+// Starter % (0) and Star % (+1.5) sit in the hover. These, not Make it %,
 // rank minors playing time (orgBuilder chanceOf: rotations, pens and
 // lineups, chance first). A row with no DEV group at all (growth and
 // pot-only cells both thin, or outside 16-26) shows the stand-in from Proj
@@ -252,7 +253,7 @@ function LevelCard({ lev, data }) {
                 <th className="px-2 py-0.5 font-medium">Age</th><th className="px-2 py-0.5 font-medium">Pos</th>
                 <th className="px-2 py-0.5 text-right font-medium">wOBA</th>
                 <th className="px-2 py-0.5 text-right font-medium">Cur</th><th className="px-2 py-0.5 text-right font-medium">Pot</th>
-                {lev !== 'MLB' && <th className="px-1 py-0.5 text-right font-medium" title="MLB %: chance his peak reaches -1 WAA (an MLB-level player) from where he is now, the share of DEV lookalikes at a similar current whose gain covered the distance; 100% when he is already there (hover a row for Starter % and Star %, the 0 and +1.5 bars; * = stand-in from Proj Potential when no DEV group at all)">MLB</th>}
+                {lev !== 'MLB' && <th className="px-1 py-0.5 text-right font-medium" title="MLB %: chance his peak reaches -1 WAA (an MLB-level player) from where he is now, from the ML model (the DEV cell method when the ML file is missing or stale). 100% when he is already there. Hover a row for Starter % and Star % (the 0 and +1.5 bars). * = stand-in from Proj Potential.">MLB</th>}
                 <th /></tr></thead>
               <tbody>
                 {starters.map((h, i) => <HitterRow key={`s${i}`} h={h} lev={lev} />)}

@@ -456,8 +456,8 @@ function fillSlots(pool, slots, used, valueFn) {
 //   Dev_PeakMlb    = chance his peak reaches -1 (an MLB-level player: a 5th
 //                    starter or bench bat) = MLB %, the chance he is ever
 //                    anything in the majors;
-//   Dev_PeakUseful = the same chance at 0 (an average MLB player);
-//   Dev_PeakGood   = the same chance at +1.5 (a clear regular).
+//   Dev_PeakUseful = the same chance at 0 (an average starter) = Starter %;
+//   Dev_PeakGood   = the same chance at +1.5 (a star) = Star %.
 // chanceOf(p) returns { mlb, useful, good, source }. source is "cell" when
 // the row has a DEV cell. A thin growth cell now falls back to the pot-only
 // cell (same age and Pot) upstream, so the stand-in only fires for a row
@@ -626,7 +626,7 @@ const blendScore = (cur, pot) => WIN_W * (cur ?? pot ?? -99) + GROW_W * (pot ?? 
 // cell, each the chance from where he is now (chanceOf above): MLB % first
 // and foremost (user, 2026-09-24: "if
 // they will ever be anything in the mlb first and foremost and what degree
-// of a chance do they have"), then Useful % and Good %.
+// of a chance do they have"), then Starter % and Star %.
 // somethingBonus adds CHANCE_W x (mlb + useful + good) WAA of playing-time
 // priority to a PROSPECT's play score and lineup slot score, and takes it
 // off his bench score, so a blocked prospect with a real chance cascades
@@ -663,7 +663,7 @@ export const keepValue = (x) => (x.pot ?? x.cur ?? -99) + youthBonus(x.age)
 // Keep order for depth seats and the cuts list, best to keep first (user,
 // 2026-09-25: "if you think chance is better then yeah we can go with
 // chance"). Prospects come before fillers; prospects rank by their chance
-// (MLB %, then Useful %, then Good %; chanceOf, a stand-in when he has no
+// (MLB %, then Starter %, then Star %; chanceOf, a stand-in when he has no
 // DEV group) and only then by keepValue. The ML chance already knows his
 // age, so the youth bonus no longer outranks a real chance gap (it kept
 // 19-year-olds at 21-31% MLB over 21-22-year-olds at 34-38%). Fillers
@@ -796,7 +796,7 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   const isFillerArm = (x) => !isProspectArm(x);
   const chanceRec = (x) => x.chance || (x.chance = chanceOf(x.p, x.isPitcher));
   // Chance-first order for a staff (user, 2026-09-24): prospects first, by
-  // MLB %, then Useful %, Good %, Proj Potential, then `tie` (the win+grow
+  // MLB %, then Starter %, Star %, Proj Potential, then `tie` (the win+grow
   // blend); fillers after every prospect, by what they are worth NOW in the
   // role (`nowOf`). The same key builds rotations and pens.
   const chanceCmp = (nowOf, tie) => (a, b) => {
@@ -808,7 +808,7 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
       || ((b.pot ?? -99) - (a.pot ?? -99)) || (tie(b) - tie(a));
   };
   // The same order as one number, for the fill passes that score a candidate:
-  // a prospect = 1000 + 100 x MLB % + 10 x Useful % + 5 x Good % + Proj
+  // a prospect = 1000 + 100 x MLB % + 10 x Starter % + 5 x Star % + Proj
   // Potential (always above a filler); a filler = what he is worth now in
   // the role.
   const chanceScore = (nowOf) => (x) => {
@@ -828,7 +828,7 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
       : maxLev(highestClearing(woba, oFloors, minLev(p)) || minLev(p), holdLev(p, woba, oHold));
     // play = win+grow blend, plus the something bonus for a prospect (never a
     // filler): chance first, the guys who have one play (user, 2026-09-24).
-    // chance = the MLB / Useful / Good shares (or the stand-in) for the card.
+    // chance = the MLB / Starter / Star chances (or the stand-in) for the card.
     return { p, isPitcher: false, cur, pot, woba, age,
              priority: (pot != null ? pot : cur) ?? -99, play: blendScore(cur, pot) + (filler ? 0 : somethingBonus(p)),
              chance: chanceOf(p, false),
@@ -943,7 +943,7 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   const rpCur = (x) => num(x.p["WAA wtd RP"]);
   const rpPotV = (x) => num(x.p["WAP RP"]);
   // Pen order = chance first (user, 2026-09-24): prospect arms by MLB %,
-  // Useful %, Good %, Proj Potential, then the RP win+grow blend; filler
+  // Starter %, Star %, Proj Potential, then the RP win+grow blend; filler
   // arms after every prospect, by their relief line now. rpOrder sorts a
   // pen; rpPlay is the same order as one number for the fill passes.
   const rpOrder = chanceCmp(rpCur, (x) => blendScore(rpCur(x), rpPotV(x)));
@@ -967,7 +967,7 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
     const L = minors[li], down = li > 0 ? minors[li - 1] : null, dr = down ? LEVEL_RANK[down] : -1;
     if (L === "WL") { SProt[L] = []; continue; }   // WL = overlay, built after the summer system
     // Rotation order = CHANCE first (user, 2026-09-24): prospect arms by
-    // MLB %, then Useful %, Good %, Proj Potential, then the win+grow blend;
+    // MLB %, then Starter %, Star %, Proj Potential, then the win+grow blend;
     // filler arms (no chance, or 27+) after every prospect, by their SP line
     // now. The old order was SP potential (WAP) first; WAP was the listed
     // potential and said nothing about whether he ever gets there ("if a

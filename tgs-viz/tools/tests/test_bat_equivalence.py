@@ -58,6 +58,9 @@ BATS = [
 ]
 
 # Allowed text changes (6.5): (rule, bat, old lines, new lines). Lines are as cmd prints them.
+# Rules 7 to 10 (2026-10-02) fix stale bat text: 7 the dev signals header (ages 16-26; growth, gains and
+# chances), 8 the History check job (no fixed 5-minute wait), 9 Bank Dev Seasons step 2b (it also rebuilds
+# the DEV age curve), 10 the Recalibrate TGS steps and time. Rule 5 now names the 15-minute and daily limits.
 ALLOWED = [
     (1, "Bank Dev Seasons.bat", ["  Done. Reload the web app and pick the DEV league."],
      ["  Done. " + NO_RELOAD + " Pick the DEV league."]),
@@ -92,8 +95,31 @@ ALLOWED = [
       " archive steps below rerun; the first time, the age curve and trends",
       " steps price every new snapshot once (about 40 seconds each). Plan on",
       " about 2 hours. Leave this window open."],
-     [" How long: StatsPlus decides. Each snapshot waits only when StatsPlus",
-      " says it is too soon. The first run can take up to about 2 hours."]),
+     [" How long: about an hour per run (5 dates, 15 minutes apart; StatsPlus",
+      " allows 5 past-date requests a day). Each snapshot waits only when",
+      " StatsPlus says it is too soon."]),
+    (7, "Get StatsPlus Ratings.bat",
+     [" --- Dev signals (DEV-league odds of becoming a regular, per 16-22 year old) ---"],
+     [" --- Dev signals (growth, gains and chances from the DEV grid, per 16-26 year old) ---"]),
+    (7, "Bank Dev Seasons.bat",
+     [" --- 4. dev signals for TGS and BLM (the grid applied to each 16-22 year old) ---"],
+     [" --- 4. dev signals for TGS and BLM (growth, gains and chances from the DEV grid, per 16-26 year old) ---"]),
+    (8, "Get StatsPlus History.bat",
+     [" one 5-minute check job only when no token is saved for the league, or"],
+     [" one extra check job only when no token is saved for the league, or"]),
+    (9, "Bank Dev Seasons.bat",
+     [" --- 2b. value the new DEV seasons with each league's engine (only new seasons) ---"],
+     [" --- 2b. value the new DEV seasons with each league's engine (only new seasons) and rebuild the DEV age "
+      "curve ---"]),
+    (10, "Recalibrate TGS.bat",
+     ["  3. Rebuilds the webapp data from the cached StatsPlus pull.",
+      "  No Excel needed. Takes ~30 seconds total."],
+     ["  3. Refits the fitted layers and promotes the S-curves if",
+      "     they pass their gates.",
+      "  4. Rebuilds the Calibration page data and the webapp data",
+      "     from the cached StatsPlus pull.",
+      "  5. Offers to delete the clone saves (their data is archived).",
+      "  No Excel needed. Takes 1 to 3 minutes plus your answers."]),
 ]
 for _slug in ("tgs", "blm"):
     ALLOWED.append((3, "Get StatsPlus History.bat",
@@ -101,6 +127,10 @@ for _slug in ("tgs", "blm"):
                      "  Tokens.bat, then run this again."],
                     [f"  Current Token from statsplus.net/{_slug} Prefs, paste it into StatsPlus",
                      "  Tokens.txt, then run this again."]))
+for _lg in ST.history_settings():
+    ALLOWED.append((7, "Get StatsPlus History.bat",
+                    [f" --- {_lg} dev signals (odds of becoming a regular, per 16-22 year old) ---"],
+                    [f" --- {_lg} dev signals (growth, gains and chances from the DEV grid, per 16-26 year old) ---"]))
 for _lid in ST.extra_leagues():
     _name = (ST.league(_lid) or {}).get("name") or _lid
     ALLOWED.append((6, "Bank Dev Seasons.bat", [],

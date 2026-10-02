@@ -486,10 +486,10 @@ export function calculateDraftFV(player, ageGroups, playerType, params = {}) {
     agePercentile: Math.round(agePercentile * 10) / 10,
     ceilingScore: Math.round(ceilingScore * 10) / 10,
     peakScore: peakScore === null ? null : Math.round(peakScore * 10) / 10,
-    // draftCeiling is WAR (what ceilingScore/draftFV are actually scored on, and what
-    // the board's membership filter + above/below-zero sort tier key off — unchanged).
+    // draftCeiling is the plain WAA ceiling that ceilingScore/draftFV score (what the
+    // board's membership filter + above/below-zero sort tier key off).
     draftCeiling: isNaN(ceiling) ? null : Math.round(ceiling * 100) / 100,
-    // draftCeilingWAA is the SAME ceiling in the board's display currency.
+    // draftCeilingWAA is the SAME number (ceilingOffset is 0), the board's display key.
     draftCeilingWAA: isNaN(ceiling) ? null : Math.round((ceiling - ceilingOffset) * 100) / 100,
     ceilingOffset,
     ceilingRole,

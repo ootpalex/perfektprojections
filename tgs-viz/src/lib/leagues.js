@@ -13,7 +13,9 @@
  *               features: { players: false, trends: true, draft: false, fa: false, contracts: false } }
  *   trends    the Rating Trends page (rating_trends.json exists)
  *   draft     the draft boards
- *   fa        the free-agent boards
+ *   fa        hitters_fa.json exists (a retired file the app no longer reads).
+ *             The free-agent boards derive live from the players, so the
+ *             sidebar shows them when this is true OR the lists hold free agents.
  *   contracts contract columns and Market Value
  */
 

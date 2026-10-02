@@ -289,7 +289,7 @@ export default function MakeItOddsPage() {
       <div className="flex items-start gap-2 text-[11px] text-slate-500">
         <Info size={13} className="shrink-0 mt-0.5" />
         <p>
-          Built by backtest/dev_rating_odds.py{odds.generated ? ` on ${String(odds.generated).slice(0, 10)}` : ''} from the same cohort and outcomes as the MLB %, Starter % and Star % columns on the player pages.
+          Built by backtest/dev_rating_odds.py{odds.generated ? ` on ${String(odds.generated).slice(0, 10)}` : ''} from the same cohort and outcomes as the DEV cell method, the fallback behind MLB %, Starter % and Star %.
           {' '}HRR here is the HRR column of the app (the HRA rating in OOTP), not the Movement composite.
         </p>
       </div>

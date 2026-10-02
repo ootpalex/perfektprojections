@@ -7,13 +7,15 @@ This script builds those tables from the DEV league (all-AI OOTP 27, true
 ratings, one dump per game-year) and writes them for the web app.
 
 It reuses dev_odds.py for everything that decides who counts: the cohort
-(players first seen at age <= 20 in dumps 2025-2040, ever in an org), the
-observations (one player-dump at ages 16-26, in an org, all core skills and
-a Pot grade present; the same rows as dev_odds pot_only), the "regular"
-outcome (>= 300 MLB PA or >= 150 MLB BF in some season, judged through the
-last dump) and the eventual peak WAA (max engine now_WAA over the player's
-dumps from the observation on; realized only when some priced dump shows him
-at age >= 27). The numbers therefore agree with the app's Make it %.
+(players first seen at age <= 20 from the 2025 dump to the last banked dump
+minus 23, ever in an org), the observations (one player-dump at ages 16-26, in
+an org, all core skills and a Pot grade present; the same rows as dev_odds
+pot_only), the "regular" outcome (>= 300 MLB PA or >= 150 MLB BF in some
+season, judged through the last dump) and the eventual peak WAA (max engine
+now_WAA over the player's dumps from the observation on; realized only when
+some priced dump shows him at age >= 27). The app's /odds page (Make-it odds)
+therefore counts the same players and outcomes as the dev_odds cells behind
+the dev signals.
 
 One table per role (H, P), basis and attribute. A cell is (5-point band of
 the attribute, Jan-1 age) and carries:
@@ -25,8 +27,7 @@ the attribute, Jan-1 age) and carries:
              "if they will ever be anything in the mlb")
   useful     share of useful_n whose eventual peak WAA reached 0 (an average
              MLB player)
-  good       share of useful_n whose eventual peak WAA reached +1.5 (a clear
-             regular)
+  good       share of useful_n whose eventual peak WAA reached +1.5 (a star)
 Bars are dev_odds.PEAK_BARS.
 
 Bases:
@@ -167,7 +168,7 @@ def tally(rows):
         if peak is not None:
             c[2] += 1
             # the three bars over the same realized players (user, 2026-09-24:
-            # mlb = anything in MLB, useful = average, good = a clear regular)
+            # mlb = anything in MLB, useful = average, good = a star)
             c[3] += 1 if peak >= MLB_BAR else 0
             c[4] += 1 if peak >= USEFUL_BAR else 0
             c[5] += 1 if peak >= GOOD_BAR else 0
@@ -228,7 +229,7 @@ def build_payload(cells, meta):
                    "anything in the mlb'",
             "useful": f"share of useful_n whose eventual peak WAA reached {USEFUL_BAR:g} (an average "
                       "MLB player)",
-            "good": f"share of useful_n whose eventual peak WAA reached +{GOOD_BAR:g} (a clear regular)",
+            "good": f"share of useful_n whose eventual peak WAA reached +{GOOD_BAR:g} (a star)",
             "peak": "eventual peak WAA = max of the player's engine now_WAA over his dumps from the "
                     "observation's dump on (BLM engine, neutral park, vintages/DEV/.waa_cache); "
                     f"realized, and counted in useful_n, only when some priced dump shows him at "
@@ -256,9 +257,9 @@ def build_payload(cells, meta):
                     "their n so the page can grey them; cells with n = 0 are dropped",
         },
         "notes": [
-            "Cohort, observations, regular outcome and eventual peak come from dev_odds.py, so these "
-            "shares agree with the app's Make it % (dev_odds pot_only) and its MLB / useful / good "
-            "shares.",
+            "Cohort, observations, regular outcome and eventual peak come from dev_odds.py, so the "
+            "/odds page counts the same players and outcomes as the dev_odds cells (pot_only) behind "
+            "the dev signals' MLB / useful / good shares.",
             "mlb, useful and good share one denominator (useful_n) and nest: good <= useful <= mlb.",
             "A share is over one attribute alone. Players in the same band differ in every other "
             "rating, so read a cell as 'players who looked like this in this one skill'.",

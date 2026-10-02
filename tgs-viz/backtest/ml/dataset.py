@@ -42,8 +42,8 @@ Outputs (.dev_cache/ml/data/, pandas pickle; pyarrow is not installed):
   parity_<basis>.json           per-feature coverage and scale, DEV vs the league
   (dev_H.pkl, dev_P.pkl, schema.json, parity.json of the first build, BLM
   priced with both leagues scored, are left as they were)
-  _raw_compact.pkl              parse cache of the 148 raw dumps (rebuilt per
-                                dump when the file's size or mtime changes)
+  _raw_compact.pkl              parse cache of every banked raw dump (rebuilt
+                                per dump when the file's size or mtime changes)
 
 Row key: pid + dump_year. dump_year = the season just played; the dump is
 dated Jan 1 of dump_year + 1. Role = the role the player held in most of his
@@ -111,6 +111,7 @@ import common as C                                         # noqa: E402
 
 sys.path.insert(0, C.BT)
 import dev_signals as DSIG                                 # noqa: E402  (stdlib only)
+import dev_odds as DO                                      # noqa: E402  (stdlib only)
 sys.path.insert(0, os.path.join(C.VIZ, "ingest"))
 import statsplus as SP                                     # noqa: E402  (stdlib only)
 import ratings_db as RDB                                   # noqa: E402  (stdlib only)
@@ -286,6 +287,9 @@ def build_dev(basis, rebuild=False, history=False):
     t0 = time.time()
     years = load_dev_raw(rebuild, write_cache=not history)
     final_year = max(years)
+    # dev_odds' cohort window (dev_odds.measure): first seen from COHORT_START to
+    # the last banked dump minus COHORT_MARGIN, so its end moves with the dumps
+    cohort_years = (DO.COHORT_START, max(DO.COHORT_START, int(final_year) - DO.COHORT_MARGIN))
     pid, year, num, strs = stack_dev(years)
     n = len(pid)
     key = pid * 10000 + year
@@ -448,8 +452,8 @@ def build_dev(basis, rebuild=False, history=False):
             "realized": realized[rows].astype(np.int8), "retired": retired[rows].astype(np.int8),
             "censored": censored[rows].astype(np.int8),
             "cohort_first20": ((first_age[g] <= 20) & ever_org[g]).astype(np.int8),
-            "cohort_dev_odds": ((first_age[g] <= 20) & ever_org[g] & (first_year[g] >= 2025)
-                                & (first_year[g] <= 2040)).astype(np.int8),
+            "cohort_dev_odds": ((first_age[g] <= 20) & ever_org[g] & (first_year[g] >= cohort_years[0])
+                                & (first_year[g] <= cohort_years[1])).astype(np.int8),
             "left_censored": (first_year[g] == min(years)).astype(np.int8),
             "first_seen_year": first_year[g].astype(np.int16),
             "first_seen_age": first_age[g].astype(np.float32),
@@ -1148,8 +1152,8 @@ TARGET_DEFS = {
     "regular_future": "1 when some MLB season s > dump_year (a season played after this Jan-1 dump) has >= 300 PA "
                       "or >= 150 BF (dev_mlb_pt, level_id 1); 0 when none and peak_known; else NaN. Differs from "
                       "dev_odds' outcome, which counts any season of the career, including seasons already played "
-                      "(kept as regular_ever). Seasons are 2026-2172: the cache has no 2025 season.",
-    "regular_ever": "dev_odds' outcome: some season of the career (2026-2172) with >= 300 PA or >= 150 BF; not "
+                      "(kept as regular_ever). Seasons start at 2026: the cache has no 2025 season.",
+    "regular_ever": "dev_odds' outcome: some season of the career (2026 on) with >= 300 PA or >= 150 BF; not "
                     "censoring-aware, reference only",
     "waa_k": "now_WAA at dump_year + k (k = 1..5); NaN when retired, not priced, or beyond the last dump",
     "d_k": "waa_k - now_WAA",
@@ -1160,7 +1164,8 @@ FLAG_DEFS = {
     "retired": "absent from every dump after his last one while later dumps exist (players never come back)",
     "censored": "still active at the last dump and never seen at 27+: peak and outcomes unknown",
     "cohort_first20": "first seen at age <= 20 and ever in an org (dev_odds cohort without its year window)",
-    "cohort_dev_odds": "cohort_first20 and first seen 2025-2040 (dev_odds COHORT_YEARS exactly)",
+    "cohort_dev_odds": "cohort_first20 and first seen from 2025 to the last banked dump minus 23 (dev_odds "
+                       "COHORT_YEARS exactly; the end moves with the last banked year)",
     "left_censored": "first seen in the first dump (2025): his earlier years are unknown",
     "first_seen_year": "dump_year of his first dump",
     "first_seen_age": "age at his first dump",

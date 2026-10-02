@@ -240,9 +240,9 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
                 <th>POS</th>
                 <th>ORG</th>
                 <th>Age</th>
-                <th title="age percentile x 0.30 + ceiling x 0.70, then the durability / work-ethic / intelligence modifiers.">Draft FV</th>
+                <th title="Age percentile x 0.30 + ceiling x 0.60 + projected peak x 0.10 (ceiling x 0.70 when there is no projected peak), then the durability, work ethic and intelligence modifiers.">Draft FV</th>
                 <th title="Percentile vs the whole league at this age, on current performance. The PROBABILITY half of Draft FV.">Age Pctl</th>
-                <th title="Best-case peak, WAA (vs average) — the sheet's own MAX WAA P / WAP. No risk haircut. The PAYOFF half of Draft FV. (Draft FV itself scores this in WAR so bats, SP and RP share one scale.)">Ceiling</th>
+                <th title="Best-case peak, WAA (vs average): the sheet's own MAX WAA P / WAP. No risk haircut. The PAYOFF half of Draft FV.">Ceiling</th>
                 <th>Durability</th>
                 <th>INT</th>
                 <th className="border-l border-slate-700">FV</th>
@@ -290,12 +290,12 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
                     {formatCellValue(player._agePercentile, '_agePercentile')}
                   </td>
                   <td className={getCellColorClass(player._draftCeilingWAA, '_draftCeilingWAA')}
-                    title={`WAR basis (what Draft FV scores): ${formatCellValue(player._draftCeiling, '_draftCeiling')}`}>
+                    title="Draft FV scores this same number">
                     {formatCellValue(player._draftCeilingWAA, '_draftCeilingWAA')}
                   </td>
                   <td style={{ color: durColor(player._durability) }} className="text-xs">
                     {player._durability}
-                    {player._weBoost && <span className="ml-1 text-green-400" title="High Work Ethic (+5%)">+WE</span>}
+                    {player._weBoost && <span className="ml-1 text-green-400" title="High work ethic (+1.5% Draft FV)">+WE</span>}
                   </td>
                   <td className={getCellColorClass(player._highINT, '_highINT')}>
                     {formatCellValue(player._highINT, '_highINT')}

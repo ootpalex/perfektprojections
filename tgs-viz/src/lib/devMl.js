@@ -62,7 +62,7 @@ export function devMlStaleReason(ml, signals) {
   return '';
 }
 
-/** One line for the hovers: "the ML model trained on 148 DEV seasons (...)". */
+/** One line for the hovers: "the ML model trained on 483 DEV seasons (...)". */
 export function devMlModelWords(ml) {
   const n = ml && ml.model && num(ml.model.seasons);
   return `the ML model trained on ${n !== null ? n : '?'} DEV seasons (every rating, potential, last year's growth, level and value)`;

@@ -2,7 +2,7 @@
 dev_signals.py - DEV-league odds applied to the young players of a real league.
 
 Reads two pulls of one league from the ratings archive, about one game-year
-apart, measures each 16-22 year old's core-skill growth and Pot grade change
+apart, measures each 16-26 year old's core-skill growth and Pot grade change
 over that span, and looks up his odds of becoming an MLB regular in the DEV
 grid (public/data/dev_odds.json, built by dev_odds.py). DEV only supplies the
 grid. TGS and BLM never mix.
@@ -23,7 +23,7 @@ ingest/statsplus_history.py take part as "from" candidates only):
           none (basis.note says so; asof pulls are then left out, their
           real_date is an in-game date)
 
-Per player (age 16-22 at "to"):
+Per player (age 16-26 at "to"):
   role        P when pos is SP, RP or CL, else H
   grow        sum over the core skills of (display at to - display at from) / 5,
               display = mean of vR and vL, scaled to one game-year, rounded to 0.5
@@ -42,10 +42,12 @@ Per player (age 16-22 at "to"):
               BLM (PREV_ORG_RULE_LEAGUES); the DEV dump league is exempt
               (its cards are never hidden, and it only supplies the grid).
   core_sum    sum over the core skills of underlying(display), dev_odds scale
-  odds        grid cell role / age / Pot bucket / growth bucket; ages 16-17 use
-              the age-18 cell; null when the cell has fewer than MIN_N players;
-              a player without an earlier pull uses the pot_only cell
-  vs_typical  core_sum minus the DEV mean core_sum for the age and Pot bucket
+  odds        grid cell role / age / Pot bucket / growth bucket; the grid has a
+              cell for every age 16-26; null when the cell has fewer than MIN_N
+              players; a player without an earlier pull uses the pot_only cell
+  vs_typical  core_sum minus the MEDIAN core_sum of the league's own players of
+              the same age and Pot bucket (peer group >= 20); the DEV mean
+              core_sum stands in only for a thinner peer group
   flag        keep = grow >= 4.5 (H) or >= 3 (P) and pot_dir is not down
               move = pot_dir down and grow <= 2 (H) or <= 1 (P)
   level       Lev from public/data/<LG>/hitters.json and pitchers.json, else the
@@ -111,7 +113,7 @@ Per player (age 16-22 at "to"):
               thin-cell rule as peak_p50.
   peak_useful / peak_good
               the same conditional chance at 0 WAA (an average MLB player)
-              and +1.5 (a clear regular), bars from dev_odds peak_bars. User,
+              and +1.5 (a star), bars from dev_odds peak_bars. User,
               2026-09-24: Make it % is playing time, not quality; these say
               whether the lookalikes turned out good enough, and the org
               builder ranks minors playing time on them.
@@ -591,7 +593,7 @@ def share_at_least(grid, d, pcts):
 
 
 def measure_player(pid, rec, prev, span, odds, levels, peaks, currents, pcts, bars, prev_out=False):
-    """One player's entry, or None when he is outside 16-22. prev_out = True
+    """One player's entry, or None when he is outside 16-26. prev_out = True
     when he was out of an org at the earlier pull (the out-of-an-org rule):
     nothing is read from that earlier card."""
     age = DO.to_int(rec.get("age"))
@@ -650,7 +652,7 @@ def measure_player(pid, rec, prev, span, odds, levels, peaks, currents, pcts, ba
             c = lookup(odds, "pot_only", role, str(age_g), pb)
             cell = cell_key(role, age_g, pb, "any") if c is not None else None
             if c is not None:
-                notes.append("odds by age and Pot only")
+                notes.append("cell numbers by age and Pot only")
         if c is None:
             notes.append("no grid cell")
         elif (c.get("n") or 0) < MIN_N or c.get("p") is None:
@@ -933,10 +935,11 @@ def build_payload(league, choice, players, odds):
             "pot_delta": "OOTP Pot grade at to minus at from, over the span, not scaled; "
                          "pot_dir = up / flat / down; null on the same out-of-an-org rule as grow",
             "core_sum": "sum over the core skills of underlying(display) on the dev_odds internal scale",
-            "odds": f"dev_odds grid cell role / age / Pot bucket / growth bucket (odds_cell); ages "
-                    f"{AGE_MIN}-{GRID_AGE_MIN - 1} use the age-{GRID_AGE_MIN} cell; null when the cell has "
-                    f"n < {MIN_N} (note says so); a player without growth uses the pot_only cell "
-                    f"(odds_cell ends in /any)",
+            "odds": f"dev_odds grid cell role / age / Pot bucket / growth bucket (odds_cell); "
+                    + (f"ages {AGE_MIN}-{GRID_AGE_MIN - 1} use the age-{GRID_AGE_MIN} cell; " if AGE_MIN < GRID_AGE_MIN
+                       else f"the grid has a cell for every age {GRID_AGE_MIN}-{GRID_AGE_MAX}; ")
+                    + f"null when the cell has n < {MIN_N} (note says so); a player without growth uses the "
+                      f"pot_only cell (odds_cell ends in /any)",
             "vs_typical": "core_sum minus the MEDIAN core_sum of this league's own players of the same age and Pot bucket (peer group >= 20), internal points; the DEV mean is the fallback for a thin peer group (vs_typical_basis says which)",
             "flag": f"keep = grow >= {KEEP_GROW['H']:g} (H) or >= {KEEP_GROW['P']:g} (P) and pot_dir not down; "
                     f"move = pot_dir down and grow <= {MOVE_GROW['H']:g} (H) or <= {MOVE_GROW['P']:g} (P); else null",
@@ -999,7 +1002,7 @@ def build_payload(league, choice, players, odds):
                         f"the cell has n < {MIN_N}, the same rule as peak_p50",
             "peak_useful": f"peak_useful / peak_good = the same conditional chance at "
                            f"{bars.get('useful', 0.0):g} WAA (an average MLB player) and "
-                           f"+{bars.get('good', 1.5):g} (a clear regular), bars from dev_odds "
+                           f"+{bars.get('good', 1.5):g} (a star), bars from dev_odds "
                            f"peak_bars; user, 2026-09-24: Make it % is playing time, not quality, "
                            f"these say whether the lookalikes turned out good enough",
             "cell_shares": "cell_mlb / cell_useful / cell_good = the cell's own mlb_share / "
@@ -1090,7 +1093,7 @@ def exported_leagues():
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="DEV-league odds applied to a league's 16-22 year olds")
+    ap = argparse.ArgumentParser(description="DEV-league odds applied to a league's 16-26 year olds")
     ap.add_argument("--league", required=True, help="TGS or BLM")
     ap.add_argument("--write", action="store_true", help="write public/data/<LG>/dev_signals.json")
     ap.add_argument("--db", default=DB_PATH, help="ratings_history.db path")

@@ -131,7 +131,8 @@ export default function DevAnalysisPage() {
         <h1 className="text-2xl font-bold text-white">Future Value Impact Analysis</h1>
         <p className="text-sm text-slate-400 mt-1">
           Shows Future Value for a player with the given potential WAA, using the current WAA from the data at each age/percentile.
-          Adjusts live with the curve settings below.
+          Fallback model only. It runs when the DEV age curve file is missing. The lists and player cards use the DEV curve
+          and the ML model, so these sliders do not change them.
         </p>
       </div>
 
@@ -187,9 +188,9 @@ export default function DevAnalysisPage() {
         </div>
       </div>
 
-      {/* Development Curve Tuning */}
+      {/* Fallback model settings (futureValue.computeImpact: the assumed model, no DEV curve) */}
       <div className="px-4 pb-4">
-        <h2 className="text-lg font-bold text-white mb-3">Development Curve Tuning</h2>
+        <h2 className="text-lg font-bold text-white mb-3">Fallback model settings</h2>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
           {/* Gap Factor Panel */}

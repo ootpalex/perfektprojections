@@ -196,14 +196,17 @@ def check_python(d):
     why = "needed for ML dev scores; without it the app uses the older cell method"
     if pl["ok"] and pl["version"] >= (3, 11):
         d.add("python.ml", "Python (ML)", "ok", f"{_vtext(pl['version'])} ({_shown(ml_argv)}): {pl['executable']}")
-        miss = missing_modules(ml_argv, ["numpy", "pandas", "sklearn"])
+        # xgboost: peak.py trains the gain quantiles with it, and the saved models
+        # need it to load, so ML scoring stops without it
+        miss = missing_modules(ml_argv, ["numpy", "pandas", "sklearn", "xgboost"])
         if miss is None or miss:
             names = ", ".join({"sklearn": "scikit-learn"}.get(m, m) for m in (miss or []))
+            extra = "; the ML gain models do not load without xgboost" if "xgboost" in (miss or []) else ""
             d.add("python.ml.packages", "Packages (ML)", "warn",
-                  (f"missing {names}" if names else "the package check did not answer") + f" ({why})",
+                  (f"missing {names}" if names else "the package check did not answer") + f" ({why}{extra})",
                   "Run: py -3.14 -m pip install -r requirements-ml.txt")
         else:
-            d.add("python.ml.packages", "Packages (ML)", "ok", "numpy, pandas, scikit-learn")
+            d.add("python.ml.packages", "Packages (ML)", "ok", "numpy, pandas, scikit-learn, xgboost")
     else:
         detail = (f"{_vtext(pl['version'])} is too old" if pl["ok"] else
                   f"{_shown(ml_argv)} does not start: {pl['message']}")

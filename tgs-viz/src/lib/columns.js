@@ -7,13 +7,13 @@ import { DEV_FIELDS, GROW_KEEP, devShareTitle, devIsMl, devMlWords, devMlRangeNo
 import { orgAbbr } from './orgAbbr';
 
 // Dev signals (lib/devSignals.js): growth per game-year, Pot direction,
-// DEV-league odds of becoming an MLB regular, MLB % / Useful % / Good % (the
-// chance his peak reaches -1 / 0 / +1.5 WAA from where he is now: the share
-// of DEV players with his age, Pot, growth and a similar current whose gain
-// covered the distance, so a player already at the bar reads 100%; user,
-// 2026-09-24; MLB % = the chance he is ever anything in the majors), and
-// Exp peak (the peak WAA DEV players in the same cell actually reached),
-// for players aged 16-26.
+// MLB % / Starter % / Star % (the chance his peak reaches -1 / 0 / +1.5 WAA
+// from where he is now: from the ML model, else the share of DEV players
+// with his age, Pot, growth and a similar current whose gain covered the
+// distance, so a player already at the bar reads 100%; user, 2026-09-24;
+// MLB % = the chance he is ever anything in the majors), and Exp peak (his
+// expected peak WAA), for players aged 16-26. Make it % (Dev_Odds, the odds
+// of becoming an MLB regular) stays on the rows but is not a column.
 const DEV_SIGNAL_GROUP = {
   label: 'Dev signals',
   columns: DEV_FIELDS,
@@ -276,7 +276,7 @@ export const PITCHER_COLUMN_GROUPS = {
 export function formatCellValue(value, columnName) {
   // Dev signals: blank (not '-') for a null value and for rows without an
   // entry, so the columns stay quiet for the thousands of players outside
-  // the 16-22 window.
+  // the 16-26 window.
   if (columnName === 'Dev_Grow') return fmtGrow(value);
   if (columnName === 'Dev_Odds') return fmtOdds(value);
   if (columnName === 'Dev_PeakMlb' || columnName === 'Dev_PeakUseful' || columnName === 'Dev_PeakGood') return fmtOdds(value);
@@ -386,8 +386,9 @@ export function formatCellValue(value, columnName) {
     return value === true ? 'WRECKED' : '-';
   }
 
+  // High work ethic: +1.5% Draft FV (draftFV.js PERSONALITY_STEP).
   if (columnName === '_weBoost') {
-    return value === true ? '+5%' : '-';
+    return value === true ? '+1.5%' : '-';
   }
 
   // Money columns — format as $12.5M / $750K
@@ -448,8 +449,8 @@ export function getCellColorClass(value, columnName, row) {
     if (s <= 0.25) return 'text-red-400';
     return 'text-yellow-300';
   }
-  // Useful % / Good % (user, 2026-09-24): green when most lookalikes made
-  // the bar, red when few did. Useful bars 0.5 / 0.2, Good bars 0.3 / 0.1.
+  // Starter % / Star % (user, 2026-09-24): green when the chance is high,
+  // red when it is low. Starter bars 0.5 / 0.2, Star bars 0.3 / 0.1.
   if (columnName === 'Dev_PeakUseful' || columnName === 'Dev_PeakGood') {
     const s = parseFloat(value);
     if (isNaN(s)) return '';
@@ -648,9 +649,9 @@ export function getCellTitle(row, columnName) {
     return typeof raw === 'string' && orgAbbr(raw) !== raw ? raw : '';
   }
   if (columnName === '_potentialWAA') {
-    // Proj Potential = current + the cell's typical GAIN (usePlayersWithFV
-    // _potentialSource: 'DEV cell' | 'measured curve' | 'model'). The old
-    // hover described the rejected cell-median LEVEL rule (user, 2026-09-24).
+    // Proj Potential = current + the typical GAIN (usePlayersWithFV
+    // _potentialSource: 'ML' | 'DEV cell' | 'measured curve' | 'model'). The
+    // old hover described the rejected cell-median LEVEL rule (user, 2026-09-24).
     const src = row?._potentialSource;
     if (src === 'ML') {
       // ML (2026-09-25): ages 26 and under = his current (the line with the
@@ -701,11 +702,16 @@ export function getCellTitle(row, columnName) {
     const k = YEARS_OUT[columnName];
     const d = row.Dev_MlD[k - 1];
     const at = Number.isFinite(a) ? ` at age ${a + k}` : '';
-    // The ML change assumes he keeps playing (the path models learn only
-    // from players who stayed in the league), so for ages 26 and under the
-    // column is capped at Proj Potential, which counts the washouts.
-    const cap = devIsMl(row) ? '. Capped at his Proj Potential (the change assumes he keeps playing; Proj Potential counts the players who wash out)' : '';
-    return `Projected WAA${at}: current + the median change ${k} year${k > 1 ? 's' : ''} out (${fmtWaa(d)}) from ${devMlWords(row)}${cap}`;
+    const out = `the ML median change ${k} year${k > 1 ? 's' : ''} out (${fmtWaa(d)}) from ${devMlWords(row)}`;
+    // Ages 26 and under (devIsMl): the display path is smoothed
+    // (futureValue.mlTrack noDip: no dip before 28, a steady climb to Proj
+    // Potential) and capped at Proj Potential. The ML change assumes he keeps
+    // playing (the path models learn only from players who stayed in the
+    // league); Proj Potential counts the washouts.
+    if (devIsMl(row)) {
+      return `Projected WAA${at}: current + ${out}, smoothed so the path never dips before 28 and climbs steadily to Proj Potential. Capped at his Proj Potential (the change assumes he keeps playing; Proj Potential counts the players who wash out)`;
+    }
+    return `Projected WAA${at}: current + ${out}`;
   }
   if (YEARS_OUT[columnName]) {
     const a = Math.floor(parseFloat(row?.Age));
@@ -715,9 +721,9 @@ export function getCellTitle(row, columnName) {
   }
   if (columnName === '_peakAge') {
     // ML rows (2026-09-25): the path is the ML's five years, then the DEV
-    // curve, capped at Proj Potential for ages 26 and under.
+    // curve, smoothed and capped at Proj Potential for ages 26 and under.
     if (Array.isArray(row?.Dev_MlD) && row?._potentialSource === 'ML') {
-      const cap = devIsMl(row) ? ', capped at his Proj Potential' : '';
+      const cap = devIsMl(row) ? ', smoothed (no dip before 28) and capped at his Proj Potential' : '';
       return `Age of the top of his projected path: the next five years from ${devMlWords(row)}, then the measured DEV curve${cap}`;
     }
     return 'Age of the top of his projected path on the measured DEV path';
@@ -736,9 +742,9 @@ export function getCellTitle(row, columnName) {
     const n = row.Dev_OddsN !== null && row.Dev_OddsN !== undefined ? `n ${row.Dev_OddsN}` : 'n unknown';
     return row.Dev_OddsCell ? `${n}, DEV cell ${row.Dev_OddsCell}` : n;
   }
-  // MLB % / Useful % / Good % (user, 2026-09-24): the chance his peak
+  // MLB % / Starter % / Star % (user, 2026-09-24): the chance his peak
   // reaches the bar from where he is now, "Already ..." when his current
-  // sits at it (a player at 0+ WAA must not read under 100% useful). MLB %
+  // sits at it (a player at 0+ WAA must not read under 100% starter). MLB %
   // = the chance he is ever anything in the majors. Wording shared with the
   // Org tab through devSignals.js devShareTitle.
   if (columnName === 'Dev_PeakMlb') return devShareTitle(row, 'mlb');
@@ -771,7 +777,7 @@ export function getCellTitle(row, columnName) {
     return row.Dev_Role ? 'Display steps gained per game-year, summed over the core skills' : '';
   }
   if (columnName === 'Dev_VsTypical') {
-    return row.Dev_Role ? 'Internal points above or below a typical DEV player of his age and Pot' : '';
+    return row.Dev_Role ? 'Internal points above or below the median player in this league with his age and Pot (DEV typical when that group is under 20)' : '';
   }
   if (columnName === 'Dev_PotDir') {
     if (row.Dev_PotDelta === null || row.Dev_PotDelta === undefined) return '';

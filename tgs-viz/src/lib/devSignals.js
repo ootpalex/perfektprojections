@@ -3,9 +3,10 @@
  * onto player rows.
  *
  * The file is written by the DEV-league signals build. Each entry is one
- * player aged 16-22 at the league's latest pull: his growth over the last
+ * player aged 16-26 at the league's latest pull: his growth over the last
  * game-year, the direction of his OOTP Pot grade, and the odds a DEV-league
- * player with the same age, Pot bucket and growth became an MLB regular.
+ * player with the same age, Pot bucket and growth became an MLB regular
+ * (Make it %, Dev_Odds: kept on the rows, no longer shown in the app).
  * DEV only supplies the grid; the growth and Pot direction are the league's own.
  *
  * Exp peak (peak_p25 / peak_p50 / peak_p75 / peak_n / peak_cell): the
@@ -25,14 +26,15 @@
  * player to current + peak_gain_p50 (futureValue.js). Null on the same
  * thin-cell rule as the peak fields.
  *
- * MLB / Useful / Good (peak_mlb / peak_useful / peak_good): the chance his
- * eventual peak reaches -1 WAA (an MLB-level player: a 5th starter or bench
- * bat), 0 (an average MLB player) and +1.5 (a clear regular) FROM WHERE HE
- * IS NOW: the share of his lookalikes' gains that covered the distance from
- * his current (share_now) to the bar, so a player already at or above the
- * bar reads 100%. "At the bar" allows BAR_TOLERANCE (0.05 WAA, the table's
- * one-decimal rounding): a row shown as 0.0 can sit at -0.02 and must not
- * read under 100% useful. When his current sits outside every lookalike's
+ * MLB / Starter / Star (peak_mlb / peak_useful / peak_good; the app's MLB %,
+ * Starter % and Star %): the chance his eventual peak reaches -1 WAA (an
+ * MLB-level player: a 5th starter or bench bat), 0 (an average starter) and
+ * +1.5 (a star) FROM WHERE HE IS NOW: the share of his lookalikes' gains
+ * that covered the distance from his current (share_now) to the bar, so a
+ * player already at or above the bar reads 100%. "At the bar" allows
+ * BAR_TOLERANCE (0.05 WAA, the table's one-decimal rounding): a row shown as
+ * 0.0 can sit at -0.02 and must not read under 100% starter. When his
+ * current sits outside every lookalike's
  * (above the top slice's range or below the bottom slice's, share_basis
  * "now tercile, edge"), the chance is the lower of the gain rule and that nearest slice's own share whose
  * peak reached the bar: the gain rule would lend him gains measured on
@@ -198,7 +200,7 @@ export function fmtPeakRange(lo, hi) {
 }
 
 /**
- * The three quality bars (display WAA) behind MLB % / Useful % / Good %,
+ * The three quality bars (display WAA) behind MLB % / Starter % / Star %,
  * keyed by the short name the hovers use. `already` is the hover for a
  * player whose current sits at or above the bar (his chance reads 100%).
  */
@@ -253,7 +255,7 @@ export function devIsMl(p) {
   return p?.Dev_Source === 'ML';
 }
 
-/** The model sentence for an ML row, "the ML model trained on 148 DEV seasons (...)". */
+/** The model sentence for an ML row, "the ML model trained on 483 DEV seasons (...)". */
 export function devMlWords(p) {
   return p?.Dev_MlWords || 'the ML model trained on the DEV league (every rating, potential, last year\'s growth, level and value)';
 }
@@ -286,7 +288,7 @@ export function devNextSeasonText(p) {
 }
 
 /**
- * Hover text for MLB % / Useful % / Good % (columns.js and the Org tab share
+ * Hover text for MLB % / Starter % / Star % (columns.js and the Org tab share
  * it so the wording stays the same): the chance his peak reaches the bar
  * from his current, or "Already ..." when he is there. '' when the share is
  * null.
@@ -328,7 +330,7 @@ export function devShareTitle(p, key) {
  * The Exp peak sentence for the player card:
  * "players like him ended up at +1.2 WAA (range -0.3 to +2.1), +0.9 above
  * his listed peak; typical gain from here +2.4 WAA; from his -0.4 now: MLB
- * 100% (already there), 62% useful (peak 0 WAA or better), 20% good (+1.5
+ * 100% (already there), 62% starter (peak 0 WAA or better), 20% star (+1.5
  * or better); lookalikes at a similar current".
  * The chances are conditional on his current (user, 2026-09-24); without a
  * current in the app file they fall back to the group's own shares.
@@ -368,28 +370,47 @@ export function devPeakText(p) {
     const basis = devShareBasisWords(p);
     if (basis) s += `; ${basis}`;
   } else if (u !== null && gd !== null) {
-    const mlb = m !== null ? `${fmtOdds(m)} of his lookalikes reached MLB level (-1 WAA or better), ${fmtOdds(u)} turned useful` : `${fmtOdds(u)} of his lookalikes turned useful`;
-    s += `; ${mlb} (peak 0 WAA or better), ${fmtOdds(gd)} star (+1.5 or better); his current is unknown, so these are the group's shares`;
+    const mlb = m !== null ? `${fmtOdds(m)} of his lookalikes reached MLB level (-1 WAA or better), ${fmtOdds(u)} became starters` : `${fmtOdds(u)} of his lookalikes became starters`;
+    s += `; ${mlb} (peak 0 WAA or better), ${fmtOdds(gd)} became stars (+1.5 or better); his current is unknown, so these are the group's shares`;
   }
   return s;
 }
 
 /**
+ * Why his growth is unknown, in the words of the signals build's note
+ * (dev_signals.py measure_player and its OUT_OF_ORG_NOTE / REUSED_ID_NOTE),
+ * or '' when the row says nothing. Out of an org a year ago comes first: his
+ * earlier card may have been hidden, so it was not read at all.
+ */
+function growUnknownReason(p) {
+  const note = typeof p?.Dev_Note === 'string' ? p.Dev_Note : '';
+  if (note.includes('out of an org a year ago')) return 'out of an org a year ago';
+  if (note.includes('ID held by a different player')) return 'ID held by a different player at the earlier pull';
+  for (const why of ['no earlier pull', 'not in the earlier pull', 'core skill missing at the earlier pull']) {
+    if (note.includes(why)) return why;
+  }
+  return '';
+}
+
+/**
  * The one-line summary for the player card:
- * "+4.5 steps/yr, Pot up, 36% make it (n 42), MLB 100% (already there), 62%
- * useful, 20% good from his -0.4 now, +38 vs typical". MLB (peak -1 WAA or
- * better, the chance he is ever anything in the majors), Useful and Good sit
- * next to Make it because Make it is playing time, not quality (user,
- * 2026-09-24). They are the chance from where he is now, so a player at the
- * bar reads 100% (already there).
+ * "+4.5 steps/yr, Pot up, MLB 100% (already there), 62% starter, 20% star
+ * from his -0.4 now, +38 vs typical". MLB (peak -1 WAA or better, the chance
+ * he is ever anything in the majors), Starter (0) and Star (+1.5) are the
+ * chance from where he is now, so a player at the bar reads 100% (already
+ * there). Make it % left the card with its list column (user, 2026-09-26).
+ * A row with no growth says why (growUnknownReason).
  * Returns '' for a row without an entry.
  */
 export function devSummary(p) {
   if (!p || !p.Dev_Role) return '';
   const parts = [];
-  parts.push(p.Dev_Grow === null || p.Dev_Grow === undefined
-    ? 'growth unknown (not in the earlier pull)'
-    : `${fmtGrow(p.Dev_Grow)} steps/yr`);
+  if (p.Dev_Grow === null || p.Dev_Grow === undefined) {
+    const why = growUnknownReason(p);
+    parts.push(why ? `growth unknown (${why})` : 'growth unknown');
+  } else {
+    parts.push(`${fmtGrow(p.Dev_Grow)} steps/yr`);
+  }
   if (p.Dev_PotDir) parts.push(`Pot ${p.Dev_PotDir}`);
   // Make it % left the card with its list column (user, 2026-09-26).
   const here = key => (devAlreadyThere(p, key) ? ' (already there)' : '');
@@ -416,14 +437,14 @@ export function devBasisText(p) {
     const note = p.Dev_MlNote ? ` ${p.Dev_MlNote}: DEV has no unsigned international amateurs.` : '';
     return `${span} MLB / Starter / Star %, Exp peak and the gain come from ${devMlWords(p)}; each chance starts from his current ${fmtWaa(p.Dev_ShareNow)}, and a player already at a bar (within ${BAR_TOLERANCE}) reads 100%. The cell method (DEV players with his age, Pot and growth) is shown for reference.${note}`.trim();
   }
-  const grid = 'Odds: share of DEV-league players (true ratings) with this age, Pot and growth who became MLB regulars.';
+  // The Make it % sentence left with Make it % itself (user, 2026-09-26).
   const hasPeak = p && (num(p.Dev_PeakP50) !== null || p.Dev_PeakCell);
   const peak = hasPeak
     ? ' The listed peak prices the potential ratings OOTP shows today; Exp peak is the peak WAA that DEV players with the same age, Pot and growth actually reached. Listed peaks run about 1 WAA above what finished players reach, so a little below listed is normal.'
     : '';
-  // MLB / Useful / Good (user, 2026-09-24): Make it % is playing time, not
+  // MLB / Starter / Star (user, 2026-09-24): Make it % is playing time, not
   // quality, and each chance starts from where he is now, so a player
-  // already at 0+ WAA reads 100% useful.
+  // already at 0+ WAA reads 100% starter.
   const hasNow = p && num(p.Dev_ShareNow) !== null;
   const wholeGroup = p && (p.Dev_ShareBasis === 'whole cell' || p.Dev_ShareBasis === 'pot-only, whole cell');
   // Edge (2026-09-24): his current sits outside every lookalike's, so the
@@ -435,14 +456,14 @@ export function devBasisText(p) {
       : ' MLB / Starter / Star: the share of those same DEV players whose peak reached -1 (an MLB-level player) / 0 / +1.5 WAA; his current is unknown, so these are the group\'s shares, not his own chance.')
     : '';
   const note = p && p.Dev_Note ? ` ${p.Dev_Note}` : '';
-  return `${span} ${grid}${peak}${shares}${note}`.trim();
+  return `${span}${peak}${shares}${note}`.trim();
 }
 
 /**
  * The Exp peak sentence for an ML row (2026-09-25): "the ML model expects a
  * peak of +1.2 WAA (range -0.3 to +2.1), ...; gain from here +2.4 WAA (+1.1
- * to +3.5); from his -0.4 now: MLB 100% (already there), 62% useful, 20%
- * good; cell method: peak +0.9, useful 55%".
+ * to +3.5); from his -0.4 now: MLB 100% (already there), 62% starter, 20%
+ * star; cell method: peak +0.9, starter 55%".
  */
 function devPeakTextMl(p) {
   let s = `the ML model expects a peak of ${fmtWaa(p.Dev_PeakP50)} WAA`;
@@ -474,7 +495,7 @@ function devPeakTextMl(p) {
   const cellBits = [];
   if (cp !== null) cellBits.push(`peak ${fmtWaa(cp)}`);
   if (num(p.Dev_CellGainP50) !== null) cellBits.push(`gain ${fmtWaa(p.Dev_CellGainP50)}`);
-  if (cu !== null) cellBits.push(`useful ${fmtOdds(cu)}`);
+  if (cu !== null) cellBits.push(`starter ${fmtOdds(cu)}`);
   s += cellBits.length ? `; cell method: ${cellBits.join(', ')}` : '; cell method: none';
   return s + devMlRangeNote(p);
 }

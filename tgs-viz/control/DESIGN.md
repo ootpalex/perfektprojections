@@ -1,7 +1,7 @@
 # Control panel: build spec
 
-Status: build spec, revision 2, 2026-10-01. Base commit: `ef23800` (branch `control-panel`). Revision 2 folds in two reviews (user setup, works and safe). Section 19 lists the decisions left to the user; section 20 lists the objections not taken and why.
-Worktree: `C:\Users\perfe\Desktop\TGS-control-wt`. All paths below are relative to the worktree root unless they start with a drive letter.
+Status: built. Merged into main and pushed on 2026-10-01 (commits `6f10775` to `da191fb`, docs in `e9aca96`). This file is the build spec (revision 2), kept for reference. "Today" here means the code at `ef23800`. Revision 2 folds in two reviews (user setup, works and safe). Section 19 lists the decisions left to the user; section 20 lists the objections not taken and why.
+Paths below are relative to the repo root unless they start with a drive letter. The worktree (`C:\Users\perfe\Desktop\TGS-control-wt`) and the `control-panel` branch no longer exist.
 
 Changed decision (concrete reason, from both reviews): decision 3 said "one job at a time". A Grind runs for days (Grind TGS.bat:26, :66), and today the user can run Get StatsPlus Ratings in its own window during a Grind. One global lock would refuse that pull for days. Revision 2 replaces the single lock with named locks (section 7.5): two jobs that drive OOTP or touch the same clone saves never run together, and jobs that write app data take turns on one `data` lock, which a Grind holds only during its recalibrate steps.
 
@@ -750,9 +750,9 @@ cleanup_clones.<ID>      @py "ootp\cleanup_clones.py" --league <ID> --junk      
 
 | id | Group | Steps | Flags, notes |
 |---|---|---|---|
-| `retrain_ml` | dev | bank_dev's 10 ML steps in bat order (dataset TGS, dataset BLM, peak TGS, path TGS, peak BLM, path BLM, predict TGS, predict BLM, score TGS, score BLM) `[fail]`, then for each extra league X: `dataset --basis X --score-only --write`, `score --league X --write` `[collect]` | heavy, long, writes_app_data. "Hours; about 13 GB of memory (STATUS.md:40)" |
-| `retrain_ml.TGS` | dev | `@ml dataset.py --basis TGS --write`, `@ml peak.py fit-final --basis TGS`, `@ml path.py fit-final --basis TGS`, `@ml predict.py check --basis TGS`, `@ml score.py --league TGS --write` `[fail]`; extras whose basis is TGS `[collect]` | heavy, long |
-| `retrain_ml.BLM` | dev | same with BLM; extras whose basis is BLM (RG) `[collect]` | heavy, long |
+| `retrain_ml` | dev | (2026-10-02) DEV prices first, as bank_dev step 2b: `python engine/agecurve_fit.py --league DEV --calib BLM --no-guard --write`, `python backtest/ml/reprice.py --calib TGS`; then `dev_odds.py --write`, `dev_rating_odds.py --write`, dev signals for TGS, BLM and every extra league; then bank_dev's 10 ML steps in bat order `[fail]`, then for each extra league X: `dataset --basis X --score-only --write`, `score --league X --write` `[collect]` (19 steps for today's leagues) | heavy, long, writes_app_data. "Hours; about 13 GB of memory (measured at 295 seasons)" |
+| `retrain_ml.TGS` | dev | (2026-10-02) `python backtest/ml/reprice.py --calib TGS` first, then `@ml dataset.py --basis TGS --write`, `@ml peak.py fit-final --basis TGS`, `@ml path.py fit-final --basis TGS`, `@ml predict.py check --basis TGS`, `@ml score.py --league TGS --write` `[fail]`; extras whose basis is TGS `[collect]` | heavy, long |
+| `retrain_ml.BLM` | dev | (2026-10-02) the BLM DEV re-price first (`agecurve_fit.py --league DEV --calib BLM --no-guard --write`, which also rebuilds the DEV age curve), then dev_odds, dev_rating_odds and the dev signals of every league (they read the BLM-priced DEV values), then the five BLM ML steps `[fail]`; extras whose basis is BLM (RG) `[collect]`. Without the re-price the cards stopped with "no DEV engine prices tagged ..." after a BLM calibration change | heavy, long |
 | `dev_rescore` | dev | for L in TGS, BLM, extras: `dev_signals.py --league L --write`, `@ml dataset.py --basis L --score-only --write`, `@ml score.py --league L --write`, all `[collect L-...]` | writes_app_data. "No retraining; a few minutes" |
 | `bank_market_fit` | everyday | input `league` choice: `all` (default) or one player league. One step per league: `@node "tgs-viz\scripts\bank_market_fit.mjs" <L>` `[collect <L>-market]` {app} | The only writer of `<LG>/market_fit.json` (critic item 11). Never runs without a league argument (DEV has no players) |
 | `iafa_board` | everyday | input `league` choice (online leagues with `ootp_save`). `@py "tgs-viz\ingest\iafa.py" --league {league} --write` `[fail]` {app} | Today a typed command only |
@@ -819,7 +819,8 @@ Lock names and rules are in 7.5. Every task that is not `read_only` also holds `
 |---|---|---|---|---|
 | `get_ratings`, `get_history`, `update.<statsplus ID>`, `update.<local_export ID>` (RG) | none | from the first step | no | yes |
 | `bank_season`, `sync_metadata`, `dispersal_board`, `draft_board`, `iafa_board`, `bank_market_fit` | none | from the first step | no | no |
-| `parks_update`, `dev_rescore`, `retrain_ml`, `retrain_ml.TGS`, `retrain_ml.BLM` | none | from the first step | no | yes |
+| `parks_update`, `dev_rescore`, `retrain_ml.TGS` | none | from the first step | no | yes |
+| `retrain_ml`, `retrain_ml.BLM` | `dumps.DEV` (2026-10-02: they rerun dev_odds, which reads the DEV dump folder) | from the first step | no | yes |
 | `bank_dev`, `update.DEV`, `update.<dev ID>` | `dumps.<dev ID>` (DEV for bank_dev) | from the first step | no | yes |
 | `grind_tgs`, `grind_blm` | `ootp`, `clones.TGS` / `clones.BLM` | each cycle, from calibrate to the cycle end | no | yes |
 | `recalibrate_tgs`, `recalibrate_blm` | `clones.TGS` / `clones.BLM` | from the first step | no | yes |
@@ -952,8 +953,13 @@ Console mode prints the banner and echo lines from the legacy bat, at the same p
 2. Get StatsPlus History.bat:114 "Run StatsPlus Tokens.txt, or run this again..." becomes "Paste the league's token into StatsPlus Tokens.txt, or run this again and paste sessionid and csrftoken."
 3. Get StatsPlus History.bat:127-128 "run Set StatsPlus Tokens.bat" becomes "paste it into StatsPlus Tokens.txt".
 4. Bank Season.bat:20-23 becomes "  Mid-season, the actuals step skips that league. The projection snapshot still runs." (the real behavior, fetch_actuals.py:112-118).
-5. Get StatsPlus History.bat:18-22 runtime text becomes "How long: StatsPlus decides. Each snapshot waits only when StatsPlus says it is too soon. The first run can take up to about 2 hours."
+5. Get StatsPlus History.bat:18-22 runtime text becomes "How long: about an hour per run (5 dates, 15 minutes apart; StatsPlus allows 5 past-date requests a day). Each snapshot waits only when StatsPlus says it is too soon." (2026-10-02; StatsPlus's own replies.)
 6. bank_dev adds one reminder line per extra league just before its Done block (4.3).
+7. (2026-10-02) The dev signals headers (Get StatsPlus Ratings, Bank Dev Seasons, Get StatsPlus History) say "growth, gains and chances from the DEV grid, per 16-26 year old" (the age window is 16-26).
+8. (2026-10-02) Get StatsPlus History: "one 5-minute check job" becomes "one extra check job" (there is no fixed wait).
+9. (2026-10-02) Bank Dev Seasons step 2b also says it rebuilds the DEV age curve.
+10. (2026-10-02) Recalibrate TGS lists all five steps and "Takes 1 to 3 minutes plus your answers".
+Rules 7 to 10 are spelled out in tools/tests/test_bat_equivalence.py (ALLOWED).
 
 New lines that print only when another task holds a lock (7.5), the archive is missing (7.3) or the user presses Ctrl+C (6.4) are not text changes: they never print on a plain run.
 
@@ -1742,7 +1748,7 @@ Severity rule: `fail` only when the app or the Control page cannot work (Node, t
 | `python.main` | Python (main) | runs `interp("main") -c` probe: version, executable. `warn` when it cannot start or is under 3.11 (the app still opens; every task needs it) | "Install Python 3.13 from python.org and tick Add python.exe to PATH, or set the command on the Setup page." When `python` fails and `py -3` works: "Set Python (main) to py -3 on the Setup page." |
 | `python.main.packages` | Packages (main) | openpyxl, numpy missing: `warn` ("needed by every update task"); pyautogui, win32gui (pywin32), cv2 (opencv-python), PIL (Pillow) missing: `warn` ("needed only for Grind, Sim Dev League and the OOTP tools") | "Run: python -m pip install -r requirements.txt" |
 | `python.ml` | Python (ML) | same probe for `interp("ml")`; `warn` ("needed for ML dev scores; without it the app uses the older cell method") | "Install Python 3.14, or set the ML command on the Setup page." |
-| `python.ml.packages` | Packages (ML) | numpy, pandas, sklearn missing: `warn` (same reason) | "Run: py -3.14 -m pip install -r requirements-ml.txt" |
+| `python.ml.packages` | Packages (ML) | numpy, pandas, sklearn, xgboost missing: `warn` (same reason) | "Run: py -3.14 -m pip install -r requirements-ml.txt" |
 | `node` | Node.js | `node --version` >= 20.19 or >= 22.12 (Vite 7 engines); `fail` otherwise | "Install Node.js 22 LTS." |
 | `node_modules` | App packages | `tgs-viz/node_modules/.bin/vite.cmd` exists and `node_modules/vite/package.json` version starts with 7; `fail` otherwise | "Open a terminal in tgs-viz and run: npm install" |
 | `settings` | Settings | both files parse and validate; `fail` otherwise (the Control page cannot list tasks) | names the file and key; "Or press Reset local settings on the Setup page." |
@@ -1786,7 +1792,7 @@ numpy>=2.3.4
 pandas>=2.3.3
 scikit-learn>=1.7.2
 ```
-xgboost is left out (research script only, ml/gpu_compare.py:40).
+`requirements-ml.txt` also lists `xgboost>=3.0` (2026-10-02). `peak.py` trains the five gain-quantile models with it.
 
 ### 13.4 .gitignore additions
 
@@ -2011,7 +2017,7 @@ Run in the worktree, port 3100, `TGS_SELFTEST=1`, default control dir, `TGS_VITE
 
 ## 18. Out of scope for this build
 
-- README rewrite and `WHICH BUTTON.docx` (decision 9): a later phase, after integration.
+- README rewrite and `WHICH BUTTON.docx` (decision 9): done in `e9aca96`.
 - The app reading the manifest `basis` for pricing (leagueCalib.js:163 falls back to TGS for RG). Changing it would move RG's numbers.
 - Converting the remaining in-place writers (dev_signals.py:1120-1121, agecurve_fit.py:360-361 and others) to atomic writes. refresh.py, whose hitters and pitchers files decide whether a league loads at all, is converted (11.4). The hold-and-flush rules (9.3) and the keep-old-data rule cover the rest.
 - Hiding a disabled league from the app's league menu. Disabling only hides its tasks; the menu follows leagues.json, as today.
@@ -2024,7 +2030,7 @@ Run in the worktree, port 3100, `TGS_SELFTEST=1`, default control dir, `TGS_VITE
 Each has a default that the build follows. The integrator asks only these:
 
 1. Bank Dev Seasons and RG. Default: the bat stays exact (TGS and BLM only) and prints "Regular Game still uses its old dev numbers. Run Update Regular Game to refresh them." If the user wants Bank Dev Seasons to rescore RG itself (and any later league that borrows TGS or BLM), A adds three `collect` steps per such league after the BLM score step, each under a visible echo header ` --- RG dev signals and ML scores (new in the app version) ---`, and the reminder line goes away.
-2. Live checks that need the user present (16, steps 11 to 13): the OOTP focus check with OOTP 26 open, the kill-reset check, and merge day, which also needs every bat window closed first.
+2. Live checks that still need the user present (16, steps 11 and 12): the OOTP focus check with OOTP 26 open and the kill-reset check. Merge day is done.
 
 ---
 

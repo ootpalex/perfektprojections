@@ -143,7 +143,7 @@ DEFINITIONS = {
     "mlb": "ages 16-26: chance his eventual peak reaches -1 WAA (an MLB-level player); 1 when now is at the bar "
            "(within 0.05)",
     "useful": "the same at 0 WAA (an average MLB player); never above mlb",
-    "good": "the same at +1.5 WAA (a clear regular); never above useful",
+    "good": "the same at +1.5 WAA (a star); never above useful",
     "regular": "ages 16-26: chance of some later MLB season with 300+ PA or 150+ BF (the app's Make it %)",
     "d": "ages 16-38: median change of his WAA 1..5 game-years from now (for a player still in the league)",
     "dm": "ages 16-38: expected (mean) change of his WAA 1..5 game-years from now, for money (FA pricing)",

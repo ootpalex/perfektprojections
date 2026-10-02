@@ -1,20 +1,9 @@
 """
-One-command refresh — the no-paste pipeline.
+One-command refresh: the no-paste pipeline. It runs the engine and writes the
+app's JSON directly. No pasting into Excel, no Excel formulas. Your sheets are
+never opened for this (constants were already lifted by the engine).
 
-Point it at your two OOTP exports (the batters export and the pitchers export,
-each = Player List columns ID..R5) and it runs the engine and writes the app's
-JSON directly. No pasting into Excel, no Excel formulas. Your sheets are never
-opened for this (constants were already lifted by the engine).
-
-  python tgs-viz/ingest/refresh.py --league TGS --hitters hit.html --pitchers pit.html
-      --> writes public/data/TGS/hitters_engine.json + pitchers_engine.json (safe side files)
-
-  add --write to overwrite the real hitters.json / pitchers.json (a timestamped
-  .bak is made first). The app then shows engine-generated data.
-
-By default it writes SIDE files so you can diff/verify before switching over.
-
-StatsPlus mode (what the bats run):
+StatsPlus mode (what the bats and the Control page run):
   python tgs-viz/ingest/refresh.py --statsplus --league TGS --write
       pulls the ratings live, then the team names, contracts and injury status,
       and writes the app's JSON. statsplus.py sends the league's saved StatsPlus
@@ -27,6 +16,17 @@ StatsPlus mode (what the bats run):
       with no new ratings job. The team names, contracts and injury status then
       reuse the StatsPlus replies saved earlier while the league's in-game date
       has not moved (at most 6 hours old). A live pull always reads them fresh.
+
+Export mode (the older manual path): point it at your two OOTP exports (the
+batters export and the pitchers export, each = Player List columns ID..R5).
+
+  python tgs-viz/ingest/refresh.py --league TGS --hitters hit.html --pitchers pit.html
+      --> writes public/data/TGS/hitters_engine.json + pitchers_engine.json (safe side files)
+
+  add --write to overwrite the real hitters.json / pitchers.json (a timestamped
+  .bak is made first). The app then shows engine-generated data.
+
+By default it writes SIDE files so you can diff/verify before switching over.
 
 Exit codes in StatsPlus mode. On every code but 0, nothing is written to the app data:
   0  done
@@ -347,9 +347,10 @@ def main():
                 hist_dir, f"statsplus_{slug}_" + time.strftime("%Y%m%d-%H%M") + ".json")
             shutil.copy2(raw_path, hist_path)
             print(f"  archived pull -> {os.path.relpath(hist_path, REPO)}")
-            # ratings-history DB (informational only — projections never read it):
-            # append this live pull to backtest/ratings_history.db so per-player
-            # rating trends accumulate automatically. Additive; never fatal.
+            # ratings-history DB: append this live pull to backtest/ratings_history.db
+            # so per-player rating trends accumulate automatically. Prices always use
+            # the current ratings as they are; the archive feeds last year's growth into
+            # the dev numbers (dev signals, ML scoring rows). Additive; never fatal.
             try:
                 import importlib.util
                 _rdb = os.path.join(REPO, "tgs-viz", "backtest", "ratings_db.py")

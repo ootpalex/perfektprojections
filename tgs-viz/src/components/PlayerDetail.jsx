@@ -6,20 +6,21 @@ import { formatCellValue, getCellColorClass } from '../lib/columns';
 import { loadRatingTrends, playerHistory } from '../lib/ratingTrends';
 import { loadAgeCurve } from '../lib/ageCurve';
 import { useDataVersion } from '../lib/dataVersion';
-import { devSummary, devPeakText, devBasisText, devMlWords, fmtWaa } from '../lib/devSignals';
+import { devSummary, devPeakText, devBasisText, devIsMl, devMlWords, fmtWaa } from '../lib/devSignals';
+import { getWorkEthicModifier, getIntelligenceModifier } from '../lib/draftFV';
 import { trainingNotes, TRAIN_PEAK_BAR } from '../lib/orgBuilder';
 import { X } from 'lucide-react';
 
 /**
- * One line of dev signals for a player aged 16-22 (lib/devSignals.js), the
- * Exp peak sentence when the cell has one, and the basis in small print.
- * MLB %, Useful % and Good % (the chance his peak reaches -1 / 0 / +1.5 WAA
- * from where he is now: the share of his DEV lookalikes at a similar current
- * whose gain covered the distance, 100% "already there" when his current
- * sits at the bar; user, 2026-09-24) sit right after Make it in devSummary,
- * in that order ("MLB x%" first: the chance he is ever anything in the
- * majors, user, 2026-09-24), same style, because Make it is playing time,
- * not quality.
+ * One line of dev signals for a player aged 16-26 (lib/devSignals.js), the
+ * Exp peak sentence when the row has one, and the basis in small print.
+ * MLB %, Starter % and Star % (the chance his peak reaches -1 / 0 / +1.5 WAA
+ * from where he is now: from the ML model, else the share of his DEV
+ * lookalikes at a similar current whose gain covered the distance; 100%
+ * "already there" when his current sits at the bar; user, 2026-09-24) sit
+ * in devSummary in that order ("MLB x%" first: the chance he is ever
+ * anything in the majors, user, 2026-09-24). Make it % left the card with
+ * its list column (user, 2026-09-26): it is playing time, not quality.
  * Renders nothing for a row without an entry.
  */
 function DevSignalsLine({ player }) {
@@ -179,9 +180,11 @@ function Sparkline({ values, delta }) {
 }
 
 /**
- * Compact per-rating scouting history (informational — from the ratings-history
- * DB export; never feeds projections). Shows only ratings that CHANGED across
- * the archived pulls in the window.
+ * Compact per-rating history from the ratings-history DB export (the Rating
+ * Trends file). Shows only ratings that CHANGED across the archived pulls in
+ * the window. Nothing here feeds a projection: projections price the current
+ * ratings as they are, and the dev numbers read last year's growth from the
+ * same archive upstream (backtest/dev_signals.py, backtest/ml/dataset.py).
  */
 function RatingHistory({ player }) {
   const [trends, setTrends] = useState(undefined); // undefined=loading, null=unavailable
@@ -205,10 +208,10 @@ function RatingHistory({ player }) {
     <div className="bg-slate-800/50 rounded-lg p-3">
       <h3 className="text-xs font-semibold text-slate-400 uppercase mb-1">Rating History</h3>
       <div className="text-[10px] text-slate-500 mb-2">
-        {range} · {vintages} archived pulls · informational only (projections use current ratings)
+        {range} · {vintages} archived pulls. Projections price the current ratings as they are; last year's growth from this archive feeds the dev numbers.
       </div>
       {rows.length === 0 ? (
-        <div className="text-xs text-slate-500">No scouting-rating changes across the last {dates.length} pulls.</div>
+        <div className="text-xs text-slate-500">No rating changes across the last {dates.length} pulls.</div>
       ) : (
         <>
           {shown.map(r => (
@@ -235,6 +238,17 @@ function RatingHistory({ player }) {
     </div>
   );
 }
+
+/**
+ * A Draft FV personality modifier (draftFV.js getWorkEthicModifier /
+ * getIntelligenceModifier: 1.015 / 1.0 / 0.985) as "+1.5%" / "-1.5%", or ''
+ * when it leaves Draft FV even.
+ */
+function draftStep(mod) {
+  const v = Math.round((mod - 1) * 1000) / 10;
+  return v > 0 ? `+${v}%` : v < 0 ? `${v}%` : '';
+}
+const stepClass = (s) => (!s ? 'text-slate-600' : s.startsWith('+') ? 'text-green-400' : 'text-red-400');
 
 /**
  * Training positions for a hitter (user, 2026-09-24: "notate the positions
@@ -299,9 +313,10 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
   // its 25th to 75th percentile range (Dev_MlD[0], Dev_MlD1Lo / Hi). The
   // ML path models learn only from players who stayed in the league, so the
   // line reads "if he keeps playing"; the peak numbers (Proj Potential)
-  // count the washouts. The display path (chart, Year by year) is capped at
-  // Proj Potential, so its year 1 can sit below this median (checker: 585
-  // TGS rows).
+  // count the washouts. For ages 26 and under the display path (chart, Year
+  // by year) is smoothed (no dip before 28) and capped at Proj Potential, so
+  // its year 1 can differ from this median (checker: 585 TGS rows sat below
+  // it).
   const nextSeason = useMemo(() => {
     const p = fv.fullPath;
     if (!p || p.length < 2) return null;
@@ -328,6 +343,10 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
     { pos: 'RF', waa: parseFloat(player['RF WAA wtd']) || 0 },
     { pos: 'DH', waa: parseFloat(player['DH WAA wtd']) || 0 },
   ].filter(d => d.waa !== 0) : [];
+
+  // Work ethic and intelligence move Draft FV by the same step each.
+  const weStep = draftStep(getWorkEthicModifier(player.WrkEthic));
+  const intStep = draftStep(getIntelligenceModifier(player.Int));
 
   const statLine = (label, value, colorCol) => {
     const display = formatCellValue(value, colorCol || label);
@@ -486,7 +505,9 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                   <span className={`text-sm font-mono ${
                     nextSeason.delta > 0.05 ? 'text-green-400' : nextSeason.delta < -0.05 ? 'text-red-400' : 'text-slate-400'
                   }`} title={nextSeason.ml
-                    ? `Median change next season (age ${nextSeason.age}) from ${devMlWords(player)}, 25th to 75th pct ${fmtWaa(nextSeason.lo)} to ${fmtWaa(nextSeason.hi)}. It assumes he keeps playing: the path models learn only from players who stayed in the league, while Proj Potential counts the ones who wash out. The chart and the Year by year columns are capped at Proj Potential; projected WAA at age ${nextSeason.age} there: ${nextSeason.waa.toFixed(1)}`
+                    ? `Median change next season (age ${nextSeason.age}) from ${devMlWords(player)}, 25th to 75th pct ${fmtWaa(nextSeason.lo)} to ${fmtWaa(nextSeason.hi)}. It assumes he keeps playing: the path models learn only from players who stayed in the league${devIsMl(player)
+                      ? `, while Proj Potential counts the ones who wash out. The chart and the Year by year columns are capped at Proj Potential and smoothed (no dip before 28); projected WAA at age ${nextSeason.age} there: ${nextSeason.waa.toFixed(1)}`
+                      : `. Projected WAA at age ${nextSeason.age} on the chart: ${nextSeason.waa.toFixed(1)}`}`
                     : `Projected WAA at age ${nextSeason.age}: ${nextSeason.waa.toFixed(1)}`}>
                     {nextSeason.delta > 0 ? '+' : ''}{nextSeason.delta.toFixed(1)} WAA{nextSeason.ml ? '' : ` (age ${nextSeason.age})`}
                     {nextSeason.ml && nextSeason.lo !== null && nextSeason.hi !== null
@@ -517,7 +538,6 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                 {statLine('Draft Raw Score', player._draftRawFV, '_draftRawFV')}
                 {statLine('Age Percentile', player._agePercentile, '_agePercentile')}
                 {statLine('Ceiling (WAA)', player._draftCeilingWAA, '_draftCeilingWAA')}
-                {statLine('Ceiling (WAR, scored)', player._draftCeiling, '_draftCeiling')}
                 {player._ceilingRole && statLine('Ceiling role', player._ceilingRole)}
                 <div className="flex justify-between items-center py-0.5">
                   <span className="text-slate-500 text-xs">Durability</span>
@@ -525,7 +545,12 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                     {player._durability}
                   </span>
                 </div>
-                {statLine('WE Boost', player._weBoost ? '+2%' : 'None')}
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="text-slate-500 text-xs">Work ethic</span>
+                  <span className={`text-sm font-mono ${stepClass(weStep)}`}>
+                    {weStep ? `${weStep} Draft FV` : 'None'}
+                  </span>
+                </div>
                 {player._toolPenalty !== undefined && player._toolPenalty < 1.0 && (
                   <div className="flex justify-between items-center py-0.5">
                     <span className="text-slate-500 text-xs">Tool Penalty</span>
@@ -536,8 +561,8 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                 )}
                 <div className="flex justify-between items-center py-0.5">
                   <span className="text-slate-500 text-xs">High INT</span>
-                  <span className={`text-sm font-mono ${player._highINT ? 'text-green-400' : 'text-slate-600'}`}>
-                    {player._highINT ? 'Yes (TCR lottery)' : 'No'}
+                  <span className={`text-sm font-mono ${stepClass(intStep)}`}>
+                    {player._highINT ? `Yes (${intStep} Draft FV)` : intStep ? `No (low: ${intStep} Draft FV)` : 'No'}
                   </span>
                 </div>
                 {player._wrecked && (
@@ -633,7 +658,11 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
               <div className="text-center text-xs text-slate-500 mt-1">
                 {fv.targetSource === 'ml' ? (
                   <>
-                    <span className="text-blue-400">projected path: five years from the ML model, then the measured DEV curve</span>
+                    <span className="text-blue-400">
+                      {devIsMl(player)
+                        ? 'projected path: five ML years (smoothed, capped at Proj Potential), then the measured DEV curve'
+                        : 'projected path: five ML years, then the measured DEV curve'}
+                    </span>
                   </>
                 ) : fv.measured ? (
                   <>

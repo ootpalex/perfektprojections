@@ -15,7 +15,8 @@ Inputs (all under .dev_cache/ml, <B> = the basis):
   preds/<B>/ml_peak.pkl                ML peak model (peak.py)
   preds/<B>/current_peak.pkl           the app's cells, first-20 cohort, realized only
   preds/<B>/current_all_peak.pkl       the same cells on every finished career
-  preds/<B>/current_w40_peak.pkl       the app's exact 2025-2040 cohort (extra)
+  preds/<B>/current_w40_peak.pkl       the app's exact cohort, first dump 2025 to the
+                                       last banked dump minus 23 (extra)
   preds/<B>/ml_path.pkl                ML year-by-year model (path.py)
   preds/<B>/current_path_path.pkl      the app's measuredPath, curve refit per split
   preds/<B>/age_mean_path.pkl          plain role x age mean change
@@ -51,13 +52,14 @@ Decision rule (applied mechanically, overall subset, main view):
   "current wins" when ML is worse than current with the interval above zero on
   both splits. Otherwise "no clear win".
 
-Outputs:
-  .dev_cache/ml/report/report.json
-  .dev_cache/ml/report/report.md
+Outputs (one set per basis):
+  .dev_cache/ml/report/<B>/report.json
+  .dev_cache/ml/report/<B>/report.md
+  (report_quick.json and report_quick.md with --quick)
 
 Run with Python 3.14:
-  python compare.py                 full run (about 10 minutes)
-  python compare.py --quick         20% of players, 60 resamples (smoke test)
+  py -3.14 compare.py --basis TGS           full run (about 10 minutes)
+  py -3.14 compare.py --basis TGS --quick   20% of players, 60 resamples (smoke test)
 """
 import argparse
 import datetime as _dt
@@ -1165,7 +1167,7 @@ def notes(R):
     return [
         "Rows: peak group = DEV rows at ages 16-26, in an org, with a known outcome (seen at 27+ or retired). "
         "Path group = rows at ages 16-38 present the next year. oof = 5 grouped folds by player; time = fit on "
-        "players first seen by 2144, tested on later ones.",
+        "players first seen up to the time-split cutoff (schema folds.time_cutoff), tested on later ones.",
         "The bootstrap resamples players (every row of a drawn player comes along), so the intervals account for "
         "one player appearing at several ages.",
         "Log loss clips every probability to [eps, 1 - eps]. The cell methods give exactly 0 on many rows below "
@@ -1173,8 +1175,9 @@ def notes(R):
         "the cell methods more than ML; Brier needs no clip and is reported next to it.",
         "p_regular: ML and the refit cells are scored on regular_future. The app's own column (current_makeit) "
         "was fit on regular_ever, which also counts seasons already played.",
-        "current = the app's cells on the first-20 cohort without the 2025-2040 window; current_w40 = the app's "
-        "exact cohort; current_all = the same cells on every finished career (realized or retired).",
+        "current = the app's cells on the first-20 cohort without the first-dump window; current_w40 = the app's "
+        "exact cohort (first dump 2025 to the last banked dump minus 23); current_all = the same cells on every "
+        "finished career (realized or retired).",
         "Path: the decision compares ML with current_path (the app's measuredPath) and age_mean (role x age mean "
         "change), because the path has no current_all. ML's d1..d5 are medians; ml_mean is the squared-loss "
         "model of the same horizon (d1_mean..d5_mean, fix 5).",
@@ -1187,7 +1190,7 @@ def notes(R):
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Score the ML models against the current method on the same held-out DEV rows and write "
-                    ".dev_cache/ml/report/report.json and report.md.")
+                    ".dev_cache/ml/report/<basis>/report.json and report.md.")
     ap.add_argument("--boot", type=int, default=300, help="bootstrap resamples over players (default 300)")
     ap.add_argument("--eps", type=float, default=1e-3, help="probability clip for log loss (default 0.001)")
     ap.add_argument("--seed", type=int, default=20260924, help="random seed")

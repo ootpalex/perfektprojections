@@ -1,10 +1,13 @@
 """
 Build the Draft Board JSON from OOTP's draft-pool CSV + the cached StatsPlus pull.
 
-StatsPlus doesn't expose draft ELIGIBILITY (its draft_year = year-drafted, /draft = past
-results), so OOTP's draft-pool export is the authoritative "this year's class." But the
-RATINGS for every prospect ARE in the StatsPlus ratings pull. So: the CSV supplies the IDs,
-the cached pull supplies the ratings, the engine projects them — no manual ratings paste.
+StatsPlus has no list of this year's draft class: /players carries a draft_eligible flag,
+but it marks the whole amateur pool, future classes included (its draft_year = year
+drafted, /draft = past results). So OOTP's draft-pool export is the authoritative "this
+year's class." With no export, BLM falls back to the /players draft_eligible flag
+(API_POOL_FALLBACK); TGS leaves its board as it is. The RATINGS for every prospect ARE in
+the StatsPlus ratings pull. So: the CSV supplies the IDs, the cached pull supplies the
+ratings, the engine projects them. No manual ratings paste.
 
   python tgs-viz/ingest/draft.py --league TGS [--csv "<path>"] [--write]
 

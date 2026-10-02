@@ -25,9 +25,9 @@ Every archive reader sorts by game date (backtest/pull_order.py). The app
 values keep coming from the newest LIVE pull; a snapshot never becomes "the
 latest pull".
 
-LOGIN. The league's saved StatsPlus token (statsplus_token.py; Set StatsPlus
-Tokens.bat saves one per league). statsplus.py adds it on its own to every
-request: /date, /players, /tokencheck and the ratings jobs. Without a saved
+LOGIN. The league's saved StatsPlus token (statsplus_token.py; the token file
+StatsPlus Tokens.txt holds one per league). statsplus.py adds it on its own to
+every request: /date, /players, /tokencheck and the ratings jobs. Without a saved
 token, the ratings jobs use the browser cookie pair from the STATSPLUS_COOKIE
 environment variable (Get StatsPlus History.bat asks for it only then); with
 both, the token goes first and the cookie is the fallback, and once StatsPlus
@@ -62,8 +62,12 @@ Order of the jobs:
      (TGS 2038-01-01, BLM 2051-01-01) one step at a time; stop after 2 dates
      in a row without new ratings (no snapshot, today's ratings, a repeat or a
      refusal), or at PROBE_YEARS before it. Both leagues are set to 0: no walk
-     back. TGS starts at 2038-01-01 and BLM at 2051-01-01 (about the last 8
-     seasons; older game versions developed players differently)
+     back. The tool starts asking at the settings date: TGS 2038-01-01 and BLM
+     2051-01-01 (about the last 8 seasons; older game versions developed
+     players differently). StatsPlus's TGS history begins 2040-08-07: asked
+     for an earlier date, StatsPlus says so ("The earliest date with ratings
+     history is ..."), and the tool skips every earlier step date and asks for
+     that date itself (from_earliest)
   3. every step date from the earliest date with data, oldest first
 A date already archived as an asof pull is skipped, and so is a date in the
 no-snapshot memory (below) unless --retry-missing. A step date less than 31
@@ -224,9 +228,12 @@ _HIST = ST.history_settings()  # settings leagues.<LG>.history
 FIRST_KNOWN = {lg: h["first_date"] for lg, h in _HIST.items()}
 # walk back at most this many years before it. TGS: none (user, 2026-09-30:
 # "just like the past 8 seasons because older versions of the game likely had
-# different ratings"), so TGS starts at 2038-01-01 (2038-2045 = 8 seasons).
-# BLM: none either (same reason; older snapshots would only feed displays and
-# could contaminate any measurement), so BLM starts at 2051-01-01.
+# different ratings"), so the TGS steps start at the settings date 2038-01-01
+# (2038-2045 = 8 seasons). StatsPlus's TGS history begins 2040-08-07: it says
+# so when asked for an earlier date, and the run skips the earlier steps
+# (from_earliest). BLM: none either (same reason; older snapshots would only
+# feed displays and could contaminate any measurement), so BLM starts at
+# 2051-01-01.
 PROBE_YEARS = {lg: h["probe_years"] for lg, h in _HIST.items()}
 MIN_PAUSE = 20.0                # seconds between jobs (be gentle with the server)
 RATE_GAP = 0.0                  # seconds between job STARTS. No fixed wait (user, 2026-09-30):
@@ -734,8 +741,9 @@ class Job:
                 waits.append(self.args.rate_gap - (time.time() - self.last_job_start))
             wait = max(waits, default=0)
             if wait > 0:
-                log(f"    waiting {wait:.0f} s before the next job (StatsPlus allows one ratings "
-                    f"request per 5 minutes)")
+                log(f"    waiting {wait:.0f} s before the next job (a short pause between jobs; StatsPlus "
+                    f"allows one past-date request every 15 minutes and 5 a day, and the tool waits "
+                    f"for that only when StatsPlus says so)")
                 time.sleep(wait)
             self.messages = []
             t0 = time.time()
@@ -759,8 +767,10 @@ class Job:
             if f is not None and f.method == "token" and self.cookie and not self.token_off and login_refusal(f):
                 self.drop_token(f.kind)
                 continue
-            # StatsPlus refuses a request less than 5 minutes after the last one
-            # and says how long to wait (HTTP 429 the same): wait that long and ask again.
+            # StatsPlus allows one past-date request every 15 minutes and 5 a day.
+            # A request too soon is refused with the wait to use (HTTP 429 the
+            # same): wait that long and ask again. The daily cap is not waited out
+            # (failure_how "daily limit": the run stops cleanly).
             if f is None or attempt >= TOO_SOON_TRIES or failure_how(f) != "too soon":
                 break
             attempt += 1

@@ -33,6 +33,7 @@ os.environ["TGS_SETTINGS_LOCAL"] = os.path.join(TMP, "no-local-settings.json")
 os.environ["STATSPLUS_TOKEN_FILE"] = os.path.join(TMP, "tokens", "StatsPlus Tokens.txt")
 os.environ.pop("RATINGS_DB_ALLOW_NEW", None)
 os.environ.pop("RATINGS_ARCHIVE_ROOT", None)
+_ENV = dict(os.environ)          # this module's environment, as set above
 for p in (TOOLS, INGEST, BACKTEST, OOTP, VIZ):
     if p not in sys.path:
         sys.path.insert(0, p)
@@ -539,8 +540,23 @@ class PythonMainCases(unittest.TestCase):
             self.assertEqual(out, want, c["name"])
 
 
+_BEFORE = {}
+
+
+def setUpModule():
+    # unittest discover imports every test module before it runs any; a later
+    # module's import-time environment would leak into this one. Put this
+    # module's back for its tests, and the previous one back after them.
+    _BEFORE.clear()
+    _BEFORE.update(os.environ)
+    os.environ.clear()
+    os.environ.update(_ENV)
+
+
 def tearDownModule():
     shutil.rmtree(TMP, ignore_errors=True)
+    os.environ.clear()
+    os.environ.update(_BEFORE)
 
 
 if __name__ == "__main__":

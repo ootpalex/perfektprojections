@@ -5,11 +5,12 @@ import { useDataVersion } from '../lib/dataVersion';
 import { TrendingUp, TrendingDown, Info, Loader2 } from 'lucide-react';
 
 /**
- * TrendsPage — league-wide scouting-rating movement from the ratings-history
- * DB (backtest/ratings_history.db -> rating_trends.json).
+ * TrendsPage: league-wide rating movement from the ratings-history DB
+ * (backtest/ratings_history.db -> rating_trends.json).
  *
- * INFORMATIONAL ONLY: nothing here feeds a projection. Projections stay
- * ratings-only from the current pull.
+ * Nothing on this page feeds a projection. Projections price the current
+ * ratings as they are; the dev numbers (backtest/dev_signals.py,
+ * backtest/ml/dataset.py) read last year's growth from the same archive.
  */
 
 function MoverTable({ title, rows, icon, accent }) {
@@ -508,7 +509,7 @@ function AgeCurveExplorer({ ageCurves }) {
         <Info size={13} className="shrink-0 mt-0.5" />
         <p>
           {effMode === 'gap'
-            ? `Only players whose CURRENT sat below their POTENTIAL for this rating at each interval — maxed players never dilute the growth of players with room. ${lens ? 'Lines' : 'Bars'} = ${colInternal ? "points on OOTP's internal 1-600 scale" : `display points (${ratingScale(ageCurves)} scale)`} gained per year of age; the gap is re-read every pull pair, so re-scouts and caught-up ratings switch tracking automatically.${lens ? '' : ' Bars past ~29 are scout alignment on veterans, not development.'}`
+            ? `Only players whose CURRENT sat below their POTENTIAL for this rating at each interval: maxed players never dilute the growth of players with room. ${lens ? 'Lines' : 'Bars'} = ${colInternal ? "points on OOTP's internal 1-600 scale" : `display points (${ratingScale(ageCurves)} scale)`} gained per year of age; the gap is re-read every pull pair, so re-scouts and caught-up ratings switch tracking automatically.${lens ? '' : ' Bars past ~29 rest on few players who still have room; read them with care.'}`
             : ageCurves.note}
         </p>
       </div>
@@ -608,7 +609,7 @@ const groupLabel = (g, unit) => `${g} (${ptsWordOf(unit)})`;
 // A threshold in the row's unit, written short: "15" for internal points,
 // "0.5" on 20-80, "0.8" on 1-100.
 const fmtThreshold = v => (Number.isInteger(v) ? String(v) : v.toFixed(1));
-const SUMMARY_AGES = Array.from({ length: 15 }, (_, i) => 16 + i);   // 16..30; past 29 is scout re-reads
+const SUMMARY_AGES = Array.from({ length: 15 }, (_, i) => 16 + i);   // 16..30; past ~29 few players still have room, read with care
 const GROWTH_AGES = [17, 18, 19, 20, 21, 22, 23, 24];                 // where development happens
 const MIN_N = 50;                                                     // pull-pair observations per cell
 const ratingLabel = c => RATING_LABEL[c] || c;
@@ -1003,9 +1004,11 @@ export default function TrendsPage({ league }) {
       <div className="flex items-center justify-center h-full">
         <div className="text-center max-w-md text-slate-400 text-sm space-y-2">
           <p className="text-white font-bold">No rating history yet for {league}</p>
-          <p>The trends board needs at least two archived ratings pulls. Run:</p>
-          <code className="block text-xs text-blue-400 bg-slate-900 rounded p-2">
-            python tgs-viz/backtest/ratings_db.py --backfill --export   (StatsPlus leagues)  or  Sim Dev League.bat  (dump leagues)
+          <p>The trends board needs at least two archived ratings pulls. Each pull adds itself to the archive.</p>
+          <code className="block text-xs text-blue-400 bg-slate-900 rounded p-2 text-left space-y-1">
+            <span className="block">StatsPlus league: run Get StatsPlus Ratings again after the league plays on, or Get StatsPlus History.</span>
+            <span className="block">OOTP export league: export again after the league plays on, then run its Update task.</span>
+            <span className="block">Dump league: run Sim Dev League.</span>
           </code>
         </div>
       </div>
@@ -1024,8 +1027,8 @@ export default function TrendsPage({ league }) {
             {nPulls} archived ratings vintages (
             {trends.pulls[0].g && trends.pulls[nPulls - 1].g
               ? `in-game ${trends.pulls[0].g} → ${trends.pulls[nPulls - 1].g}`
-              : `${trends.pulls[0].d} → ${trends.pulls[nPulls - 1].d}`}) ·
-            informational only — projections always use the current pull
+              : `${trends.pulls[0].d} → ${trends.pulls[nPulls - 1].d}`}).
+            Projections price the current ratings as they are; last year's growth from this archive feeds the dev numbers.
           </p>
         </div>
         {windows.length > 0 && (
@@ -1046,7 +1049,7 @@ export default function TrendsPage({ league }) {
         <>
           <p className="text-xs text-slate-500">
             {mv.from} → {mv.to}: <span className="text-slate-300 font-semibold">{mv.changed.toLocaleString()}</span> players
-            had at least one scouting-rating change. Total Δ = sum of all rating-point changes on the {ratingScale(trends.age_curves)} scale.
+            had at least one rating change. Total Δ = sum of all rating-point changes on the {ratingScale(trends.age_curves)} scale.
           </p>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <MoverTable

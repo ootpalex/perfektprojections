@@ -194,8 +194,8 @@ function buildFromRaw(raw, listKeys, league) {
   // that has never been banked just prices off its live fit.
   results.marketBank = raw.marketBank ?? null;
 
-  // Dev signals (growth, Pot direction, DEV-league odds of becoming a
-  // regular) for players aged 16-22 at the latest pull. Absent file = no
+  // Dev signals (growth, Pot direction, the MLB / Starter / Star chances and
+  // Exp peak) for players aged 16-26 at the latest pull. Absent file = no
   // Dev_* fields on any row. The park variants carry the same IDs, so one
   // file serves both bases.
   const devSignals = raw.devSignals || null;
@@ -851,8 +851,8 @@ export function usePlayersWithDraftFV(draftPlayers, allPlayers, playerType) {
         _draftRawFV: dfv.draftRawFV,
         _agePercentile: dfv.agePercentile,
         _ceilingScore: dfv.ceilingScore,
-        _draftCeiling: dfv.draftCeiling,          // WAR — what Draft FV is scored on
-        _draftCeilingWAA: dfv.draftCeilingWAA,    // WAA — what the board displays
+        _draftCeiling: dfv.draftCeiling,          // WAA, the same number (ceilingOffset 0); the board's sort tier reads it
+        _draftCeilingWAA: dfv.draftCeilingWAA,    // WAA, what the board displays and Draft FV scores
         _ceilingRole: dfv.ceilingRole,
         _durability: dfv.proneValue,
         _toolPenalty: dfv.toolPenalty,

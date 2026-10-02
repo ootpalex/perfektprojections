@@ -81,6 +81,7 @@ RDB.insert_pull(_conn, "OLD", "2026-01-01", "2026-01-01T00:00:00", "live", [],
                 {"1": {"name": "A", "age": 20, "pos": "SS", "org": "1", "lev": "MLB"}})
 _conn.close()
 os.environ.pop("RATINGS_DB_ALLOW_NEW")
+_ENV = dict(os.environ)          # this module's environment, as set above
 
 
 def nl(*argv, env=None):
@@ -434,8 +435,23 @@ class Token(unittest.TestCase):
         self.assertNotIn("TGS_NL_TOKEN", os.environ)
 
 
+_BEFORE = {}
+
+
+def setUpModule():
+    # unittest discover imports every test module before it runs any; a later
+    # module's import-time environment would leak into this one. Put this
+    # module's back for its tests, and the previous one back after them.
+    _BEFORE.clear()
+    _BEFORE.update(os.environ)
+    os.environ.clear()
+    os.environ.update(_ENV)
+
+
 def tearDownModule():
     shutil.rmtree(TMP, ignore_errors=True)
+    os.environ.clear()
+    os.environ.update(_BEFORE)
 
 
 if __name__ == "__main__":

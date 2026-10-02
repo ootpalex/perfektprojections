@@ -112,7 +112,7 @@ T = {
     ],
     'ratings.devsignals': [
         '',
-        ' --- Dev signals (DEV-league odds of becoming a regular, per 16-22 year old) ---',
+        ' --- Dev signals (growth, gains and chances from the DEV grid, per 16-26 year old) ---',
     ],
     'ratings.ml': [
         '',
@@ -147,7 +147,7 @@ T = {
     'history.banner_b': [
         ' A second run asks StatsPlus for almost nothing: dates already stored,',
         ' and dates StatsPlus had no snapshot for last time, are skipped. It runs',
-        ' one 5-minute check job only when no token is saved for the league, or',
+        ' one extra check job only when no token is saved for the league, or',
         ' when the league has played on since your last Get StatsPlus Ratings run.',
         " Each snapshot is checked before it is stored: if StatsPlus sends today's",
         ' ratings for a past date, or repeats a date, nothing from it is stored.',
@@ -189,7 +189,7 @@ T = {
     ],
     'history.devsignals': [
         '',
-        ' --- {league} dev signals (odds of becoming a regular, per 16-22 year old) ---',
+        ' --- {league} dev signals (growth, gains and chances from the DEV grid, per 16-26 year old) ---',
     ],
     'history.ml': [
         '',
@@ -338,7 +338,7 @@ T = {
     ],
     'bank_dev.value': [
         '',
-        " --- 2b. value the new DEV seasons with each league's engine (only new seasons) ---",
+        " --- 2b. value the new DEV seasons with each league's engine (only new seasons) and rebuild the DEV age curve ---",
     ],
     'bank_dev.odds': [
         '',
@@ -350,7 +350,7 @@ T = {
     ],
     'bank_dev.devsignals': [
         '',
-        ' --- 4. dev signals for TGS and BLM (the grid applied to each 16-22 year old) ---',
+        ' --- 4. dev signals for TGS and BLM (growth, gains and chances from the DEV grid, per 16-26 year old) ---',
     ],
     'bank_dev.ml': [
         '',
@@ -469,8 +469,12 @@ T = {
         '     Incomplete clones are skipped automatically.',
         '  2. Shows you exactly what would change in the sheets and',
         '     asks before writing (timestamped .bak made first).',
-        '  3. Rebuilds the webapp data from the cached StatsPlus pull.',
-        '  No Excel needed. Takes ~30 seconds total.',
+        '  3. Refits the fitted layers and promotes the S-curves if',
+        '     they pass their gates.',
+        '  4. Rebuilds the Calibration page data and the webapp data',
+        '     from the cached StatsPlus pull.',
+        '  5. Offers to delete the clone saves (their data is archived).',
+        '  No Excel needed. Takes 1 to 3 minutes plus your answers.',
         '  (Sim more clones first with "4 - Sim TGS.bat" if you want',
         '   a bigger sample.)',
         '============================================================',
@@ -1155,7 +1159,9 @@ REFRESH, DRAFT, R5 = r"tgs-viz\ingest\refresh.py", r"tgs-viz\ingest\draft.py", r
 AGECURVE = r"tgs-viz\engine\agecurve_fit.py"
 RATINGS_DB = r"tgs-viz\backtest\ratings_db.py"
 DEV_SIGNALS = r"tgs-viz\backtest\dev_signals.py"
+DEV_ODDS, DEV_RATING_ODDS = r"tgs-viz\backtest\dev_odds.py", r"tgs-viz\backtest\dev_rating_odds.py"
 ML_DATASET, ML_SCORE = r"tgs-viz\backtest\ml\dataset.py", r"tgs-viz\backtest\ml\score.py"
+REPRICE = r"tgs-viz\backtest\ml\reprice.py"
 TOKEN = r"tgs-viz\ingest\statsplus_token.py"
 PULL_REPORT = r"tgs-viz\ingest\pull_report.py"
 CALIBRATE = r"tgs-viz\engine\calibrate.py"
@@ -1222,8 +1228,9 @@ def t_get_ratings():
 
 
 HISTORY_BANNER_RULE5 = [
-    " How long: StatsPlus decides. Each snapshot waits only when StatsPlus",
-    " says it is too soon. The first run can take up to about 2 hours.",
+    " How long: about an hour per run (5 dates, 15 minutes apart; StatsPlus",
+    " allows 5 past-date requests a day). Each snapshot waits only when",
+    " StatsPlus says it is too soon.",
 ]
 HISTORY_STOP2 = [
     "",
@@ -1282,7 +1289,7 @@ def t_get_history(ST):
                 "It never changes the current player values.",
                 "season", steps, leagues=hist, bat="Get StatsPlus History.bat",
                 fl=flags(writes_app_data=True, network=True, secret_inputs=True, long=True, needs_archive=True),
-                time="Minutes to about 2 hours (StatsPlus decides the waits)",
+                time="About an hour per run (5 dates, 15 minutes apart; StatsPlus allows 5 past-date requests a day)",
                 inputs=[league_in] + cookie_inputs(ask),
                 banner=T["history.banner_a"] + HISTORY_BANNER_RULE5 + T["history.banner_b"],
                 finish=fin("fails", ok=["", ""], fails=[""] + T["history.fails"] + [""], exit_ok=None))
@@ -1323,13 +1330,12 @@ def t_bank_dev(ST):
              echo=T["bank_dev.dump"]),
         step("dev_trends", "DEV trends file", py(RATINGS_DB, "--export", "--league", "DEV"),
              echo=T["bank_dev.trends"], app=True),
-        step("dev_value", "Value the new DEV seasons (BLM engine)",
-             py(AGECURVE, "--league", "DEV", "--calib", "BLM", "--no-guard", "--write"),
+        step("dev_value", "Value the new DEV seasons (BLM engine)", dev_price_argv("BLM"),
              echo=T["bank_dev.value"], app=True),
-        step("reprice", "Value the new DEV seasons (TGS engine)", py(r"tgs-viz\backtest\ml\reprice.py", "--calib", "TGS")),
-        step("dev_odds", "DEV odds grid", py(r"tgs-viz\backtest\dev_odds.py", "--write"),
+        step("reprice", "Value the new DEV seasons (TGS engine)", dev_price_argv("TGS")),
+        step("dev_odds", "DEV odds grid", py(DEV_ODDS, "--write"),
              echo=T["bank_dev.odds"], app=True),
-        step("dev_rating_odds", "Make-it odds tables", py(r"tgs-viz\backtest\dev_rating_odds.py", "--write"),
+        step("dev_rating_odds", "Make-it odds tables", py(DEV_RATING_ODDS, "--write"),
              echo=T["bank_dev.rating_odds"], app=True),
         step("tgs_devsignals", "TGS dev signals", py(DEV_SIGNALS, "--league", "TGS", "--write"),
              echo=T["bank_dev.devsignals"], app=True),
@@ -1345,14 +1351,60 @@ def t_bank_dev(ST):
     ok = reminders + T["bank_dev.ok"][:2] + [
         "  Done. " + NO_RELOAD + " Pick the DEV league."] + T["bank_dev.ok"][2:]
     return task("bank_dev", "Bank Dev Seasons",
-                "Banks the DEV seasons you simmed by hand, rebuilds the DEV trends and odds, retrains the ML "
-                "dev models and rescores TGS and BLM. Needs about 13 GB of memory.",
+                "Banks the DEV seasons you simmed by hand, rebuilds the DEV trends, odds and age curve, retrains "
+                "the ML dev models and rescores TGS and BLM. Needs about 13 GB of memory.",
                 "dev", steps, leagues=["DEV", "TGS", "BLM"], bat="Bank Dev Seasons.bat",
                 requires=["DEV", "TGS", "BLM"],
                 fl=flags(heavy=True, long=True, writes_app_data=True, needs_archive=True),
                 locks=["dumps.DEV"], time="Hours (retrains the ML models; needs about 13 GB of memory)",
                 banner=T["bank_dev.banner"],
                 finish=fin("failfast", ok=ok, fail=T["bank_dev.fail"], exit_ok=0, exit_fail=1))
+
+
+def dev_price_argv(basis):
+    """The DEV re-price of Bank Dev Seasons on one basis. BLM: agecurve_fit,
+    which also rewrites the DEV age curve that every league's path uses. TGS:
+    ml/reprice.py (its prices live in .dev_cache/ml/waa_TGS)."""
+    if basis == "BLM":
+        return py(AGECURVE, "--league", "DEV", "--calib", "BLM", "--no-guard", "--write")
+    return py(REPRICE, "--calib", "TGS")
+
+
+def dev_price_steps(ST, bases):
+    """What a retrain on these bases runs before its ML steps, in Bank Dev
+    Seasons order. First the DEV re-price on each basis: a recalibration gives
+    the DEV prices a new tag, and dataset.py stops until DEV is priced with it.
+    The odds grid, the Make-it odds tables and the dev signals read the BLM
+    prices, so a BLM re-price reruns them, the dev signals for every league
+    that shows them (TGS, BLM and each extra league). A step for a league the
+    card trains stops the card when it fails; a step for another league
+    collects its failure and the card goes on."""
+    out = []
+    if "BLM" in bases:
+        out.append(step("dev_value", "Value the DEV seasons (BLM engine) and rebuild the DEV age curve",
+                        dev_price_argv("BLM"), app=True))
+    if "TGS" in bases:
+        out.append(step("reprice", "Value the DEV seasons (TGS engine)", dev_price_argv("TGS")))
+    if "BLM" in bases:
+        out += [step("dev_odds", "DEV odds grid", py(DEV_ODDS, "--write"), app=True),
+                step("dev_rating_odds", "Make-it odds tables", py(DEV_RATING_ODDS, "--write"), app=True)]
+        shown = [lg for lg in ("TGS", "BLM") if lg in ST.leagues()] + list(ST.extra_leagues())
+        for lg in shown:
+            own = lg in bases
+            out.append(step(f"{lg.lower()}_devsignals", f"{lg} dev signals", py(DEV_SIGNALS, "--league", lg, "--write"),
+                            "fail" if own else "collect", None if own else f"{lg}-devsignals", app=True))
+    return out
+
+
+def ml_extra_steps(leagues):
+    """ML rows, then ML scores, of the extra leagues a retrained basis scores."""
+    out = []
+    for x in leagues:
+        out.append(step(f"{x.lower()}_ml_rows", f"{x} ML rows", ml(ML_DATASET, "--basis", x, "--score-only", "--write"),
+                        "collect", f"{x}-ml-rows"))
+        out.append(step(f"{x.lower()}_ml_score", f"{x} ML scores", ml(ML_SCORE, "--league", x, "--write"),
+                        "collect", f"{x}-ml-score", app=True))
+    return out
 
 
 def ml_retrain_steps(bases=("TGS", "BLM")):
@@ -1831,42 +1883,45 @@ def t_clone_tasks(ST, lg):
 # ---------------------------------------------------------------- tasks with no bat (4.6)
 
 def t_ml_tasks(ST):
+    """The retrain cards price DEV first, the way Bank Dev Seasons does (see
+    dev_price_steps). A card that reruns the DEV odds reads the DEV dump folder
+    (dev_odds sums the playing time from its per-game files), so it holds
+    dumps.DEV like Bank Dev Seasons and never runs while Sim Dev League sims."""
     extras = ST.extra_leagues()
     out = []
-    steps = ml_retrain_steps()
-    for x in extras:
-        steps.append(step(f"{x.lower()}_ml_rows", f"{x} ML rows", ml(ML_DATASET, "--basis", x, "--score-only", "--write"),
-                          "collect", f"{x}-ml-rows"))
-        steps.append(step(f"{x.lower()}_ml_score", f"{x} ML scores", ml(ML_SCORE, "--league", x, "--write"),
-                          "collect", f"{x}-ml-score", app=True))
+    steps = dev_price_steps(ST, ("TGS", "BLM")) + ml_retrain_steps() + ml_extra_steps(extras)
     out.append(task("retrain_ml", "Retrain the ML dev models",
-                    "Retrains the ML dev models for TGS and BLM on every banked DEV season, then rescores TGS, BLM "
-                    "and the leagues that use their models. Needs about 13 GB of memory.",
-                    "dev", headers(steps), leagues=["TGS", "BLM"] + list(extras), requires=["TGS", "BLM"],
+                    "Values the DEV seasons with the current TGS and BLM engines, then rebuilds the DEV age curve, "
+                    "odds and dev signals. Retrains the ML dev models for TGS and BLM on every banked DEV season and "
+                    "rescores TGS, BLM and the leagues that use their models. Needs about 13 GB of memory.",
+                    "dev", headers(steps), leagues=["DEV", "TGS", "BLM"] + list(extras), requires=["TGS", "BLM"],
                     fl=flags(heavy=True, long=True, writes_app_data=True, needs_archive=True),
-                    time="Hours; about 13 GB of memory",
+                    locks=["dumps.DEV"], time="Hours; about 13 GB of memory",
                     finish=fin("failfast", exit_ok=0, exit_fail=1)))
     for b in ("TGS", "BLM"):
         peak, path = r"tgs-viz\backtest\ml\peak.py", r"tgs-viz\backtest\ml\path.py"
-        st = [
+        xs = [x for x, basis in extras.items() if basis == b]
+        st = dev_price_steps(ST, (b,)) + [
             step("ml_dataset", f"{b} ML training rows", ml(ML_DATASET, "--basis", b, "--write")),
             step("ml_peak", f"{b} ML peak model", ml(peak, "fit-final", "--basis", b)),
             step("ml_path", f"{b} ML path model", ml(path, "fit-final", "--basis", b)),
             step("ml_check", f"{b} ML model check", ml(r"tgs-viz\backtest\ml\predict.py", "check", "--basis", b)),
             step("ml_score", f"{b} ML scores", ml(ML_SCORE, "--league", b, "--write"), app=True),
-        ]
-        xs = [x for x, basis in extras.items() if basis == b]
-        for x in xs:
-            st.append(step(f"{x.lower()}_ml_rows", f"{x} ML rows", ml(ML_DATASET, "--basis", x, "--score-only", "--write"),
-                           "collect", f"{x}-ml-rows"))
-            st.append(step(f"{x.lower()}_ml_score", f"{x} ML scores", ml(ML_SCORE, "--league", x, "--write"),
-                           "collect", f"{x}-ml-score", app=True))
-        out.append(task(f"retrain_ml.{b}", f"Retrain the {b} ML models",
-                        f"Retrains the {b} ML dev models only, then rescores {b}"
-                        + (" and " + ", ".join(xs) if xs else "") + ".",
-                        "dev", headers(st), leagues=[b] + xs, requires=[b],
+        ] + ml_extra_steps(xs)
+        rescored = f"{b}" + (" and " + ", ".join(xs) if xs else "")
+        if b == "BLM":
+            desc = ("Values the DEV seasons with the current BLM engine, then rebuilds the DEV age curve, odds and "
+                    f"the dev signals of every league. Retrains the BLM ML dev models only, then rescores {rescored}.")
+            lgs = ["DEV"] + [lg for lg in ("TGS", "BLM") if lg == b or lg in ST.leagues()] + list(extras)
+            locks = ["dumps.DEV"]
+        else:
+            desc = (f"Values the DEV seasons with the current TGS engine. Retrains the TGS ML dev models only, then "
+                    f"rescores {rescored}.")
+            lgs, locks = ["DEV", b] + xs, []
+        out.append(task(f"retrain_ml.{b}", f"Retrain the {b} ML models", desc,
+                        "dev", headers(st), leagues=lgs, requires=[b],
                         fl=flags(heavy=True, long=True, writes_app_data=True, needs_archive=True),
-                        time="Hours; about 13 GB of memory",
+                        locks=locks, time="Hours; about 13 GB of memory",
                         finish=fin("failfast", exit_ok=0, exit_fail=1)))
     rescore = []
     for lg in ["TGS", "BLM"] + list(extras):

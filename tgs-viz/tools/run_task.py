@@ -1964,6 +1964,11 @@ def parse_cli(argv):
             "selftest": False}
     if not argv:
         return "help", opts
+    if argv[0] != "--plan" and "--plan" in argv[1:]:
+        # "run_task.py <task> --plan" must only print the plan, never start the
+        # task (2026-10-02: a trailing --plan started a 5-hour retrain)
+        i = argv.index("--plan")
+        argv = ["--plan"] + argv[:i] + argv[i + 1:]
     head = argv[0]
     cmds = {"--launch": "launch", "--job": "job", "--plan": "plan", "--list-json": "list", "--validate": "validate",
             "--lock-status": "lock_status", "--reap": "reap", "--kill": "kill", "-h": "help", "--help": "help"}

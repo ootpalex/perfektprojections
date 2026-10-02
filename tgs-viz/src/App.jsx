@@ -46,7 +46,7 @@ function RefreshLine({ refresh, liveRefresh }) {
   return null;
 }
 
-function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeChange, features, iafaCount = 0, r5Count = 0, refresh = null }) {
+function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeChange, features, iafaCount = 0, r5Count = 0, faCount = 0, refresh = null }) {
   const activeJobs = useActiveJobs();
   const { liveRefresh } = useControlStatus();
   const dot = controlDot(activeJobs);
@@ -167,7 +167,10 @@ function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeC
           </>
         )}
 
-        {features.fa && (
+        {/* The FA boards derive live from the players (App's fa lists), so they
+            show for every league whose lists hold free agents. features.fa only
+            tracks the retired hitters_fa.json file; it keeps TGS's link as it was. */}
+        {(features.fa || faCount > 0) && (
           <>
             <p className="text-[10px] text-slate-600 uppercase tracking-widest px-3 pt-4 pb-1">Free Agency</p>
             <NavLink to="/hitters-fa" className={linkClass}>
@@ -241,7 +244,7 @@ function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeC
       </div>
       <div className="p-3 border-t border-slate-800 text-[10px] text-slate-600 mt-2">
         <RefreshLine refresh={refresh} liveRefresh={liveRefresh} />
-        OOTP 26 Analytics
+        OOTP Analytics
       </div>
     </nav>
   );
@@ -424,6 +427,7 @@ export default function App() {
         features={features}
         iafaCount={iafa.count}
         r5Count={r5.count}
+        faCount={fa.hitters.length + fa.pitchers.length}
         refresh={refresh}
       />
       <main className="flex-1 overflow-hidden">

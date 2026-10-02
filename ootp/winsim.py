@@ -13,7 +13,7 @@ and all span 2016-2026, which is only possible if each run started from the same
         drive OOTP: File -> Load Game -> select clone -> Play -> Specified Date -> AUTO-PLAY
         wait for dump_<year-1>_yearly to appear   (per-year CSV dump must be ON)
 
-Then feed the clones' dump CSVs to ingest_dumps.py.
+Then Grind / Recalibrate run tgs-viz/engine/calibrate.py on the clones' dump CSVs.
 
 GUI automation is adapted from ootpalex/ootp-autosim (MIT) - macOS original. The macro
 engine, edge-based template matching and dump-watching logic are his; the platform layer
@@ -1523,7 +1523,7 @@ def main():
         print(f"\n  made {len(made)} clone(s): {', '.join(names)}")
         print("  Now in OOTP: load each one and auto-play to 1/1/"
               f"{TARGET_YEAR} (CSV-export-after-season must be ON).")
-        print("  When they're simmed, run the ingester to pull them into the sheet.")
+        print("  When they're simmed, run Recalibrate (or the Recalibrate card) to fold them into the calibration.")
         return
 
     import pyautogui
@@ -1581,7 +1581,7 @@ def main():
     print(f"\nALL DONE. {len(done)} ok, {len(failed)} failed.")
     if done:   print("  ok:     " + ", ".join(done))
     if failed: print("  failed: " + ", ".join(failed) + "  (their clone folders are unused - safe to delete)")
-    print("Now run the ingester on the new clones.")
+    print("Now run Recalibrate (or let Grind go on) to fold the new clones into the calibration.")
 
 if __name__ == "__main__":
     main()

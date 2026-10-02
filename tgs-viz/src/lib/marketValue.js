@@ -206,8 +206,11 @@
  *   LOESS offer path, which is where it belongs.
  * - Per-role minimum sample n >= 10 before a role line is even considered
  *   (small-sample guard).
- * - Prospect development risk is priced inside futureValue's risk factor
- *   (0.80-0.95, itself labeled heuristic there).
+ * - Prospect development risk: the measured path (the DEV curve, with the ML
+ *   model or the DEV cell gain) uses no risk factor. Its growth target is
+ *   already the typical outcome for players like him, washouts counted. Only
+ *   the fallback model (no DEV curve) applies futureValue's risk factor
+ *   (0.80-0.95, labeled heuristic there).
  * - Market value is floored at $0/yr (you can release a negative-WAR player
  *   and pay a replacement nothing — value can't go below the walk-away point).
  *

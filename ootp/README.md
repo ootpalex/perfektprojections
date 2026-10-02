@@ -1,16 +1,19 @@
-# ootp/ — auto-sim baseline clones and feed the regression workbook
+# ootp/: auto-sim baseline clones for the calibration
 
-Two tools that close the loop from "sim more baseline seasons" to "the web app shows it".
+`winsim.py` sims clones of a pristine baseline league in OOTP. Grind and Recalibrate turn the
+clones' dumps into the calibration and the app data.
 
 ```
 winsim.py        clone the pristine baseline -> drive OOTP -> auto-play 10 seasons
-ingest_dumps.py  append the finished clone's dump CSVs into that league's 25 Regressions.xlsx
         |
-        v   (Excel: Data -> Refresh All -> Save)
-Sync Regressions.bat   regression + metadata constants -> The Sheet Hitters/Pitchers
+        v   (Grind and Recalibrate run the rest)
+tgs-viz/engine/calibrate.py   clone dumps -> calib/<LG>/*.csv archive -> constants-latest.json
         |
         v
-Get StatsPlus Ratings.bat   engine -> tgs-viz/public/data/<league>/*.json -> web app
+sync_datapoints.py   constants -> The Sheet Hitters/Pitchers
+        |
+        v
+refresh.py   engine -> tgs-viz/public/data/<league>/*.json -> web app
 ```
 
 ## Why clone every time
@@ -20,13 +23,14 @@ permanently mutates it. And even with aging off, players retire — a league onl
 usable seasons of the *original rated cohort*. To pool many samples of "same player, same
 ratings → different outcomes", you clone the pristine baseline **before every run**.
 
-This is visible in the data: every pooled source in `25 Regressions.xlsx` shares identical
-`player_id`s and all span 2016–2026. That is only possible if each run started from the same
-2016 state. (BLM currently pools 7 such runs.)
+This is visible in the data: every pooled run in `tgs-viz/engine/calib/<LG>/Batting.csv` shares
+identical `player_id`s and all start in 2016. That is only possible if each run started from the
+same 2016 state. (BLM pools 7 such runs, TGS 36.)
 
-**Never sim:** the pristine master, `BLM.lg`, `TheGrandestSalami.lg`. `winsim.py` refuses to,
-and it also refuses to clone a *spent* league (one that already has dumps) because that
-cannot reproduce the 2016 cohort.
+**Never sim:** the pristine master or a real league (`BLM`, `TheGrandestSalami`, `Regular Game`,
+`new game`; the list comes from the settings). `winsim.py` refuses to, and it also refuses to
+clone a *spent* league (one that already has dumps) because that cannot reproduce the 2016
+cohort.
 
 ## Setup (once per OOTP version)
 
@@ -38,13 +42,15 @@ python ootp/winsim.py --game 27 --list        # which leagues are pristine / spe
 ```
 
 Per-league config lives in `leagues.json` (game version, pristine master, clone prefix,
-start/target year, which regression workbook to feed). **Moving TGS to OOTP 27 is a config
-edit**: set `game` to the new version and `master` to a fresh pristine TGS-settings baseline.
+start/target year; `workbook` is read only by the old `ingest_dumps.py`). Moving TGS to OOTP 27
+needs `leagues.json` (`game`, `master`), the OOTP 26 paths in `tgs-viz/tools/tasks.py` and TGS's
+`ootp_version` in the settings.
 
 ### Button templates (one-time, per OOTP version)
 
-The GUI is driven by image-matching small PNGs of OOTP's buttons. The ones in `buttons/` came
-from the macOS original and **must be recaptured on Windows**. With OOTP open on its main menu:
+The GUI is driven by image-matching small PNGs of OOTP's buttons. The PNGs in `buttons/` were
+captured on the author's Windows PC. On another screen or OOTP skin, capture them again. With
+OOTP open on its main menu:
 
 ```bash
 python ootp/winsim.py --game 27 --list-windows   # confirm the window title
@@ -62,7 +68,7 @@ league setup — the per-year dump is how `winsim` knows a sim finished.
 
 ```bash
 python ootp/winsim.py --league BLM --runs 3 --dry-run   # plan only
-python ootp/winsim.py --league BLM --runs 3             # clone 6.lg -> blm-run01..03, sim each
+python ootp/winsim.py --league BLM --runs 3             # clone 6.lg -> the next three free 0blmNN saves, sim each
 ```
 Abort any time: slam the mouse into a screen corner (pyautogui FAILSAFE) or Ctrl-C.
 Ctrl-C stops winsim but **not** OOTP's in-flight sim.
@@ -83,7 +89,11 @@ python ootp/winsim.py --league DEV --sim --years 5          # sim 5 seasons from
 ```
 `Sim Dev League.bat` (repo root) runs the sim, then banks the dumps and rebuilds the DEV trends.
 
-## Ingest
+## The old ingest path (`ingest_dumps.py`)
+
+`ingest_dumps.py` appends a clone's dump CSVs to that league's `25 Regressions.xlsx`. The live
+loop no longer uses it: `tgs-viz/engine/calibrate.py` archives each clone once and lists it in
+`tgs-viz/engine/calib/<LG>/archived_clones.txt`. The notes below describe the old path.
 
 ```bash
 python ootp/ingest_dumps.py --league BLM --list        # clone status: pending / INGESTED
@@ -112,9 +122,6 @@ python ootp/ingest_dumps.py --league BLM --all-new --write
 - Ratings (`Hitters`/`Pitchers` tables) are **not** touched — clones share the baseline roster,
   so their ratings already cover these `player_id`s. If you ever build a new pristine
   baseline, refresh those tables too.
-
-**After ingesting:** open the workbook in Excel → **Data → Refresh All** (rebuilds the Data
-Model + regression pivots) → **Save**. Then run `Sync Regressions.bat`.
 
 ## Attribution
 

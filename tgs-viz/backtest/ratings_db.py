@@ -1,10 +1,12 @@
 """
 ratings_db.py — permanent per-player ratings-history database + trend analytics.
 
-PURPOSE (informational feature — it must NOT alter any projection): keep every
-recoverable scouting-ratings vintage in one SQLite store so pull-to-pull rating
-movement (scout churn, player development/decline) can be tracked per player,
-per rating column, across leagues — forever. Projections never read this DB.
+PURPOSE: keep every recoverable scouting-ratings vintage in one SQLite store so
+pull-to-pull rating movement (scout churn, player development/decline) can be
+tracked per player, per rating column, across leagues, forever. Prices always
+use the current ratings as they are; the archive feeds last year's growth into
+the dev numbers (dev_signals.py growth and cells, the ML scoring rows of
+ml/dataset.py).
 
     tgs-viz/backtest/ratings_history.db          (stdlib sqlite3, no deps)
 
@@ -1477,15 +1479,15 @@ def export(db_path=DB_PATH, leagues=None, hist_pulls=6, mover_windows=(1, 3, 5),
                                         "fielding, running, stamina, hold and pitch ratings are NOT converted "
                                         "(no narrowing above 55 for them) and stay in display steps. Guard "
                                         "readings (median shift, down share) are 20-80 display points."),
-                    "note": (f"Average rating GAIN PER YEAR OF AGE — batting and pitching ratings in OOTP 26's "
+                    "note": (f"Average rating GAIN PER YEAR OF AGE: batting and pitching ratings in OOTP's "
                              f"internal 1-600 points (the 20-80 display is an uneven banding of them; each "
                              f"rating is read inside its band before the difference is taken; band edges "
-                             f"approximate), fielding/running in 20-80 display steps — how much a player at "
+                             f"approximate), fielding/running in 20-80 display steps. How much a player at "
                              f"this age gains before he ages up, MLB/minors only, exposure-weighted across "
                              f"{cmeta['pairs_used']} consecutive pull pairs "
                              f"({cmeta['span_years']:.2f} game-years; {cmeta['pairs_skipped']} "
                              f"zero-time pairs skipped as scout churn). A short archive is still "
-                             f"directional — it sharpens automatically as game-years accumulate."
+                             f"directional. It sharpens automatically as game-years accumulate."
                              + skip_txt)}
             payload["age_curves"] = {
                 "vintages": cmeta["vintages"], "pairs": cmeta["pairs_used"],

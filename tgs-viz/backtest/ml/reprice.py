@@ -2,11 +2,13 @@
 reprice.py - price every DEV vintage with one league's engine calibration.
 
 Why: the DEV machine-learning rows read now / ceiling WAA from the engine. The
-existing DEV prices (vintages/DEV/.waa_cache/*.197c3f18ed-BLM.json) use the BLM
-calibration. TGS and BLM are 100 percent separate leagues, so the TGS model
-must learn from DEV priced with the TGS calibration, and the BLM model from DEV
-priced with the BLM one. User, 2026-09-24: "is there any way you can make a
-machine learning model to help with figuring out this dev stuff".
+DEV prices in vintages/DEV/.waa_cache (files tagged '<BLM fingerprint>-BLM',
+written by agecurve_fit --league DEV --calib BLM) use the BLM calibration. A
+recalibration changes the fingerprint, so DEV is priced again with the new tag.
+TGS and BLM are 100 percent separate leagues, so the TGS model must learn from
+DEV priced with the TGS calibration, and the BLM model from DEV priced with the
+BLM one. User, 2026-09-24: "is there any way you can make a machine learning
+model to help with figuring out this dev stuff".
 
 How: the same steps as engine/agecurve_fit.py vintage_waa, line for line:
   - agecurve_fit.load_vintage + agecurve_fit.to_records (same record shape)
@@ -22,14 +24,14 @@ Where it writes (never into vintages/DEV/.waa_cache):
   --out DIR     any other folder (the port check writes BLM prices to scratch)
 The folder's _manifest.json keys each file by the vintage's size and mtime and
 the calibration fingerprint: a run prices only what is new or changed.
-dev_odds.py, dataset.py and others read "the newest file per vintage" in
-vintages/DEV/.waa_cache, so a TGS file there would silently change the app.
+vintages/DEV/.waa_cache holds the BLM basis only: dev_odds.py and dataset.py
+pick the BLM-tagged file per vintage there, and the TGS prices stay apart.
 
 Interpreter: the default python (3.13). The engine needs openpyxl and numpy
 only; it reads the league workbook constants (The Sheets <LG>/*.xlsx).
 
 CLI:
-  python reprice.py --calib TGS                          price all 148 vintages
+  python reprice.py --calib TGS                          price every banked DEV vintage
   python reprice.py --calib BLM --out DIR --only 2026-01-01_p74,2100-01-01_p148
   python reprice.py --calib BLM --out DIR --only ... --check
         --check compares each written file with the vintages/DEV/.waa_cache
@@ -181,7 +183,8 @@ def main(argv=None):
     calib = args.calib
     out_dir = os.path.abspath(args.out or default_out(calib))
     if os.path.normcase(out_dir) == os.path.normcase(os.path.abspath(DEV_WAA_DIR)):
-        raise SystemExit("refusing to write into vintages/DEV/.waa_cache: the app reads the newest file there")
+        raise SystemExit("refusing to write into vintages/DEV/.waa_cache: it holds the BLM basis only "
+                         "(agecurve_fit --league DEV --calib BLM writes it)")
     os.makedirs(out_dir, exist_ok=True)
     tag = cache_tag(calib)
 

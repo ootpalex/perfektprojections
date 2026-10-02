@@ -1,9 +1,9 @@
 # Perfekt Projections
 
 A baseball analytics platform for competitive **Out of the Park Baseball** (OOTP) leagues. It has
-three parts: a projection engine calibrated on thousands of simulated seasons, a data pipeline
-from each league's StatsPlus site, and a React app that turns about 16,000 players per league into
-roster, draft and organization decisions.
+three parts: a projection engine calibrated on hundreds of simulated seasons (about 360 for TGS
+and 77 for BLM), a data pipeline from each league's StatsPlus site, and a React app that turns
+about 13,000 to 16,500 players per league into roster, draft and organization decisions.
 
 It is built for and used in two online leagues with 30 human GMs each. Everything runs on one
 Windows PC. `Launch TGS.bat` starts the app, and the app's **Control** page runs every job.
@@ -54,7 +54,8 @@ peak, with flags for durability, work ethic and intelligence. The Mock Draft slo
 and shows where each drafted player actually went. Two-way threats are flagged when both the bat
 and the arm project above league average. Both boards exist on the neutral park basis and on your
 home-park basis, so you draft for the park you play in. The app also has International (IAFA),
-Rule 5 and Free Agency lists.
+Rule 5 and Free Agency lists. The Free Agency pages (hitters and pitchers) exist for every player
+league, not only TGS.
 
 **Rating Trends** keeps an archive of every ratings pull. It shows the biggest risers and fallers
 and a measured development curve, split by work ethic, intelligence and leadership.
@@ -94,8 +95,8 @@ exports (draft pool, Rule 5, international class).
 | Excel | | Only the BLM SP/RP paste and the TGS metadata workbook |
 
 The project uses two Python interpreters on purpose. `python` runs the pipeline. `py -3.14` runs
-the machine-learning scripts, which need pandas and scikit-learn. You can point either command at
-another install on the Setup page.
+the machine-learning scripts, which need pandas, scikit-learn and XGBoost. You can point either
+command at another install on the Setup page.
 
 ### Step by step
 
@@ -141,8 +142,10 @@ another install on the Setup page.
 
 7. **Rebuild the ratings archive.** In the app, open **Control**, then **Setup check**, and run
    **Rebuild ratings archive**. It rebuilds `tgs-viz/backtest/ratings_history.db` from the saved
-   vintages in the repo. Every update task refuses to run until the archive exists. The same thing
-   from a terminal: `python tgs-viz\backtest\vintage_backup.py --restore`.
+   vintages in the repo. From a terminal: `python tgs-viz\backtest\vintage_backup.py --restore`.
+   Every task that reads the archive refuses to run until it exists: Get StatsPlus Ratings, Get
+   StatsPlus History, the league Update cards, Update park factors, Grind, Recalibrate, Sim Dev
+   League, Bank Dev Seasons, the Retrain and Rescore cards, and the New league wizard.
 
 8. **Make it yours** on the Setup check tab. Turn off the leagues you do not play in, set your
    OOTP saved_games folders, your team (the park home club) and your org (the org the Org Builder
@@ -163,11 +166,12 @@ shown.
 
 | Missing on a fresh clone | Effect | How you get it |
 |---|---|---|
-| `ratings_history.db` (ratings archive) | Update tasks refuse | Rebuild ratings archive (step 7) |
+| `ratings_history.db` (ratings archive) | Most update tasks refuse | Rebuild ratings archive (step 7) |
 | `StatsPlus Tokens.txt` | Online pulls ask for browser cookies | Paste your own tokens |
 | ML models (`tgs-viz/backtest/.dev_cache/`) | ML scores fail; the app falls back to the cell method after a pull | Bank Dev Seasons or Retrain, which need a DEV league of your own |
 | DEV vintages and dumps | DEV tasks have nothing to read | Run your own DEV research league |
 | Clone-sim archive and baseline ratings tables (`tgs-viz/engine/calib/<LG>/*.csv`) | Recalibrate and Grind need them. The app and the update tasks use the shipped fitted constants | Not in the repo |
+| `tgs-viz/ingest/.cache/` (cached StatsPlus pulls) | Tasks that rebuild from the cached pull have nothing to read | Run Get StatsPlus Ratings once |
 
 ---
 
@@ -196,9 +200,11 @@ project, each the same as its `.bat` file. It has three tabs:
 
 The job panel asks when a task needs you:
 
-- **Changes to your sheets:** the task first shows every cell it would change, then asks
-  **Apply** or **Skip**. With nothing to change, it does not ask.
-- **Deleting clone saves:** it lists every folder first and asks.
+- **Changes to your sheets:** Recalibrate TGS and Sync Metadata show every cell they would
+  change, then ask **Apply** or **Skip**. With nothing to change, they do not ask. Grind and
+  Recalibrate BLM write without asking (backups are made).
+- **Deleting clone saves:** Recalibrate and the Clean up cards list every folder first and ask.
+  Grind deletes its spent clones on its own.
 - **A mid-run step:** for example the BLM SP/RP paste. Press **Continue** when it is done.
 - **Excel is open** on a sheet the task writes: it waits and asks you to close Excel.
 - **OOTP tasks:** you tick a box that OOTP is open inside a league. A 5-second "Hands off"
@@ -210,8 +216,9 @@ To stop a task, press **Stop after this step** (or **Stop after this cycle** for
 now** ends the current step at once; a killed step can leave one half-written file (its `.bak`
 copy stays), and OOTP keeps simming until you stop it inside OOTP.
 
-Secrets (tokens and cookies) go in password fields. They are never written to disk, and the log
-shows `****` in their place. A secret must be at least 8 characters.
+Secrets (tokens and cookies) go in password fields. They never go into the job files or the log;
+the log shows `****` in their place. Only **Replace a StatsPlus token** and the New League wizard
+save a token, and only to `StatsPlus Tokens.txt`. A secret must be at least 8 characters.
 
 The **Recent runs** list and each job's own page (`/control/jobs/<id>`) keep the log and the
 result. Job folders live in `.control/` in the repo folder; the newest 50 finished jobs are kept.
@@ -277,9 +284,9 @@ come from the task cards.
 
 | Task | Bat | What it does | Time |
 |---|---|---|---|
-| Get StatsPlus History | `Get StatsPlus History.bat` | Past rating snapshots for one league into the ratings archive | Minutes to about 2 hours per run |
+| Get StatsPlus History | `Get StatsPlus History.bat` | Past rating snapshots for one league into the ratings archive | About an hour per run (5 dates, 15 minutes apart; StatsPlus allows 5 past-date requests a day) |
 | Bank Season | `Bank Season.bat` | Saves finished season stats and a dated snapshot of the projections | 1 to 3 minutes |
-| Recalibrate BLM | `Recalibrate BLM.bat` | BLM metadata from StatsPlus and your SP/RP paste, then the regressions. Refuses in game months 4 to 9 | A few minutes plus the paste |
+| Recalibrate BLM | `Recalibrate BLM.bat` | BLM metadata from StatsPlus and your SP/RP paste, then the regressions and the pitching curve per block. Refuses in game months 4 to 9, and stops on a paste from the wrong season | A few minutes plus the paste |
 | Sync Metadata | `Sync Metadata.bat` | Copies the metadata constants into the TGS and BLM sheets; shows each change and asks | Under a minute |
 | Update park factors | | Rebuilds park factors from your team, then both leagues' app data. Run it after you change your team | A few minutes |
 
@@ -298,9 +305,9 @@ come from the task cards.
 | Task | Bat | What it does | Time |
 |---|---|---|---|
 | Sim Dev League | `Sim Dev League.bat` | Sims DEV TESTS in OOTP 27, banks the yearly dumps, rebuilds DEV trends | Depends on OOTP |
-| Bank Dev Seasons | `Bank Dev Seasons.bat` | Banks hand-simmed DEV seasons, rebuilds DEV trends and odds, retrains the ML models, rescores TGS and BLM | Hours; about 13 GB of memory |
+| Bank Dev Seasons | `Bank Dev Seasons.bat` | Banks hand-simmed DEV seasons, prices DEV with each league's current calibration, rebuilds DEV trends and odds, retrains the ML models, rescores TGS and BLM | Hours; about 13 GB of memory (measured at 295 seasons) |
 | Update DEV | | Banks new DEV dumps and rebuilds the trends file. No simming | About 20 seconds per season |
-| Retrain the ML dev models (also TGS only, BLM only) | | Retrains on every banked DEV season, then rescores | Hours; about 13 GB of memory |
+| Retrain the ML dev models (also Retrain the TGS ML models, Retrain the BLM ML models) | | Re-prices DEV for each basis it trains (TGS: `reprice.py`; BLM: the DEV age-curve refit with BLM's calibration, which also rewrites the DEV age curve), rebuilds the dev odds and signals where needed, retrains on every banked DEV season, checks the models, then rescores every league that uses them (BLM's: BLM and Regular Game) | Hours; about 13 GB of memory (measured at 295 seasons) |
 | Rescore dev signals and ML | | Reruns dev signals and ML scores with the current models | A few minutes |
 | Test DEV loading, Test the DEV year picker | | First-run checks of the DEV sim. They never sim | Under a minute |
 
@@ -391,10 +398,11 @@ token; it says only "present", "empty" or "looks wrong".
   reply is under 6 hours old, so they do not download the same data again.
 
 **History snapshots.** StatsPlus can return past ratings for a game date. **Get StatsPlus History**
-pulls one snapshot every 6 game months, on Jan 1 and Jul 1, for one league per run. TGS starts at
-2038-01-01 and BLM at 2051-01-01. Each snapshot goes into the ratings archive as an "asof" pull. It
-feeds the trends, the age curve and the dev signals, and it never changes the current player
-values.
+pulls one snapshot every 6 game months, on Jan 1 and Jul 1, for one league per run. TGS history
+starts at 2040-08-07, the first date StatsPlus has (the tool reads that from StatsPlus's reply and
+skips earlier dates). BLM starts at 2051-01-01. Each snapshot goes into the ratings archive as an
+"asof" pull. It feeds the trends, the age curve and the dev signals, and it never changes the
+current player values.
 
 StatsPlus limits past-date requests: one every 15 minutes and 5 a day (its replies on 2026-09-30).
 The tool waits as long as StatsPlus says and stops cleanly at the daily cap. Run it again the next
@@ -437,7 +445,8 @@ The pipeline:
 3. `ratings_db.py --export` builds DEV's Rating Trends page.
 4. `agecurve_fit.py` measures the age curve from the true ratings (priced with BLM's calibration).
    Growth peaks at about +0.35 WAA a year at ages 20 to 22, is near zero at 27, and turns
-   negative at 28. This curve drives every league's year-by-year WAA path.
+   negative at 28. This curve shapes every league's year-by-year WAA path. It drives the whole
+   path for a player with no ML numbers, and the years after the ML's five for the rest.
 5. `dev_odds.py` and `dev_rating_odds.py` build the odds grids and the Make-it odds page.
 6. The ML datasets and models are rebuilt from the same dumps ([below](#the-ml-dev-model)).
 
@@ -449,11 +458,11 @@ They appear in the "Dev signals" column group on the player lists and on the pla
 
 | Column | Meaning |
 |---|---|
-| Grow/yr | His growth over the last game-year, summed over the core skills (ages 16 to 22) |
+| Grow/yr | His growth over the last game-year, summed over the core skills (ages 16 to 26) |
 | Pot dir | Whether OOTP's Pot grade went up or down |
 | MLB %, Starter %, Star %, Exp peak, Peak range | His odds and expected peak. From the ML model when it is current, else from the DEV cell of players with his age, Pot and growth |
 | vs listed | Exp peak minus the peak his listed potential ratings give |
-| vs typical | His growth against the typical growth for his age and Pot |
+| vs typical | His core skills now, in internal points, against the median of his own league's players with his age and Pot. DEV's typical player stands in when that group has fewer than 20 |
 | Flag | **keep** (growth at least 4.5 steps for a hitter or 3 for a pitcher, Pot not falling) or **move** (Pot falling, growth at most 2 or 1) |
 
 ---
@@ -478,11 +487,19 @@ The same model drives Proj Potential (current plus median gain), the "Year by ye
 
 **How it is trained.**
 
-- Training data: every player-season in the DEV league. The live models were fit on 483 seasons
-  (about 3.2 million hitter rows and 3.5 million pitcher rows). The features are every rating,
-  potential, last year's growth, level and current value.
-- Models: scikit-learn gradient boosting, one set per role.
-  - Gain quantiles (10th, 25th, 50th, 75th, 90th percentile), sorted so they never cross.
+- Training data: DEV player-seasons. The peak models use ages 16 to 26 where the eventual peak is
+  known. The 5-year path uses ages 16 to 38. The live models were fit on 483 seasons (about 3.2
+  million hitter rows and 3.5 million pitcher rows). The features are every rating, potential,
+  last year's growth, level and current value.
+- Models: gradient boosting, one set per role. The five gain quantiles use XGBoost, on an NVIDIA
+  GPU when CUDA works, else the CPU. The reach classifiers and the 5-year path use scikit-learn.
+  TGS moved its gain models to XGBoost on 2026-10-02; BLM moves at its next retrain.
+  - Gain quantiles (10th, 25th, 50th, 75th, 90th percentile), sorted so they never cross. With
+    scikit-learn the low marks never learned: every in-org TGS pitcher aged 16 to 26 read +0 at
+    his 10th and 25th percentile (2,898 of 2,898). With XGBoost, 406 of them still do.
+    Validation loss, old to new: hitters q10 0.134 to 0.099, q25 0.215 to 0.206, q50 0.310 to
+    0.301; pitchers q10 0.069 to 0.054, q25 0.173 to 0.110, q50 0.164 to 0.159. The q75 and q90
+    models tied.
   - Reach classifiers for each bar (-1, 0, +1.5 WAA) and for becoming a regular (300 PA or 150 BF
     in a later MLB season).
   - A 5-year path: the median and the mean change in WAA 1 to 5 years out, the spread of next
@@ -495,7 +512,8 @@ The same model drives Proj Potential (current plus median gain), the "Year by ye
   uses that league's models.
 
 **How accurate it is.** These numbers come from held-out DEV players who debuted after the
-training seasons. They were measured on earlier, smaller training sets.
+training seasons. They were measured on earlier, smaller training sets, with the earlier
+scikit-learn gain models.
 
 - The ML beat the older cell method on all 14 headline targets for both bases. TGS basis, hitters:
   peak error 0.62 WAA against 1.26; Starter % log loss 0.038 against 0.057; next-season change
@@ -510,8 +528,10 @@ training seasons. They were measured on earlier, smaller training sets.
 signals; otherwise it shows the cell method. Unsigned international amateurs are marked "ML,
 outside training range", because DEV has none.
 
-**Cost.** Retraining takes hours and about 13 GB of memory. It runs under the ML Python. **Bank Dev
-Seasons** and the **Retrain** tasks retrain; **Rescore dev signals and ML** only rescores.
+**Cost.** Retraining takes hours and about 13 GB of memory (measured at 295 seasons). It runs
+under the ML Python. The gain quantiles train on the GPU when CUDA works. **Bank Dev Seasons**
+and the **Retrain** tasks retrain; the Retrain tasks re-price DEV for their basis first.
+**Rescore dev signals and ML** only rescores.
 
 ---
 
@@ -525,7 +545,7 @@ The engine (`tgs-viz/engine/`) turns 20-80 ratings into full stat lines and wins
   line with its kink at rating 50, fitted around the league-average anchor. The stat lines go
   through wOBA and the league's run values to WAA.
 - **Calibrated on simulated seasons.** OOTP is a black box, so `calibrate.py` fits the lines to
-  OOTP's own output: thousands of seasons simmed on clones of a pristine league. It replaced a
+  OOTP's own output: hundreds of seasons simmed on clones of a pristine league. It replaced a
   28-pivot Excel regression workbook and matched it on 100 of 110 constants; the other 10 were
   stale caches inside Excel.
 - **Two-segment lines vs S-curves, per block.** The four pitching rate blocks (strikeouts from
@@ -587,10 +607,11 @@ Wherever a constant could be measured from the game instead of guessed, it was.
               tgs-viz/tools/run_task.py  <--  Control page (Vite plugin)
 ```
 
-- **Ingestion** (`tgs-viz/ingest/`) pulls ratings, contracts, injuries, service time, draft
-  eligibility and draft results from StatsPlus. It archives every pull and builds the draft,
-  Rule 5 and international boards. Every step's exit code is tracked. The final data date report
-  reads the files on disk, so it reports what the app actually serves.
+- **Ingestion** (`tgs-viz/ingest/`) pulls ratings, contracts, injuries, service time and draft
+  results from StatsPlus. The draft class comes from your OOTP draft-pool export (BLM falls back
+  to StatsPlus's draft-eligible flag when there is none). It archives every pull and builds the
+  draft, Rule 5 and international boards. Every step's exit code is tracked. The final data date
+  report reads the files on disk, so it reports what the app actually serves.
 - **Backtesting** (`tgs-viz/backtest/`) holds the SQLite ratings archive, the development curves
   (a league-wide re-scout between two pulls spoils only that pair), season snapshots, dev signals
   and the ML code.
@@ -635,7 +656,8 @@ perfektprojections/
 |   |-- backtest/                  ratings archive, vintages, dev signals, ML (ml/)
 |   |-- src/                       React app
 |   `-- public/data/<LEAGUE>/      the datasets the app reads
-`-- The Sheets <LEAGUE>/           the original Excel workbooks (still the source of a few constants)
+`-- The Sheets <LEAGUE>/           Excel workbooks the engine reads its constants from
+                                   (the calibration writes them)
 ```
 
 OOTP notes:

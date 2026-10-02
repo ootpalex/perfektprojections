@@ -101,8 +101,9 @@ class CatalogTest(unittest.TestCase):
             ("get_ratings", "get_history", "update.TGS", "update.BLM", "update.RG"): ([], first, False, True),
             ("bank_season", "sync_metadata", "dispersal_board", "draft_board", "iafa_board", "bank_market_fit"):
                 ([], first, False, False),
-            ("parks_update", "dev_rescore", "retrain_ml", "retrain_ml.TGS", "retrain_ml.BLM"): ([], first, False, True),
-            ("bank_dev", "update.DEV"): (["dumps.DEV"], first, False, True),
+            ("parks_update", "dev_rescore", "retrain_ml.TGS"): ([], first, False, True),
+            # retrain_ml and retrain_ml.BLM rerun dev_odds, which reads the DEV dump folder
+            ("bank_dev", "update.DEV", "retrain_ml", "retrain_ml.BLM"): (["dumps.DEV"], first, False, True),
             ("grind_tgs",): (["clones.TGS", "ootp"], cycle, False, True),
             ("grind_blm",): (["clones.BLM", "ootp"], cycle, False, True),
             ("recalibrate_tgs",): (["clones.TGS"], first, False, True),
@@ -143,6 +144,37 @@ class CatalogTest(unittest.TestCase):
                     self.assertFalse(runs[0]["data"], tid)
                     self.assertTrue(all(s["data"] for s in runs[1:]), tid)
         self.assertEqual(covered, set(by), "every task is in the 4.10 table")
+
+    def test_retrain_cards_price_dev_first(self):
+        """A retrain card first prices DEV on its basis with Bank Dev Seasons' own
+        commands. A BLM re-price reruns the odds and the dev signals of every
+        league before the training rows; an extra league gets rows, then a score."""
+        cat, _ = self.list_json()
+        by = {t["id"]: t for t in cat["tasks"]}
+
+        def argv(tid):
+            return {s["id"]: s["argv"] for s in by[tid]["steps"] if s["argv"]}
+
+        def order(tid):
+            return [s["id"] for s in by[tid]["steps"] if s["argv"]]
+
+        bank = argv("bank_dev")
+        shown = sorted(lg["id"] for lg in cat["leagues"] if lg["id"] != "DEV")      # TGS, BLM, RG
+        tgs, blm, both = order("retrain_ml.TGS"), order("retrain_ml.BLM"), order("retrain_ml")
+        self.assertEqual(tgs[:2], ["reprice", "ml_dataset"])
+        self.assertEqual(blm[:3], ["dev_value", "dev_odds", "dev_rating_odds"])
+        self.assertEqual(both[:4], ["dev_value", "reprice", "dev_odds", "dev_rating_odds"])
+        for tid in ("retrain_ml.TGS", "retrain_ml.BLM", "retrain_ml"):
+            for sid, a in argv(tid).items():
+                if sid in ("dev_value", "reprice", "dev_odds", "dev_rating_odds"):
+                    self.assertEqual(a, bank[sid], f"{tid}.{sid}")
+        for tid, ids, first_ml in (("retrain_ml.BLM", blm, "ml_dataset"), ("retrain_ml", both, "tgs_ml_dataset")):
+            sig = [s for s in ids if s.endswith("_devsignals")]
+            self.assertEqual(sorted(s.split("_")[0].upper() for s in sig), shown, tid)
+            self.assertLess(max(ids.index(s) for s in sig), ids.index(first_ml), tid)
+            self.assertLess(ids.index("rg_ml_rows"), ids.index("rg_ml_score"), tid)
+        self.assertNotIn("dev_odds", tgs)
+        self.assertFalse(any(s.startswith("rg_") for s in tgs))
 
     def test_state_and_leagues(self):
         cat, _ = self.list_json()

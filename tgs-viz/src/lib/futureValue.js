@@ -30,7 +30,7 @@
  * - Percentile-based 20-80 FV scale calibration
  *
  * Data insights:
- * - Potential data only exists for ages 16-23 (hard cutoff)
+ * - Every row carries potential at every age (the old sheets cut it off after 23)
  * - Only 3.2% of hitters currently above 0 WAA; 20% of prospects have potential >= 0
  * - Development GAP: ~8 WAA at age 16, ~2 WAA at age 23 (hitters)
  * - 56 hitters (1.5%) have potential >= 3.0 WAA (elite tier)
@@ -318,7 +318,9 @@ function getPlayerWAAValues(player) {
     }
   }
 
-  // If no potential data (age 24+), potential = current (no development upside)
+  // No potential column on the row: potential = current (no development
+  // upside). Today's files carry potential at every age, so this guards old
+  // or partial files.
   const hasPotential = potentialWAA !== null;
   if (!hasPotential) {
     potentialWAA = currentWAA;
@@ -771,7 +773,8 @@ export function calculateFutureValue(player, yearsOfControl, params = {}) {
   //   shouldn't be penalized for not being MLB-ready. What matters is what they'll
   //   produce once they arrive.
   //
-  // ESTABLISHED PLAYERS (no potential data, age 24+):
+  // ESTABLISHED PLAYERS (no gap left: potential at or below current, or no
+  // potential column):
   //   FV = sum of projected WAA from current age through career end.
   //   They are what they are — no development upside to factor in.
 

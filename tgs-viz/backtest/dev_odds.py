@@ -14,7 +14,8 @@ BLM never enter this file. They only read the grid, through dev_signals.
 Definitions:
   regular    a season with >= 300 MLB PA (hitter) or >= 150 MLB BF (pitcher)
   outcome    the player ever had a regular season through the last dump
-  cohort     players first seen at age <= 20 in dumps 2025-2040, ever in an org
+  cohort     players first seen at age <= 20 from the 2025 dump to the last
+             banked dump minus 23 (COHORT_MARGIN), ever in an org
   age        the Age field of the dump (Jan-1 age; dump_<year> is dated Jan 1 of year+1)
   Pot        the OOTP Pot grade of that dump (raw "Pot"; absent in 2025)
   growth     sum over the core skills of (display now - display last dump) / 5,
@@ -33,8 +34,9 @@ mtime. A re-dumped year rebuilds only itself.
 Eventual peak ("Exp peak"):
   The app's listed peak (MAX WAA P / WAP) prices the potential ratings OOTP
   shows today. OOTP raises those ratings later for the players who make it,
-  so a negative listed peak often sits next to a high Make-it %. The peak
-  tables answer "what did DEV players in this cell become". They read the
+  so a negative listed peak often sits next to high regular odds (the MLB
+  regular share on the app's /odds page). The peak tables answer "what did
+  DEV players in this cell become". They read the
   engine WAA per DEV vintage from vintages/DEV/.waa_cache/ (one file per
   vintage, {pid: [now_WAA, ceiling_WAA, kind, age, ...]}, BLM engine, neutral
   park; the file tagged '<BLM fingerprint>-BLM' per vintage, never the newest
@@ -60,7 +62,7 @@ Eventual peak ("Exp peak"):
                  org builder orders minors playing time by this chance first.
   useful_share   share of the cell whose eventual peak reached 0 WAA (an
                  average MLB player); good_share = the share that reached
-                 +1.5 (a clear regular). The bars are PEAK_BARS. User,
+                 +1.5 (a star). The bars are PEAK_BARS. User,
                  2026-09-24: Make it % is playing time, not quality; these
                  two say whether the lookalikes turned out good enough.
   gain_grid      the cell's gains at quantiles 5, 10, ..., 95 (19 values,
@@ -179,7 +181,7 @@ PEAK_PCTS = (10, 25, 50, 75, 90)
 # "mlb" = the eventual peak WAA reached -1.0 (an MLB-level player, a 5th starter
 # or bench bat; user, 2026-09-24: "if they will ever be anything in the mlb"),
 # "useful" = it reached 0 (an average MLB player), "good" = it reached +1.5 (a
-# clear regular). User, 2026-09-24: Make it % is playing time, not quality;
+# star). User, 2026-09-24: Make it % is playing time, not quality;
 # these say whether the lookalikes turned out good enough.
 PEAK_BARS = {"mlb": -1.0, "useful": 0.0, "good": 1.5}
 # gain_grid quantile levels: 5, 10, ..., 95 (19 values). grid[i] is the gain
@@ -787,7 +789,7 @@ def build_payload(cohort, obs, obs_all, seasons, peak_basis=None):
             f"reached {PEAK_BARS['mlb']:g} WAA (an MLB-level player, a 5th starter or bench "
             "bat; user, 2026-09-24: 'if they will ever be anything in the mlb'), useful_share "
             f"= share that reached {PEAK_BARS['useful']:g} WAA (an average MLB player), "
-            f"good_share = share that reached +{PEAK_BARS['good']:g} (a clear regular), bars "
+            f"good_share = share that reached +{PEAK_BARS['good']:g} (a star), bars "
             "in peak_bars (user, 2026-09-24: Make it % is playing time, these say whether the "
             "lookalikes turned out good enough); those three shares are the cell's peak "
             "distribution and ignore the player's own current WAA, so a player already at "

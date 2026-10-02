@@ -10,7 +10,8 @@ The current method (dev_odds.py builds the cells, dev_signals.py reads them):
   observation  one player-dump at ages 16-26, in an org (raw Lev in ORG_LEV),
                with a Pot grade; a growth cell also needs the previous dump
   cohort       players first seen at age <= 20 who were ever in an org; the
-               shipped dev_odds.json also limits the first dump to 2025-2040
+               shipped dev_odds.json also limits the first dump to 2025 through
+               the last banked dump minus 23 (the end moves with the dumps)
   cells        role x age x Pot bucket x last-year growth bucket, plus the
                pot-only cells (role x age x Pot bucket, growth unknown)
   peak cell    eventual peak WAA (max now_WAA from that dump on) of the players
@@ -38,10 +39,13 @@ The current method (dev_odds.py builds the cells, dev_signals.py reads them):
 Methods written to .dev_cache/ml/preds/<method>_<group>.pkl:
   current               peak group. Cells fit on cohort_first20 training rows,
                         realized careers only. This is the app's rule without the
-                        2025-2040 window, so it sees the same training players
+                        first-dump window, so it sees the same training players
                         the ML sees.
-  current_w40           peak group. The app's exact cohort (first dump
-                        2025-2040). On the time split this is the shipped file.
+  current_w40           peak group. The app's exact cohort (cohort_dev_odds:
+                        first dump 2025 to the last banked dump minus 23; the
+                        name is from the old fixed 2025-2040 window). SELF-CHECK
+                        1 fits it on all rows and compares it with the shipped
+                        dev_odds.json.
   current_all           peak group. Like current, but the cells count every
                         finished career (realized OR retired), so washouts count.
                         Its regular cells also count finished careers only.
@@ -988,8 +992,8 @@ def dump_role_frames(frames):
 
 
 def self_check(frames, pairs):
-    log("\nSELF-CHECK 1: dev_odds cells refit on all rows (the app's cohort, first dump 2025-2040) "
-        "against the shipped public/data/dev_odds.json")
+    log("\nSELF-CHECK 1: dev_odds cells refit on all rows (the app's cohort, first dump 2025 to the last "
+        "banked dump minus 23) against the shipped public/data/dev_odds.json")
     with open(ODDS_PATH, encoding="utf-8") as fh:
         odds = json.load(fh)
     everything = {r: np.ones(len(df), bool) for r, df in frames.items()}

@@ -1,9 +1,11 @@
 """
 agecurve_fit.py — MEASURED per-age development rates from the ratings archive.
 
-The FV machinery models development as a logistic gap-closure curve with ASSUMED
+The app's FV model falls back to a logistic gap-closure curve with ASSUMED
 constants (16 -> 25, ~50% at 20.5, 95% closed at maturity). This measures the
-real thing, per league, from the archived ratings vintages.
+real thing, per league, from the archived ratings vintages. The DEV league's
+curve (--league DEV --calib BLM: true ratings, one dump per game-year) is the
+one the app uses for every league (src/lib/ageCurve.js).
 
 METHOD (user spec 2026-09-04 — "expected growth per year of age", never per pull):
   - EVERY consecutive vintage pair is used (not first-vs-last: a 1.3-year window
@@ -31,10 +33,11 @@ triggers one full rebuild.
 LEAGUES ARE SEPARATE. Each league is measured only on its own archive; a league
 whose usable pairs span less than MIN_SPAN game-years is refused, never borrowed.
 
-Per the ratings-history rule, nothing here feeds back into any player's own
-projection: the output is a LEAGUE-WIDE curve, shipped for display (the
-profile's development chart) and for the user to compare against the FV
-assumptions before deciding to swap them (the measured FV path stays dormant).
+Per the ratings-history rule, no player's own rating history feeds back into
+his projection: the output is a LEAGUE-WIDE curve. The DEV curve drives every
+league's year-by-year WAA path, Proj Potential and FA pricing in the app (a
+league's own curve stands in when DEV's file is missing, the assumed curve
+when neither is there). It also shows on the profile's development chart.
 
     python tgs-viz/engine/agecurve_fit.py --league TGS [--write]
     python tgs-viz/engine/agecurve_fit.py --league DEV --calib BLM [--write]

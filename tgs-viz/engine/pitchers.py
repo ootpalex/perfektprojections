@@ -6,8 +6,11 @@ RA/9 -> WAA/WAR) from a pitcher's rating inputs plus the league's lifted
 Data Points / Filters / Ballparks constants. Four role blocks are produced:
   SP   (Starter present-day)     gate: Starter  AND Eligible
   RP   (Reliever present-day)    gate: Eligible
-  P    (Starter potential)       gate: Starter P AND Eligible AND Age<24
-  P RP (Reliever potential)      gate: Eligible AND Age<24
+  P    (Starter potential)       gate: Starter AND Eligible AND the four P ratings
+  P RP (Reliever potential)      gate: Eligible AND the four P ratings
+The potential blocks have no age gate, and WAP uses the current Starter rule
+(no separate Starter P rule): a pitcher who does not qualify to start gets no
+WAP, the same as the SP block.
 
 NOTHING here writes to any workbook. Constants are read read-only.
 

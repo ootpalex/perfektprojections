@@ -21,7 +21,10 @@ Hitters / Pitchers). Sources, per tab:
 Stages (the Recalibrate bat runs them in order with a paste reminder between):
   --stage auto    the five API/pull tabs; ends with the reminder
   --stage roles   the two paste tabs + the two pitcher ratings tabs, after
-                  reconciling your paste against the API season totals
+                  reconciling your paste against the API season totals. A
+                  paste of another season stops, even with --accept-paste; the
+                  message names the season the paste is from when one of the
+                  two seasons before matches it (paste_season)
   --stage all     both (default)
 
 Usage:
@@ -459,11 +462,14 @@ def build_pitcher_ratings(st, pull, ids):
 
 
 def reconcile_roles(st, sp_rows, sp_hdr, rp_rows, rp_hdr):
-    """Your SP/RP paste vs the API season totals, per pitcher.
-    OVER  = paste exceeds the season total (stale or wrong season) -> hard stop
-    UNKNOWN = an ID with no MLB pitching this season -> hard stop
-    UNDER = one role pasted, or fewer innings than the season -> reported
-    ABSENT = MLB innings, in neither tab -> reported"""
+    """Your SP/RP paste vs the API season totals, per pitcher. Only st["P"]
+    is read, so another season's totals work the same way ({"P": totals}).
+    OK    = the paste equals the season totals
+    OVER  = paste exceeds the season total (playoff games, or another season)
+    UNKNOWN = an ID with no MLB pitching this season
+    UNDER = one role pasted, or fewer innings than the season
+    ABSENT = MLB innings, in neither tab
+    paste_season() and paste_decision() say what the roles stage does with them."""
     def ip_outs(v):
         v = num(v)
         return int(v) * 3 + int(round((v - int(v)) * 10))
@@ -495,6 +501,130 @@ def reconcile_roles(st, sp_rows, sp_hdr, rp_rows, rp_hdr):
             ok += 1
     absent = [pid for pid, api in st["P"].items() if (api["bf"] > 0 or api["outs"] > 0) and pid not in pasted]
     return {"ok": ok, "over": over, "unknown": unknown, "under": under, "absent": absent, "pasted": pasted}
+
+
+# Which season the paste is from. A paste of this season matches most pitchers'
+# totals exactly (OOTP's role split may add playoff games to some). A paste of
+# another season matches almost none, and many of its IDs did not pitch in MLB
+# this season. A wrong season always stops: --accept-paste never skips it.
+SEASON_MATCH = 0.5          # share of the pasted pitchers that match a season's totals exactly
+OTHER_SEASON_UNKNOWN = 0.1  # share of the pasted IDs with no MLB pitching in the season
+
+
+def exact_share(rec):
+    """Share of the pasted pitchers whose paste equals the season totals."""
+    n = len(rec["pasted"])
+    return rec["ok"] / n if n else 0.0
+
+
+def other_seasons(season, in_game_date):
+    """The seasons a wrong paste most likely comes from, nearest first: the two
+    before `season`, and the two after it when they are already played (only
+    with --year). A season is played once the in-game date reaches October."""
+    y, m = int(in_game_date[:4]), int(in_game_date[5:7])
+    last = y if m >= 10 else y - 1
+    return [s for s in (season - 1, season + 1, season - 2, season + 2) if s <= last]
+
+
+def paste_season(season, rec, others):
+    """The season the SP/RP paste is from, or None.
+    rec = reconcile_roles() against `season`; others = {year: reconcile_roles()
+    against that year} for the other seasons checked (empty when none).
+      season   at least SEASON_MATCH of the pasted pitchers match it, or nothing
+               points to another season (the other checks list the odd rows)
+      a year   another season matches at least SEASON_MATCH, and better
+      None     under SEASON_MATCH match this season and at least
+               OTHER_SEASON_UNKNOWN of the pasted IDs did not pitch in it, but
+               no season checked matches the paste"""
+    here = exact_share(rec)
+    if here >= SEASON_MATCH:
+        return season
+    better = [(exact_share(r), -abs(y - season), y) for y, r in others.items()]
+    better = [b for b in better if b[0] >= SEASON_MATCH and b[0] > here]
+    if better:
+        return max(better)[2]
+    n = len(rec["pasted"])
+    return None if n and len(rec["unknown"]) / n >= OTHER_SEASON_UNKNOWN else season
+
+
+def paste_decision(season, found, rec, accept_paste):
+    """What the roles stage does after the paste check, found = paste_season():
+      "wrong season"  stop; --accept-paste never skips it
+      "odd"           stop unless --accept-paste: pasted IDs with no MLB
+                      pitching this season, or pitchers above their totals all
+                      over the paste
+      "confirm"       stop unless --accept-paste: pitchers above their totals
+                      (OOTP's role split counts playoff games) or MLB pitchers
+                      in neither tab
+      None            go on"""
+    if found != season:
+        return "wrong season"
+    if accept_paste:
+        return None
+    if rec["unknown"] or len(rec["over"]) > max(5, 0.05 * len(rec["pasted"])):
+        return "odd"
+    if rec["over"] or rec["absent"]:
+        return "confirm"
+    return None
+
+
+def wrong_season_text(season, found, rec, others):
+    """The stop message for a paste that is not this season's."""
+    n = len(rec["pasted"])
+    if found is not None:
+        lines = [f"  STOP: the SP/RP paste is from season {found}, not {season}.",
+                 f"  {others[found]['ok']} of {n} pasted pitchers match the {found} totals; "
+                 f"{rec['ok']} match the {season} totals."]
+    else:
+        checked = ", ".join(str(y) for y in sorted(others))
+        lines = [f"  STOP: the SP/RP paste is not from season {season}.",
+                 f"  Only {rec['ok']} of {n} pasted pitchers match the {season} totals, and "
+                 f"{len(rec['unknown'])} did not pitch in MLB in {season}."
+                 + (f" It does not match {checked} either." if checked else "")]
+    lines.append(f"  Paste the {season} stats into 'SP Data' (as starter) and 'RP Data' (as reliever), "
+                 "save, close Excel, then run this again.")
+    return "\n".join(lines)
+
+
+def season_pitching(base, slug, year, refresh=False):
+    """{pid: totals} of one season's MLB pitching (the overall feed), from the
+    saved feed .cache/metadata_<slug>_<year>/pit1.json, else from StatsPlus
+    (saved there the way fetch_season saves it). None when it can not be read:
+    this only names the season of a wrong paste, so it never stops the run."""
+    cache_dir = os.path.join(HERE, ".cache", f"metadata_{slug}_{year}")
+    p = os.path.join(cache_dir, "pit1.json")
+    rows = None
+    if os.path.exists(p) and not refresh:
+        try:
+            rows = json.load(open(p, encoding="utf-8"))
+        except ValueError:
+            rows = None
+        if feed_problem("pit1", rows):
+            rows = None
+    if rows is None:
+        try:
+            rows = S.fetch_pitching(base, year=year, split=1)
+        except Exception as e:          # noqa: BLE001  refused, network: that season is not checked
+            print(f"  (the {year} pitching could not be read: {type(e).__name__}; {year} is not checked)")
+            return None
+        if feed_problem("pit1", rows):
+            return None
+        os.makedirs(cache_dir, exist_ok=True)
+        _save_json(p, rows)
+    return aggregate(rows, lambda r: r["player_id"], PIT_SUM)
+
+
+def find_paste_season(base, slug, season, date, rec, sp, rp, refresh=False):
+    """(paste_season(), {year: reconcile result}). The other seasons are read
+    only when the paste does not match `season`. sp / rp = (rows, header)."""
+    if exact_share(rec) >= SEASON_MATCH:
+        return season, {}
+    others = {}
+    for y in other_seasons(season, date):
+        totals = season_pitching(base, slug, y, refresh)
+        if totals is not None:
+            others[y] = reconcile_roles({"P": totals}, sp[0], sp[1], rp[0], rp[1])
+    return paste_season(season, rec, others), others
 
 
 # ---------------------------------------------------------------- driver
@@ -554,7 +684,8 @@ def main():
     ap.add_argument("--allow-partial", action="store_true", help="build mid-season anyway")
     ap.add_argument("--accept-paste", "--allow-absent", dest="accept_paste", action="store_true",
                     help="use the SP/RP paste as it is: a few pitchers above their regular-season "
-                         "totals (playoff games) and pitchers left out of both tabs")
+                         "totals (playoff games), pitchers left out of both tabs and IDs with no MLB "
+                         "pitching. A paste of another season still stops.")
     ap.add_argument("--refresh", action="store_true", help="refetch the API feeds (ignore cache)")
     a = ap.parse_args()
 
@@ -644,12 +775,18 @@ def main():
     for pid, diffs in rec["over"][:8]:
         print(f"  !! {pid} is above his regular-season totals: "
               + ", ".join(f"{k} {p:g} vs {t:g}" for k, p, t in diffs if p > t))
-    # Wrong season = IDs that never pitched in MLB that year, or overages all over
-    # the paste. A few pitchers a game over is OOTP's role split counting playoff
-    # games; that and pitchers left out of both tabs are the user's call.
-    if (rec["unknown"] or len(rec["over"]) > max(5, 0.05 * len(rec["pasted"]))) and not a.accept_paste:
-        sys.exit("  STOP: the SP/RP paste does not look like this season (see above). "
-                 "Rerun with --accept-paste to use it anyway.")
+    # A paste of another season always stops (the Recalibrate task passes
+    # --accept-paste). A few pitchers above their totals (OOTP's role split
+    # counts playoff games), pitchers left out of both tabs and a few IDs with
+    # no MLB pitching are the user's call: --accept-paste takes them as they are.
+    found, others = find_paste_season(base, slug, season, date, rec, (sp_rows, sp_hdr), (rp_rows, rp_hdr),
+                                      a.refresh)
+    decision = paste_decision(season, found, rec, a.accept_paste)
+    if decision == "wrong season":
+        sys.exit(wrong_season_text(season, found, rec, others))
+    if decision == "odd":
+        sys.exit(f"  STOP: parts of the SP/RP paste do not match the {season} totals (see above). "
+                 "Rerun with --accept-paste to use it as it is.")
     for pid, diffs, tags in rec["under"][:6]:
         print(f"     partial {pid} ({'+'.join(sorted(tags))}): "
               + ", ".join(f"{k} {p:g} of {t:g}" for k, p, t in diffs[:3]))
@@ -658,7 +795,7 @@ def main():
         share = sum(st["P"][p]["bf"] for p in rec["absent"]) / max(1.0, sum(d["bf"] for d in st["P"].values()))
         print(f"     in neither tab: {len(rec['absent'])} pitchers, {share:.0%} of league BF; largest: "
               + ", ".join(f"{p} ({st['P'][p]['bf']:g} BF)" for p in top))
-    if (rec["over"] or rec["absent"]) and not a.accept_paste:
+    if decision == "confirm":
         sys.exit(f"  STOP for your OK: {len(rec['over'])} pitchers above their regular-season totals "
                  f"(playoff games in OOTP's role split), {len(rec['absent'])} with MLB innings in neither "
                  f"tab. Fix the paste, or rerun with --accept-paste to use it as it is.")
