@@ -1,10 +1,11 @@
 """
 gpu_compare.py - head to head: the peak models on scikit-learn
-HistGradientBoosting (CPU, the current models) vs XGBoost on the GPU.
+HistGradientBoosting (CPU; the live models until 2026-10-02, when the gain
+quantiles moved to XGBoost) vs XGBoost on the GPU.
 
 User, 2026-09-27: "I would assume the GPU would run far faster and I have no
 idea why we wouldn't have done that to begin with" (machine: RTX 4090). The
-switch is kept only if XGBoost matches or beats the current models on
+switch was kept only if XGBoost matched or beat the scikit-learn models on
 held-out players.
 
 Same rows, same targets, same grouped early-stopping players, same time split
@@ -106,7 +107,7 @@ def main():
                 t0 = time.time()
                 if t in PK.QCOLS:
                     if backend == "sklearn_cpu":
-                        m = PK.make_model("quantile", st["quantile"], st, feats, quantile=q)
+                        m = PK.make_model("quantile", st["quantile"], st, feats, quantile=q, sklearn_only=True)
                         m.fit(X, y, X_val=Xv, y_val=yv)
                         it = int(m.n_iter_)
                     else:

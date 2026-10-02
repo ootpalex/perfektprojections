@@ -1,9 +1,12 @@
 """
 peak.py - machine-learning model of a young DEV player's eventual peak.
 
-For each role (H hitters, P pitchers) this script fits scikit-learn
-HistGradientBoosting models on DEV player-dumps at ages 16-26 with a known
-outcome (peak_known: seen at 27+ or retired). Washouts stay in.
+For each role (H hitters, P pitchers) this script fits gradient-boosted tree
+models on DEV player-dumps at ages 16-26 with a known outcome (peak_known:
+seen at 27+ or retired). Washouts stay in. The five gain quantiles use XGBoost
+(on the GPU when CUDA works, else the CPU; scikit-learn HistGradientBoosting
+only when xgboost is not installed). The classifiers stay scikit-learn
+HistGradientBoosting.
 
 User, 2026-09-24: "is there any way you can make a machine learning model to
 help with figuring out this dev stuff".
@@ -25,7 +28,7 @@ a free agent; both read level 'none'.
 
 Models per role:
   gain_q10 .. gain_q90   quantile regressors of gain = eventual peak WAA minus
-                         now WAA (loss='quantile' at 0.10 0.25 0.50 0.75 0.90);
+                         now WAA (quantile loss at 0.10 0.25 0.50 0.75 0.90);
                          the five are sorted per row so they never cross, and
                          clipped at 0 (gain is never below 0)
   reach_mlb / reach_useful / reach_good
@@ -185,7 +188,63 @@ def val_mask(pids, share):
 
 
 # ---------------------------------------------------------------- models
-def make_model(kind, hp, st, feats, quantile=None, monotonic=False):
+# The gain quantiles run on XGBoost (the GPU when CUDA works). Head to head on
+# held-out TGS players (gpu_compare.py, 2026-09-27): scikit-learn's quantile
+# models for the low marks never left their start value, because ~28% of
+# pitcher gains are exactly 0 (P q10 / q25 and H q10 were a constant 0 for
+# every player); XGBoost learned them (P q25 pinball 0.131 -> 0.095), was ~3%
+# better on the medians and tied on q75 / q90. The reach classifiers stay on
+# scikit-learn (they tied, scikit-learn a hair better). The user's go: 2026-10-02.
+_XGB = {}
+
+
+def quantile_backend():
+    """('xgboost', device) when xgboost imports, device 'cuda' when a tiny GPU
+    fit works, else 'cpu'; ('sklearn', None) without xgboost."""
+    if "backend" not in _XGB:
+        try:
+            import xgboost as xgb
+            dev = "cpu"
+            try:
+                xgb.XGBRegressor(n_estimators=2, device="cuda", tree_method="hist").fit(
+                    np.zeros((8, 2)), np.arange(8.0))
+                dev = "cuda"
+            except Exception:
+                pass
+            _XGB["backend"] = ("xgboost", dev)
+            _XGB["version"] = xgb.__version__
+        except ImportError:
+            _XGB["backend"] = ("sklearn", None)
+    return _XGB["backend"]
+
+
+def _xgb_quantile(hp, st, quantile):
+    """XGBoost quantile regressor with the settings tested in gpu_compare.py
+    (the scikit-learn settings mapped across)."""
+    import xgboost as xgb
+    _lib, dev = quantile_backend()
+    return xgb.XGBRegressor(objective="reg:quantileerror", quantile_alpha=quantile, tree_method="hist",
+                            device=dev, learning_rate=hp["learning_rate"], max_leaves=hp["max_leaf_nodes"],
+                            grow_policy="lossguide", max_depth=0, reg_lambda=hp["l2_regularization"],
+                            min_child_weight=float(hp["min_samples_leaf"]), max_bin=st["max_bins"],
+                            n_estimators=st["max_iter"], early_stopping_rounds=st["n_iter_no_change"],
+                            enable_categorical=True, max_cat_to_onehot=1, random_state=0,
+                            n_jobs=1)   # one CPU thread for the data prep: the user keeps CPU load light
+
+
+def n_iter(m):
+    """Boosting rounds kept (scikit-learn n_iter_, XGBoost best round + 1)."""
+    if hasattr(m, "n_iter_"):
+        return int(m.n_iter_)
+    best = getattr(m, "best_iteration", None)
+    return int(best) + 1 if best is not None else int(m.get_params().get("n_estimators") or 0)
+
+
+def make_model(kind, hp, st, feats, quantile=None, monotonic=False, sklearn_only=False):
+    """sklearn_only: the scikit-learn model even for a quantile (gpu_compare.py
+    compares the two libraries)."""
+    if kind == "quantile" and not sklearn_only and quantile_backend()[0] == "xgboost":
+        return _xgb_quantile(hp, st, quantile)
     common = dict(learning_rate=hp["learning_rate"], max_leaf_nodes=hp["max_leaf_nodes"],
                   min_samples_leaf=hp["min_samples_leaf"], l2_regularization=hp["l2_regularization"],
                   max_iter=st["max_iter"], max_bins=st["max_bins"], early_stopping=True,
@@ -218,8 +277,15 @@ def fit_one(target, df, feats, st, val, log_prefix=""):
         q = QUANTS[QCOLS.index(target)]
         m = make_model("quantile", st["quantile"], st, feats, quantile=q)
         y, yv = df.loc[tr, "gain"].to_numpy(), df.loc[va, "gain"].to_numpy()
-        m.fit(X, y, X_val=Xv, y_val=yv)
+        if hasattr(m, "n_iter_no_change"):
+            m.fit(X, y, X_val=Xv, y_val=yv)
+        else:
+            m.fit(X, y, eval_set=[(Xv, yv)], verbose=False)
         pv = m.predict(Xv)
+        if not hasattr(m, "n_iter_no_change"):
+            # saved models score on the CPU anywhere, one thread (the user's PC
+            # keeps CPU load light; scoring is ~100k rows)
+            m.set_params(device="cpu", n_jobs=1)
         r = yv - pv
         vloss = float(np.mean(np.maximum(q * r, (q - 1) * r)))
         iso = None
@@ -233,10 +299,10 @@ def fit_one(target, df, feats, st, val, log_prefix=""):
         iso = None
         if st.get("calibrate", {}).get(target):
             iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0).fit(pv, yv)
-    log(f"{log_prefix}{target}: train {int(tr.sum()):,} val {int(va.sum()):,} iters {m.n_iter_} "
+    log(f"{log_prefix}{target}: train {int(tr.sum()):,} val {int(va.sum()):,} iters {n_iter(m)} "
         f"val loss {vloss:.5f} ({time.time() - t0:.0f}s)")
     return {"model": m, "iso": iso, "n_train": int(tr.sum()), "n_val": int(va.sum()),
-            "n_iter": int(m.n_iter_), "val_loss": vloss}
+            "n_iter": n_iter(m), "val_loss": vloss}
 
 
 def fit_set(df, feats, st, targets=TARGETS, log_prefix=""):
@@ -599,6 +665,12 @@ def cmd_fit_final(args):
                      "bars": {v[0]: v[1] for v in REACH.values()},
                      "post": "gain quantiles clipped at 0 and sorted per row; isotonic step applied when "
                              "settings.calibrate says so (fit on the grouped validation players)"})
+    lib, dev = quantile_backend()
+    manifest["quantile_backend"] = (f"xgboost {_XGB.get('version')} (trained on {dev})" if lib == "xgboost"
+                                    else f"scikit-learn {sklearn.__version__}")
+    targets = TARGETS
+    if getattr(args, "targets", None):
+        targets = [t for t in TARGETS if t in args.targets or ("gain" in args.targets and t in QCOLS)]
     manifest.setdefault("roles", {})
     os.makedirs(C.MODELS_DIR, exist_ok=True)
     for role in args.roles:
@@ -607,9 +679,14 @@ def cmd_fit_final(args):
         g = load_group(role, args.rows)
         feats, cats, _f = features_of(role)
         log(f"[{role} final] train {len(g):,} rows (out of an org {int((g['in_org'] == 0).sum()):,}), "
-            f"players {g.pid.nunique():,}")
-        models = fit_set(g, feats, st, log_prefix=f"[{role} final] ")
-        files = {}
+            f"players {g.pid.nunique():,}; targets {', '.join(targets)}")
+        old = ((manifest["roles"].get(role) or {}).get("models") or {}) if targets != TARGETS else {}
+        old_loss = {t: v.get("val_loss") for t, v in old.items()}
+        models = fit_set(g, feats, st, targets=targets, log_prefix=f"[{role} final] ")
+        for t, fit in models.items():
+            if old_loss.get(t) is not None:
+                log(f"[{role} final] {t}: validation loss {old_loss[t]:.5f} before -> {fit['val_loss']:.5f} now")
+        files = dict(old)
         for t, fit in models.items():
             path = os.path.join(C.MODELS_DIR, f"peak_{role}_{t}.pkl")
             with open(path, "wb") as fh:
@@ -723,6 +800,9 @@ def main(argv=None):
     p = sub.add_parser("fit-final", help="fit on every training row and save the models")
     roles_arg(p)
     p.add_argument("--date", default=_dt.date.today().isoformat(), help="date string for the manifest")
+    p.add_argument("--targets", nargs="+", choices=TARGETS + ["gain"], default=None,
+                   help="refit only these targets ('gain' = the five gain quantiles); the other saved "
+                        "models and their manifest rows stay as they are (default: all)")
     p = sub.add_parser("importance", help="permutation importance on held-out fold-0 rows")
     roles_arg(p)
     p.add_argument("--n-rows", type=int, default=40000, help="held-out rows to sample (default 40000)")

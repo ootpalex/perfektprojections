@@ -2,3 +2,5 @@
 numpy>=2.3.4
 pandas>=2.3.3
 scikit-learn>=1.7.2
+# the gain-quantile models (uses an NVIDIA GPU when CUDA works, else the CPU)
+xgboost>=3.0
