@@ -48,6 +48,8 @@ Endpoints (base = https://statsplus.net/<slug>/api):
   /date       current in-game date (cache key)
   /players    bio, level, pos, age, service time, roster/DL status, draft attrs
   /contract   salaries, options, no-trade, bonuses
+  /contractextension  signed extensions that start after the /contract deal ends
+              (same columns as /contract; fetch_contract_extensions)
   /teams/     team hierarchy (ID, Name, Nickname, Parent Team ID)
   /draft      draft results (the "Draft API from S+")
   /lgdata/    league metadata (JSON; league_id, level, parent, primary flag)
@@ -1053,6 +1055,10 @@ COLUMNS = {
                           "designated_for_assignment", "is_on_waivers", "mlb_service_years",
                           "mlb_service_days", "mlb_service_days_this_year")),
     "contract": (("player_id",), ("current_year", "years", "salary0", "is_major", "no_trade")),
+    # Same row layout as /contract (the parser in model/src/statsplus.py of the dashboard reads both
+    # with one function). Only player_id is required; a reply without the option/buyout columns only
+    # leaves the extension's option keys unset (contract_terms.py).
+    "contractextension": (("player_id",), ("season_year", "current_year", "years", "salary0")),
     "teams": (("ID", "Name"), ("Nickname",)),
     "draft": (("ID", "Player Name", "Overall"), ("Round", "Pick In Round", "Team")),
     "playerbatstatsv2": (("player_id", "year"), ("league_id", "split_id", "team_id", "pa")),
@@ -1147,6 +1153,13 @@ def fetch_players(base, *, cache=False, fresh=False, token=None):
 def fetch_contracts(base, *, cache=False, fresh=False, token=None):
     """/contract rows. Needs player_id."""
     return _fetch_csv(base, f"{base}/contract", "contract", cache, fresh, token, min_rows=1)
+
+
+def fetch_contract_extensions(base, *, cache=False, fresh=False, token=None):
+    """/contractextension rows (signed extensions that begin when the /contract deal ends).
+    An empty reply is no extensions (allow_empty). Needs player_id when it has rows."""
+    return _fetch_csv(base, f"{base}/contractextension", "contractextension", cache, fresh, token,
+                      allow_empty=True)
 
 
 def fetch_teams(base, *, cache=False, fresh=False, token=None):
