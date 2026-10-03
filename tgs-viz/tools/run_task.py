@@ -403,8 +403,20 @@ class LogSink:
                 self.carry = b""
 
     def idle_flush(self, idle=0.3):
-        if self.carry and time.time() - self.last >= idle:
-            self.flush_carry()
+        """After idle seconds, write the carry except a tail that could still be the
+        start of a secret: a secret printed in two writes further apart than idle
+        would otherwise reach log.txt half unmasked. flush_carry still writes it all."""
+        if not self.carry or time.time() - self.last < idle:
+            return
+        with self.lock:
+            buf = self.mask(self.carry)
+            n = len(buf)
+            for k in range(min(len(buf), self.keep), 0, -1):
+                if any(s.startswith(buf[-k:]) for s in self.secrets):
+                    n = len(buf) - k
+                    break
+            self._write(buf[:n])
+            self.carry = buf[n:]
 
     def line(self, text):
         self.flush_carry()
