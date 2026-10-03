@@ -147,23 +147,59 @@ units); ★`devSignals.js:207-211` PEAK_BARS −1 / 0 / +1.5 (and the trained ML
 **Standings**: `TeamStandingsPage.jsx:86-129` centres each total on the league mean; a uniform
 role credit cancels only if every team fills the same slots (inferred).
 
-## 4. Decisions needed before code
+## 4. Decisions needed before code (with the evidence gathered)
 
-| # | Decision | Options | Recommendation |
-|---|---|---|---|
-| D1 | SSB replacement level | BLM's measured values as a proxy · measure SSB's own from 2043 OOTP `war` (StatsPlus fetch) · our FanGraphs constants | BLM proxy now, labelled; measure SSB's own when the actuals fetch is approved and works for a past season |
-| D2 | Where the block lives | `currency.json` (forces a full re-price) · new `engine/calib/<LG>/replacement.json` | New file, outside the fingerprint until an ML model trains on WAR |
-| D3 | Swingman role | WAR argmax (146 of 296 BLM MLB dual-role arms move RP → SP) · OOTP's `Starter` flag · WAA argmax (today's ML) | Needs a look at who flips before choosing |
-| D4 | Workload | app `leagueCalib` (BLM 0.930 / 0.990) · fitted `currency.json` (0.922 / 0.982) | Fitted file, one source |
-| D5 | Thresholds in WAR | shift each by its role credit · re-cut each ladder so the same share of BLM MLB players lands in each band | Re-cut from data, then sign-off |
+**D1 — SSB replacement level.** Options: BLM's measured values as a labelled proxy · measure
+SSB's own · our FanGraphs constants (retired by the plan). `backtest/fetch_actuals.py --league SSB
+--slug ssb --year 2043` banks a completed past season from public endpoints (about 5 requests:
+/date, /lgdata, batting, pitching, fielding; a dry run without `--write` fetches but writes
+nothing). Not run: it is a StatsPlus call. 2043 is SSB's only completed OOTP 27 season; 2044 adds
+a second at season end. **Recommendation:** BLM proxy now, then bank 2043 and measure route 1
+(budget identity) for SSB.
 
-## 5. Can be done now, independent of the decisions
+**D2 — where the block lives.** `currency.json` is fingerprinted (forces a full re-price) · a new
+`engine/calib/<LG>/replacement.json`. **Recommendation:** the new file.
 
-- `leagueCalib` resolves by `basis` (fixes SSB and RG pricing on TGS).
-- Delete the dead `'WAR wtd'` refs and the dead `_war` / `_spWAR` / `_rpWAR` fields.
-- §2c guard: write `calib_fingerprint(basis)` into `peak_manifest.json` / `path_manifest.json`
-  and refuse or warn in `score.py` on mismatch. Today a changed calibration only yields NaN
-  features (`dataset.py:827-859`) while the old model is still applied.
+**D3 — swingman role.** All 296 BLM MLB dual-role arms carry `Starter = True` (that is what makes
+them dual-role), so the flag cannot decide. Scored against real 2057 usage (169 arms with ≥ 5 MLB
+games; SP if GS ≥ G/2; ratings are the current 2058-12 snapshot, so one season apart):
+
+| Rule | Picks SP | Matches 2057 usage | Actual RP called SP | Actual SP called RP |
+|---|---|---|---|---|
+| WAA argmax (today's ML) | 118 / 296 | 129 / 169 = 76% | 24 | 16 |
+| OOTP `POS` (SP vs RP/CL) | 177 / 296 | 127 / 169 = 75% | 32 | 10 |
+| WAR argmax | 264 / 296 | 92 / 169 = 54% | 77 | 0 |
+
+WAR argmax calls 77 of the 79 real relievers starters, because the SP credit is 2.19 wins larger
+than the RP credit. **Recommendation:** decide the role in WAA (or by `POS`), then add that role's
+credit — WAR prices the role a pitcher will fill, not the one that pays more.
+
+**D4 — workload.** App BLM 0.930 / 0.990 (`leagueCalib.js:110-111`) vs fitted
+`engine/calib/BLM/currency.json` 0.922 / 0.982 (refit 2026-10-01). **Recommendation:** read the
+fitted file only.
+
+**D5 — thresholds in WAR.** The generic ladder (≥5 / 3 / 1.5 / 0 / −1) on 875 BLM MLB players
+(460 H, 118 SP, 297 RP; pitcher role by WAA argmax; catcher credit 5/6) puts 0.3 / 1.7 / 9.9 /
+56.9 / 85.1% at or above each cut. A single WAR ladder keeping those shares cuts at **6.8 / 5.1 /
+3.7 / 0.9 / 0.0**. Under it relievers fall: 47% of RPs are ≥ WAA 0 today, 7% would be ≥ 0.92 WAR.
+A FanGraphs-style 6 / 4 / 2 / 0 / −1 puts 0.6 / 6.4 / 38.1 / 84.7 / 93.5% above the cuts.
+**Recommendation:** the share-preserving cuts, rounded, shown to you before they ship. The other
+WAA constants (§3) get the same treatment one by one.
+
+**D6 — ML guard strictness** (implemented as warn). Refusing would stop the everyday pull after
+every refit; warning records `{trained, current, match}` in `dev_ml.json`.
+
+## 5. Done without decisions (on `phase1-war`)
+
+- `leagueCalib` resolves by the manifest `basis` (SSB and RG were on TGS's constants);
+  `tests/client/leagueCalib.test.mjs`.
+- §2c guard: `calib_fingerprint` in both model manifests; `predict.calib_check` reads it (or the
+  fingerprint inside older manifests' "DEV engine price tag" text); `score.py` warns and records.
+- **Correction to the plan:** the `'WAR wtd'` refs (`columns.js:51, 838`, `PlayerDetail.jsx:412`)
+  are not dead — `WAR wtd` is the pitcher column the engine will emit (plan §2b item 2). Kept.
+- The optimizer's `_war` / `_spWAR` / `_rpWAR` have no readers but carry the org offset the plan
+  keeps for cut/keep; they change when the optimizer switches to WAR, not before (no behaviour to
+  gain, only merge churn).
 
 ## 6. Blocked on the ML models
 
