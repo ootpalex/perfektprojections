@@ -17,234 +17,186 @@ import WaiverClaimPage from './pages/WaiverClaimPage';
 import ParksPage from './pages/ParksPage';
 import MakeItOddsPage from './pages/MakeItOddsPage';
 import ControlPage from './pages/ControlPage';
-import { useActiveJobs, useControlStatus } from './lib/controlApi';
-import { Users, Zap, Target, Trophy, Loader2, AlertCircle, BarChart3, TrendingUp, ChevronDown, DollarSign, TableProperties, Building2, Activity, ClipboardList, Swords, Percent, SquareTerminal } from 'lucide-react';
+import { useActiveJobs, useControlStatus, useAppConfig } from './lib/controlApi';
+import { loadRatingTrends } from './lib/ratingTrends';
+import { Loader2, AlertCircle } from 'lucide-react';
 
-// The dot next to Control: the most urgent active job. Amber = a job waits for
-// an answer, blue = one runs, slate = one only waits for its turn.
+// The dot next to Control: the most urgent active job. Warn = a job waits for
+// an answer, focus = one runs, muted = one only waits for its turn.
 function controlDot(jobs) {
   if (!jobs || !jobs.length) return null;
-  if (jobs.some(j => j.status === 'waiting' || j.prompt === true)) return { cls: 'bg-amber-400 animate-pulse', title: 'A task needs your answer' };
-  if (jobs.some(j => j.status === 'running' || j.status === 'starting')) return { cls: 'bg-blue-400 animate-pulse', title: 'A task is running' };
-  if (jobs.some(j => j.status === 'queued')) return { cls: 'bg-slate-500', title: 'A task is waiting for its turn' };
+  if (jobs.some(j => j.status === 'waiting' || j.prompt === true)) return { color: 'var(--warn)', pulse: true, title: 'A task needs your answer' };
+  if (jobs.some(j => j.status === 'running' || j.status === 'starting')) return { color: 'var(--focus)', pulse: true, title: 'A task is running' };
+  if (jobs.some(j => j.status === 'queued')) return { color: 'var(--text-3)', pulse: false, title: 'A task is waiting for its turn' };
   return null;
 }
 
 // The footer line about live refresh (DESIGN 9.5).
 function RefreshLine({ refresh, liveRefresh }) {
   if (!liveRefresh) {
-    return <p className="text-amber-400/80 mb-1">Live refresh is off. Press F5 after an update.</p>;
+    return <p style={{ color: 'var(--warn)' }}>Live refresh is off. Press F5 after an update.</p>;
   }
   if (!refresh) return null;
-  if (refresh.refreshing) return <p className="text-blue-400 mb-1">Updating...</p>;
-  if (refresh.refreshFailed) return <p className="text-amber-400 mb-1">Update failed; showing the previous data</p>;
+  if (refresh.refreshing) return <p style={{ color: 'var(--focus)' }}>Updating...</p>;
+  if (refresh.refreshFailed) return <p style={{ color: 'var(--warn)' }}>Update failed; showing the previous data</p>;
   if (refresh.refreshedAt) {
     const t = new Date(refresh.refreshedAt);
     const hhmm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
-    return <p className="text-slate-500 mb-1">Updated {hhmm}</p>;
+    return <p>Updated {hhmm}</p>;
   }
   return null;
 }
 
+// The in-game date of the league's newest ratings pull (rating_trends.json, through
+// the shared cached loader), or null when the league has no trends file.
+function useGameDate(league, enabled, refreshedAt) {
+  const [date, setDate] = useState(null);
+  useEffect(() => {
+    setDate(null);
+    if (!league || !enabled) return undefined;
+    let live = true;
+    loadRatingTrends(league).then((t) => {
+      const last = t && Array.isArray(t.pulls) ? t.pulls[t.pulls.length - 1] : null;
+      if (live) setDate(last && last.g ? last.g : null);
+    });
+    return () => { live = false; };
+  }, [league, enabled, refreshedAt]);
+  return date;
+}
+
+// Night Scorecard sidebar (ootp-dashboard app/docs/redesign/mockup/night-scorecard.html):
+// paper panel, nav-controls box, page list with the red-pencil tick on the active page,
+// Control pinned at the bottom. Styles: .nav in index.css.
 function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeChange, features, iafaCount = 0, r5Count = 0, faCount = 0, refresh = null }) {
   const activeJobs = useActiveJobs();
   const { liveRefresh } = useControlStatus();
+  const myOrg = useAppConfig()?.leagues?.[currentLeague]?.my_org;
+  const gameDate = useGameDate(currentLeague, features.trends !== false, refresh?.refreshedAt);
   const dot = controlDot(activeJobs);
-  const linkClass = ({ isActive }) =>
-    `flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-      isActive
-        ? 'bg-blue-600/20 text-blue-400 border-l-2 border-blue-400'
-        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-    }`;
+  const link = ({ isActive }) => (isActive ? 'active' : undefined);
+  const current = leagues.find(lg => lg.id === currentLeague);
 
   // A trends-only league (features.players false) has no player files: the
   // park toggle and every page built on players stay out of the nav, and only
   // Rating Trends is offered.
   const players = features.players !== false;
 
-  // The link list is taller than a short window. Without overflow-y-auto on it
-  // the nav grows past the viewport, the whole document scrolls, and every page
-  // looks cut off with a blank band under it. Only the list scrolls; the league
-  // select and park toggle stay pinned above it.
+  // The page list is taller than a short window: only the list scrolls; the brand
+  // and the nav-controls box stay pinned above it, Control below it.
   return (
-    <nav className="w-56 shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col h-full">
-      <div className="p-4 border-b border-slate-800">
-        <h1 className="text-lg font-black text-white tracking-tight">TGS</h1>
-        <p className="text-[10px] text-slate-500 uppercase tracking-widest">Projections Viz</p>
-      </div>
+    <nav className="nav" aria-label="Main navigation">
+      <div className="brand">SSB</div>
 
-      {/* League Switcher */}
-      {leagues.length > 1 && (
-        <div className="px-3 pt-3 pb-1">
-          <p className="text-[10px] text-slate-600 uppercase tracking-widest px-1 pb-1.5">League</p>
-          <div className="relative">
-            <select
-              value={currentLeague}
-              onChange={(e) => onLeagueChange(e.target.value)}
-              className="w-full appearance-none bg-slate-800 text-white text-sm font-semibold rounded-lg px-3 py-2 pr-8 border border-slate-700 hover:border-blue-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors cursor-pointer"
-            >
-              {leagues.map(lg => (
-                <option key={lg.id} value={lg.id}>{lg.name}</option>
-              ))}
+      <div className="nav-controls">
+        <label htmlFor="nav-league">League</label>
+        {leagues.length > 1 ? (
+          <select id="nav-league" className="select" value={currentLeague} onChange={(e) => onLeagueChange(e.target.value)}>
+            {leagues.map(lg => <option key={lg.id} value={lg.id}>{lg.name}</option>)}
+          </select>
+        ) : (
+          <div className="input">{current?.name || currentLeague || '—'}</div>
+        )}
+        <label>My Team</label>
+        <div className="input" title="Set on the Setup page (Control)">{myOrg || '—'}</div>
+        <label>Game Date</label>
+        <div className="input">{gameDate || '—'}</div>
+        {/* Park basis — Neutral is the shipped default (contracts normalized) */}
+        {players && (
+          <>
+            <label htmlFor="nav-park">Park basis</label>
+            <select id="nav-park" className="select" value={parkMode} onChange={(e) => onParkModeChange(e.target.value)}>
+              <option value="neutral">Neutral</option>
+              <option value="park">My Park</option>
             </select>
-            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          </div>
-        </div>
-      )}
-
-      {/* Park basis toggle — Neutral is the shipped default (contracts normalized) */}
-      {players && (
-      <div className="px-3 pt-2 pb-1">
-        <p className="text-[10px] text-slate-600 uppercase tracking-widest px-1 pb-1.5">Park Basis</p>
-        <div className="flex rounded-lg overflow-hidden border border-slate-700">
-          {[['neutral', 'Neutral'], ['park', 'My Park']].map(([mode, label]) => (
-            <button
-              key={mode}
-              onClick={() => onParkModeChange(mode)}
-              className={`flex-1 px-2 py-1.5 text-xs font-semibold transition-colors ${
-                parkMode === mode
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+          </>
+        )}
       </div>
-      )}
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-0.5">
+      <ul className="pages">
         {players && (
-        <>
-        <p className="text-[10px] text-slate-600 uppercase tracking-widest px-3 pt-3 pb-1">Team Sheets</p>
-        <NavLink to="/hitters" className={linkClass}>
-          <Users size={16} /> Hitters
-        </NavLink>
-        <NavLink to="/pitchers" className={linkClass}>
-          <Zap size={16} /> Pitchers
-        </NavLink>
-
-        {features.draft && (
           <>
-            <p className="text-[10px] text-slate-600 uppercase tracking-widest px-3 pt-4 pb-1">Draft</p>
-            <NavLink to="/hitters-draft" className={linkClass}>
-              <Users size={16} /> Hitters (Draft)
-            </NavLink>
-            <NavLink to="/pitchers-draft" className={linkClass}>
-              <Zap size={16} /> Pitchers (Draft)
-            </NavLink>
-            <NavLink to="/draft-board" className={linkClass}>
-              <BarChart3 size={16} /> Draft Board
-            </NavLink>
-            <NavLink to="/mock-draft" className={linkClass}>
-              <BarChart3 size={16} /> Mock Draft
-            </NavLink>
+            <li className="group">Team sheets</li>
+            <li><NavLink to="/hitters" className={link}>Hitters</NavLink></li>
+            <li><NavLink to="/pitchers" className={link}>Pitchers</NavLink></li>
+
+            {features.draft && (
+              <>
+                <li className="group">Draft</li>
+                <li><NavLink to="/hitters-draft" className={link}>Hitters (Draft)</NavLink></li>
+                <li><NavLink to="/pitchers-draft" className={link}>Pitchers (Draft)</NavLink></li>
+                <li><NavLink to="/draft-board" className={link}>Draft Board</NavLink></li>
+                <li><NavLink to="/mock-draft" className={link}>Mock Draft</NavLink></li>
+              </>
+            )}
+
+            {iafaCount > 0 && (
+              <>
+                <li className="group">International</li>
+                <li><NavLink to="/hitters-iafa" className={link}>IAFA Hitters</NavLink></li>
+                <li><NavLink to="/pitchers-iafa" className={link}>IAFA Pitchers</NavLink></li>
+              </>
+            )}
+
+            {r5Count > 0 && (
+              <>
+                <li className="group">Rule 5</li>
+                <li><NavLink to="/hitters-r5" className={link}>R5 Hitters</NavLink></li>
+                <li><NavLink to="/pitchers-r5" className={link}>R5 Pitchers</NavLink></li>
+              </>
+            )}
+
+            {/* The FA boards derive live from the players (App's fa lists), so they
+                show for every league whose lists hold free agents. features.fa only
+                tracks the retired hitters_fa.json file; it keeps TGS's link as it was. */}
+            {(features.fa || faCount > 0) && (
+              <>
+                <li className="group">Free agency</li>
+                <li><NavLink to="/hitters-fa" className={link}>Hitters (FA)</NavLink></li>
+                <li><NavLink to="/pitchers-fa" className={link}>Pitchers (FA)</NavLink></li>
+              </>
+            )}
+
+            <li className="group">Organization</li>
+            <li><NavLink to="/organization" className={link}>Org Builder</NavLink></li>
+            <li><NavLink to="/waivers" className={link}>Waivers &amp; DFA</NavLink></li>
+            <li><NavLink to="/parks" className={link}>Parks</NavLink></li>
+
+            <li className="group">Standings</li>
+            <li><NavLink to="/standings" className={link}>Team Projections</NavLink></li>
           </>
         )}
 
-        {iafaCount > 0 && (
-          <>
-            <p className="text-[10px] text-slate-600 uppercase tracking-widest px-3 pt-4 pb-1">International</p>
-            <NavLink to="/hitters-iafa" className={linkClass}>
-              <Users size={16} /> IAFA Hitters
-            </NavLink>
-            <NavLink to="/pitchers-iafa" className={linkClass}>
-              <Zap size={16} /> IAFA Pitchers
-            </NavLink>
-          </>
-        )}
-
-        {r5Count > 0 && (
-          <>
-            <p className="text-[10px] text-slate-600 uppercase tracking-widest px-3 pt-4 pb-1">Rule 5</p>
-            <NavLink to="/hitters-r5" className={linkClass}>
-              <Users size={16} /> R5 Hitters
-            </NavLink>
-            <NavLink to="/pitchers-r5" className={linkClass}>
-              <Zap size={16} /> R5 Pitchers
-            </NavLink>
-          </>
-        )}
-
-        {/* The FA boards derive live from the players (App's fa lists), so they
-            show for every league whose lists hold free agents. features.fa only
-            tracks the retired hitters_fa.json file; it keeps TGS's link as it was. */}
-        {(features.fa || faCount > 0) && (
-          <>
-            <p className="text-[10px] text-slate-600 uppercase tracking-widest px-3 pt-4 pb-1">Free Agency</p>
-            <NavLink to="/hitters-fa" className={linkClass}>
-              <Users size={16} /> Hitters (FA)
-            </NavLink>
-            <NavLink to="/pitchers-fa" className={linkClass}>
-              <Zap size={16} /> Pitchers (FA)
-            </NavLink>
-          </>
-        )}
-
-        <p className="text-[10px] text-slate-600 uppercase tracking-widest px-3 pt-4 pb-1">Organization</p>
-        <NavLink to="/organization" className={linkClass}>
-          <Building2 size={16} /> Org Builder
-        </NavLink>
-        <NavLink to="/waivers" className={linkClass}>
-          <ClipboardList size={16} /> Waivers &amp; DFA
-        </NavLink>
-        <NavLink to="/parks" className={linkClass}>
-          <Building2 size={16} /> Parks
-        </NavLink>
-
-        <p className="text-[10px] text-slate-600 uppercase tracking-widest px-3 pt-4 pb-1">Standings</p>
-        <NavLink to="/standings" className={linkClass}>
-          <TableProperties size={16} /> Team Projections
-        </NavLink>
-        </>
-        )}
-
-        <p className="text-[10px] text-slate-600 uppercase tracking-widest px-3 pt-4 pb-1">Tools</p>
+        <li className="group">Tools</li>
         {players && features.contracts && (
-          <NavLink to="/market-value" className={linkClass}>
-            <DollarSign size={16} /> Market Value
-          </NavLink>
+          <li><NavLink to="/market-value" className={link}>Market Value</NavLink></li>
         )}
         {players && (
-        <>
-        <NavLink to="/optimizer" className={linkClass}>
-          <Trophy size={16} /> Roster Optimizer
-        </NavLink>
-        <NavLink to="/series" className={linkClass}>
-          <Swords size={16} /> Series Planner
-        </NavLink>
-        <NavLink to="/dev-analysis" className={linkClass}>
-          <TrendingUp size={16} /> Dev Analysis
-        </NavLink>
-        </>
+          <>
+            <li><NavLink to="/optimizer" className={link}>Roster Optimizer</NavLink></li>
+            <li><NavLink to="/series" className={link}>Series Planner</NavLink></li>
+            <li><NavLink to="/dev-analysis" className={link}>Dev Analysis</NavLink></li>
+          </>
         )}
         {features.trends !== false && (
-        <NavLink to="/trends" className={linkClass}>
-          <Activity size={16} /> Rating Trends
-        </NavLink>
+          <li><NavLink to="/trends" className={link}>Rating Trends</NavLink></li>
         )}
         {/* Make-it odds tables (user asked, 2026-09-24): DEV-league data, one
             file for every league, so the link shows whatever league is picked. */}
-        <NavLink to="/odds" className={linkClass}>
-          <Percent size={16} /> Make-it odds
-        </NavLink>
+        <li><NavLink to="/odds" className={link}>Make-it odds</NavLink></li>
         {players && (
-        <NavLink to="/calibration" className={linkClass}>
-          <Target size={16} /> Model vs Actual
-        </NavLink>
+          <li><NavLink to="/calibration" className={link}>Model vs Actual</NavLink></li>
         )}
-      </div>
+      </ul>
+
       {/* Control: always here, for every league and every data state. */}
-      <div className="px-2 pt-2 border-t border-slate-800">
-        <NavLink to="/control" className={linkClass}>
-          <SquareTerminal size={16} /> Control
-          {dot && <span className={`ml-auto w-2 h-2 rounded-full ${dot.cls}`} title={dot.title} />}
+      <div className="nav-foot">
+        <NavLink to="/control" className={link}>
+          Control
+          {dot && <span className={`dot${dot.pulse ? ' animate-pulse' : ''}`} style={{ background: dot.color }} title={dot.title} />}
         </NavLink>
-      </div>
-      <div className="p-3 border-t border-slate-800 text-[10px] text-slate-600 mt-2">
-        <RefreshLine refresh={refresh} liveRefresh={liveRefresh} />
-        OOTP Analytics
+        <div className="refresh">
+          <RefreshLine refresh={refresh} liveRefresh={liveRefresh} />
+        </div>
       </div>
     </nav>
   );
@@ -417,7 +369,7 @@ export default function App() {
   // Today's layout: the sidebar and the page. Every state below the first
   // manifest load keeps the sidebar, so the league menu and Control stay usable.
   const shell = (content) => (
-    <div className="flex h-screen bg-slate-950">
+    <div className="flex h-screen" style={{ background: 'var(--bg)' }}>
       <Sidebar
         leagues={leagues}
         currentLeague={currentLeague}
@@ -431,8 +383,7 @@ export default function App() {
         refresh={refresh}
       />
       <main className="flex-1 overflow-hidden">
-        <div className="gradient-bar" />
-        <div className="h-[calc(100%-3px)]">
+        <div className="h-full">
           {content}
         </div>
       </main>

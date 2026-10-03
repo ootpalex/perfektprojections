@@ -1,31 +1,29 @@
 @import "tailwindcss" source(none);
+/* Night Scorecard tokens and globals, in the base layer so Tailwind utilities still win */
+@import "./tokens.css" layer(base);
 @source "../src";
 @source "../index.html";
 
-@theme {
-  --font-sans: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
-  --color-primary: #2563eb;
-  --color-primary-dark: #1d4ed8;
-  --color-accent: #f59e0b;
-  --color-positive: #10b981;
-  --color-negative: #ef4444;
-  --color-surface: #0f172a;
-  --color-surface-2: #1e293b;
-  --color-surface-3: #334155;
-  --color-border: #475569;
+/* Night Scorecard: the old Tailwind names now point at the tokens (tokens.css). No
+   monospace in this system: font-mono is Archivo with tabular numbers. */
+@theme inline {
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-ui);
+  --font-narrow: "Archivo Narrow", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --color-primary: var(--accent);
+  --color-primary-dark: var(--accent-hover);
+  --color-accent: var(--warn);
+  --color-positive: var(--good);
+  --color-negative: var(--bad);
+  --color-surface: var(--bg);
+  --color-surface-2: var(--panel);
+  --color-surface-3: var(--panel-2);
+  --color-border: var(--line-2);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #475569 #1e293b;
-}
-
-body {
-  font-family: var(--font-sans);
-  background: #0f172a;
-  color: #e2e8f0;
-  margin: 0;
+  scrollbar-color: var(--line-2) var(--panel);
 }
 
 /* Custom table styles */
@@ -33,18 +31,19 @@ body {
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.78rem;
+  font-size: 12.5px;
 }
 
 .data-table th {
   position: sticky;
   top: 0;
-  background: #1e293b;
+  background: var(--panel-2);
   padding: 5px 6px;
   text-align: left;
+  font-family: var(--font-narrow);
   font-weight: 600;
-  color: #94a3b8;
-  border-bottom: 2px solid #334155;
+  color: var(--text-2);
+  border-bottom: 1px solid var(--line-2);
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
@@ -52,22 +51,22 @@ body {
 }
 
 .data-table th:hover {
-  color: #e2e8f0;
-  background: #334155;
+  color: var(--text);
+  background: var(--panel-3);
 }
 
 .data-table td {
   padding: 3px 6px;
-  border-bottom: 1px solid #1e293b;
+  border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
 
 .data-table tr:hover td {
-  background: #1e293b;
+  background: var(--panel-2);
 }
 
 .data-table tr.selected td {
-  background: #1e3a5f;
+  background: var(--accent-bg);
 }
 
 /* Sticky first column (Name): stays put while the table scrolls right
@@ -77,23 +76,23 @@ body {
 .data-table th.col-sticky {
   left: 0;
   z-index: 11;
-  box-shadow: inset -1px 0 0 #334155;
+  box-shadow: inset -1px 0 0 var(--line-2);
 }
 
 .data-table td.col-sticky {
   position: sticky;
   left: 0;
   z-index: 3;
-  background: #0f172a;
-  box-shadow: inset -1px 0 0 #334155;
+  background: var(--bg);
+  box-shadow: inset -1px 0 0 var(--line-2);
 }
 
 .data-table tr:hover td.col-sticky {
-  background: #1e293b;
+  background: var(--panel-2);
 }
 
 .data-table tr.selected td.col-sticky {
-  background: #1e3a5f;
+  background: var(--accent-bg);
 }
 
 /* Per-column hide (user, 2026-09-24): a small x over the header's right
@@ -105,10 +104,10 @@ body {
   transform: translateY(-50%);
   display: none;
   padding: 1px;
-  border-radius: 3px;
+  border-radius: var(--radius);
   line-height: 0;
-  background: #334155;
-  color: #94a3b8;
+  background: var(--panel-3);
+  color: var(--text-2);
   cursor: pointer;
 }
 
@@ -117,33 +116,16 @@ body {
 }
 
 .data-table th .col-hide:hover {
-  background: #475569;
-  color: #f87171;
+  background: var(--line-2);
+  color: var(--accent);
 }
-
-/* Rating color scale */
-.rating-20 { color: #ef4444; }
-.rating-30 { color: #f97316; }
-.rating-40 { color: #eab308; }
-.rating-50 { color: #a3e635; }
-.rating-60 { color: #22c55e; }
-.rating-70 { color: #06b6d4; }
-.rating-80 { color: #8b5cf6; }
-
-/* WAA color scale */
-.waa-elite { color: #8b5cf6; font-weight: 700; }
-.waa-great { color: #06b6d4; font-weight: 600; }
-.waa-good { color: #22c55e; }
-.waa-avg { color: #94a3b8; }
-.waa-bad { color: #f97316; }
-.waa-terrible { color: #ef4444; }
 
 /* Scrollable containers */
 .table-container {
   overflow: auto;
   max-height: calc(100vh - 220px);
-  border: 1px solid #334155;
-  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
 }
 
 /* Compact table variant (Mock Draft): tighter rows so more picks fit on screen */
@@ -151,60 +133,75 @@ body {
 .compact-table .data-table th { padding: 3px 6px; }
 .compact-table .data-table td { padding: 1px 6px; line-height: 1.3; }
 
-/* Filter chips */
-.filter-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 12px;
-  border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-  border: 1px solid #475569;
-  background: #1e293b;
-  color: #94a3b8;
+/* ---------- Night Scorecard shell: the sidebar (paper panel) ----------
+   From ootp-dashboard app/docs/redesign/mockup/night-scorecard.html. */
+.nav {
+  width: 200px; flex: 0 0 200px; height: 100%;
+  background: var(--panel);
+  border-right: 1px solid var(--line-2);
+  display: flex; flex-direction: column;
+  padding: 14px 0 0;
 }
-
-.filter-chip:hover {
-  border-color: #2563eb;
-  color: #e2e8f0;
+.nav .brand {
+  font-family: var(--font-ui); font-weight: 800; font-size: 22px; letter-spacing: -0.04em;
+  padding: 2px 16px 10px;
+  display: flex; align-items: baseline; gap: 8px;
+  color: var(--text);
 }
-
-.filter-chip.active {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: white;
+.nav .brand::after {
+  content: "GM Dashboard";
+  font-family: var(--font-narrow); font-weight: 500; font-size: 12px; letter-spacing: 0;
+  color: var(--text-3);
 }
-
-/* Tooltip */
-.tooltip {
-  position: absolute;
-  background: #1e293b;
-  border: 1px solid #475569;
-  border-radius: 8px;
-  padding: 12px;
-  z-index: 50;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-  pointer-events: none;
-  max-width: 360px;
+.nav-controls {
+  margin: 0 12px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  padding: 8px 10px 9px;
+  display: grid; grid-template-columns: 1fr; gap: 3px;
 }
-
-/* Animated gradient bar */
-.gradient-bar {
-  height: 3px;
-  background: linear-gradient(90deg, #2563eb, #8b5cf6, #f59e0b, #ef4444);
-  background-size: 200% 100%;
-  animation: gradient-shift 3s ease infinite;
+.nav-controls label {
+  font-family: var(--font-narrow); font-size: 11px; font-weight: 600; color: var(--text-3);
+  margin-top: 4px;
 }
-
-@keyframes gradient-shift {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+.nav-controls label:first-child { margin-top: 0; }
+.nav-controls .select, .nav-controls .input {
+  font-size: 12.5px; font-weight: 600; color: var(--text);
+  padding: 3px 0 4px; border: 0; border-bottom: 1px solid var(--line-2); border-radius: 0;
+  background: transparent;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.nav-controls .select { cursor: pointer; appearance: none; width: 100%; }
+.nav-controls .select:hover { color: var(--accent); }
+.nav-controls .select option { background: var(--panel-2); color: var(--text); }
+.nav-controls .input { font-weight: 500; font-variant-numeric: tabular-nums; }
 
-/* Number formatting */
-.num-positive { color: #22c55e; }
-.num-negative { color: #ef4444; }
-.num-neutral { color: #94a3b8; }
+.nav .pages {
+  list-style: none; margin: 0; padding: 4px 0 8px;
+  flex: 1; min-height: 0; overflow-y: auto;
+  font-family: var(--font-narrow);
+}
+.nav .pages li.group {
+  font-size: 11px; font-weight: 600; color: var(--text-3);
+  padding: 10px 16px 2px 30px;
+}
+.nav .pages a, .nav .nav-foot a {
+  position: relative; display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-narrow); font-size: 14px; font-weight: 500;
+  color: var(--text-2); text-decoration: none;
+  padding: 5px 16px 5px 30px;
+}
+.nav .pages a:hover, .nav .nav-foot a:hover { color: var(--text); background: var(--panel-2); }
+.nav .pages a.active, .nav .nav-foot a.active { color: var(--text); font-weight: 700; }
+.nav .pages a.active::before, .nav .nav-foot a.active::before {
+  /* the red pencil tick */
+  content: ""; position: absolute; left: 13px; top: 8px; width: 5px; height: 10px;
+  border-right: 2.5px solid var(--accent); border-bottom: 2.5px solid var(--accent);
+  transform: rotate(40deg);
+}
+.nav .nav-foot { border-top: 1px solid var(--line); padding: 6px 0 12px; }
+.nav .nav-foot a { font-size: 13px; color: var(--text-3); }
+.nav .nav-foot .dot { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; }
+.nav .nav-foot .refresh { padding: 4px 16px 0 30px; font-size: 11px; color: var(--text-3); }
+.nav .nav-foot .refresh p { margin: 0; }
