@@ -528,7 +528,8 @@ class TestPrompts(Case):
             pr = self.wait_prompt(jd)
             self.assertEqual(pr["kind"], "confirm")
             self.assertTrue(any("3 cell(s) will change" in d for d in pr["details"]))
-            self.assertEqual(self.state(jd)["status"], "waiting")
+            # the runner writes prompt.json, then state "waiting": wait out that gap
+            self.wait_for(lambda: self.state(jd).get("status") == "waiting", 10, what="state waiting")
             self.answer(jd, pr["prompt_id"], value)
             p.wait(60)
             st = self.state(jd)
