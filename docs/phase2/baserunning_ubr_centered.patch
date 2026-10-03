@@ -1,0 +1,11 @@
+diff --git a/tgs-viz/engine/hitters.py b/tgs-viz/engine/hitters.py
+index 6bc8adc..9dca9dd 100644
+--- a/tgs-viz/engine/hitters.py
++++ b/tgs-viz/engine/hitters.py
+@@ -287,5 +287,5 @@ def compute(p, dp, filt, park, league="TGS", currency=None, tails=None, fielding
+         SBAT = sbat(s); SBn = SBpct * SBAT; CSn = SBAT - SBn
+         wsb_pos = max(SBn * 0.2 + CSn * g("H35"), 0.0) - g("H36") * (s["S1B"] + s["uBB"] + s["HBP"])
+-        return (cubic + g("C40")) * ((s["uBB"] + s["S1B"] + s["HBP"]) * 3 + s["D2B"] * 2 + s["T3B"]
++        return (cubic) * ((s["uBB"] + s["S1B"] + s["HBP"]) * 3 + s["D2B"] * 2 + s["T3B"]
+                                      - (CSn * 3 - SBn if wsb_pos > 0 else 0))
+     def wsb(s):
