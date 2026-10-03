@@ -147,6 +147,24 @@ units); ★`devSignals.js:207-211` PEAK_BARS −1 / 0 / +1.5 (and the trained ML
 **Standings**: `TeamStandingsPage.jsx:86-129` centres each total on the league mean; a uniform
 role credit cancels only if every team fills the same slots (inferred).
 
+## 3b. Decisions taken (2026-10-03) and what followed
+
+- **D1 SSB replacement level — decided:** BLM's credits as a labelled proxy now; measure SSB's own.
+  Done: SSB 2043 banked (`backtest/actuals/SSB/2043`, one `fetch_actuals.py` run). Budget identity,
+  28 clubs × 162 G: **hitter 1.872 [1.57, 2.18], SP 2.630 [2.26, 3.00], RP 0.350 [0.20, 0.50]**
+  (club bootstrap 95%), 33.66 WAR per club; the same code reproduces his BLM 2057 route-1 numbers
+  exactly (1.912 / 2.643 / 0.298). Within error of BLM's, so the proxy holds; switching SSB to its
+  own values is a sign-off item.
+- **D2 where the block lives — decided:** `engine/calib/replacement.json` (outside the fingerprinted
+  `calib/<LG>/` files). `engine/war.py` adds WAR columns beside WAA when a caller passes
+  `live_replacement(app league)` (`ingest/refresh.py`, `ingest/export_league.py`); validators and the
+  ML repricing never do. SSB rebuilt offline from its cached pull: 0 existing values changed in
+  6,866 hitters / 7,125 pitchers; 41 hitter + 8 pitcher WAR columns; `Best Pos WAR` = `Best Pos` for
+  all 475 SSB MLB hitters. BLM, TGS and RG get the columns at their next pull.
+- **D3 swingman role — deferred** until all the data is in.
+- **D5 thresholds — deferred** until there are real WAR values to look at (there now are, for SSB).
+- **D4, D6** — open (explained to the user in plain terms).
+
 ## 4. Decisions needed before code (with the evidence gathered)
 
 **D1 — SSB replacement level.** Options: BLM's measured values as a labelled proxy · measure

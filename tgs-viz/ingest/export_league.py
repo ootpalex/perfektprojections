@@ -266,10 +266,12 @@ def main(argv=None):
     hit_rows = [r for r in trows if not is_pit(r)]
     pit_rows = [r for r in trows if is_pit(r)]
     cal = a.calib
+    repl = R.live_replacement(lg)              # Phase 1: WAR columns beside WAA
     hrecs = R.run_hitters(hit_rows, cal, currency=R.live_currency(cal), tails=R.live_hitter_tails(cal),
-                          fielding=R.live_fielding(cal), park_mode="neutral")
+                          fielding=R.live_fielding(cal), park_mode="neutral", replacement=repl)
     precs = R.run_pitchers(pit_rows, cal, scurves=R.live_scurves(cal), currency=R.live_currency(cal),
-                           park_mode="neutral", role_stuff=R.live_role_stuff(cal), observed=False)
+                           park_mode="neutral", role_stuff=R.live_role_stuff(cal), observed=False,
+                           replacement=repl)
     print(f"  priced {len(hrecs)} hitters, {len(precs)} pitchers")
 
     # contracts + injury / service status (OOTP columns = StatsPlus /contract, /players)

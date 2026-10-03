@@ -20,6 +20,7 @@ sys.path.insert(0, ENGINE)
 import hitters as H  # noqa: E402
 import pitchers as P  # noqa: E402
 import parklayer as PL  # noqa: E402
+import war as W  # noqa: E402
 from openpyxl import load_workbook  # noqa: E402
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -143,7 +144,7 @@ def _scan_consts_cached(hpath):
 
 
 def run_hitters(records, league, currency=None, tails=None, fielding=None,
-                park_mode="neutral", park_blend=None):
+                park_mode="neutral", park_blend=None, replacement=None):
     """Export records -> engine -> full computed records.
 
     currency (audit D2/D9): a currency_fit.py dict — callers pass
@@ -205,7 +206,8 @@ def run_hitters(records, league, currency=None, tails=None, fielding=None,
         merged = dict(rec)
         merged.update({k: v for k, v in comp.items() if not k.startswith("_")})
         out.append(merged)
-    return out
+    # WAR beside WAA (Phase 1): callers that write app data pass live_replacement(app league)
+    return W.add_war(out, "hitters", replacement, basis=league)
 
 
 def live_scurves(league):
@@ -286,6 +288,14 @@ def live_role_stuff(league):
     Returns None (sheet behavior) when missing."""
     path = os.path.join(REPO, "tgs-viz", "engine", "calib", league, "role_stuff.json")
     return P.load_role_stuff(path) if os.path.exists(path) else None
+
+
+def live_replacement(league):
+    """Phase 1 (docs/PHASE1_AUDIT.md): the APP league's replacement credits from
+    engine/calib/replacement.json ({"hitter","sp","rp","league","source"}), or None.
+    Opt-in like live_currency: only the callers that write the app's player files pass it to
+    run_hitters / run_pitchers, which then add WAR columns beside the WAA ones."""
+    return W.load_replacement(league)
 
 
 def live_currency(league):
@@ -408,7 +418,7 @@ def _hitter_dp(league):
 
 
 def run_pitchers(records, league, scurves=None, currency=None, park_mode="neutral", role_stuff=None,
-                 observed=True):
+                 observed=True, replacement=None):
     """scurves (audit D1): a pitchers.load_scurves() dict — when given, the four
     pitching rate blocks use the fitted logistic curves instead of the
     two-segment lines. Deliberately opt-in (callers pass live_scurves(league)):
@@ -462,7 +472,7 @@ def run_pitchers(records, league, scurves=None, currency=None, park_mode="neutra
         merged = dict(rec)
         merged.update({k: v for k, v in comp.items() if not str(k).startswith("_")})
         out.append(merged)
-    return out
+    return W.add_war(out, "pitchers", replacement)   # WAR beside WAA (Phase 1)
 
 
 def _simulate_export(league, kind):
