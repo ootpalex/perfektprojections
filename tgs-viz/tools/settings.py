@@ -22,6 +22,12 @@ ootp_version, a whole year such as 2043. ingest/metadata_inputs.py refuses to
 build a league's metadata from an earlier season (older seasons were played on
 another OOTP engine). Absent = no boundary.
 
+A league may carry "roster_export": the OOTP org screen export (org.csv) whose
+roster fields StatsPlus does not serve (option years, Rule 5, 40-man, ...).
+A full path ("~" and %VAR% expand) or a bare file name, which is looked up in
+<ootp_save>/import_export. ingest/roster_export.py merges it into the pull by
+player ID. Absent = off; nothing changes.
+
 Interpreters are argv lists and are never expanded. Paths expand %VAR% and a
 leading ~, nothing else.
 
@@ -242,6 +248,22 @@ def save_name_problem(name):
     return None
 
 
+def roster_export_problem(value):
+    """Why value cannot be a roster_export setting, or None. A .csv file name or
+    a full path; a bare name may not carry a folder (it is looked up in the
+    save's import_export folder)."""
+    if not isinstance(value, str) or not value.strip():
+        return "must be the path or file name of the org export (a .csv file)"
+    if value != value.strip() or re.search(r"[\x00-\x1f]", value):
+        return "must be a plain path (no leading or trailing spaces, no control characters)"
+    if not value.lower().endswith(".csv"):
+        return "must end in .csv"
+    full = expand_path(value)
+    if not (os.path.isabs(full) or re.match(r"^([A-Za-z]:|\\\\)", full)) and re.search(r"[\\/]", full):
+        return "must be a full path, or a bare file name that lives in the save's import_export folder"
+    return None
+
+
 def validate(merged):
     """Problems in a settings dict, in plain words. [] when it is fine."""
     out = []
@@ -336,6 +358,10 @@ def validate(merged):
             if not isinstance(efs, int) or isinstance(efs, bool) or not 1000 <= efs <= 9999:
                 out.append(f"{p}.engine_first_season: must be a season year like 2043 "
                            "(the first season played on this league's OOTP version)")
+        if "roster_export" in lg:
+            why = roster_export_problem(lg["roster_export"])
+            if why:
+                out.append(f"{p}.roster_export: {why}")
         for k in ("dispersal_orgs", "foreign_league_ids"):
             if k in lg and not (isinstance(lg[k], list) and all(isinstance(x, str) for x in lg[k])):
                 out.append(f"{p}.{k}: must be a list of text values")
@@ -470,6 +496,21 @@ def engine_first_season(league_id):
     when none is set. Any configured league, enabled or not."""
     v = (_merged()["leagues"].get(str(league_id)) or {}).get("engine_first_season")
     return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def roster_export_path(league_id):
+    """Absolute path of the league's roster export (settings roster_export), or
+    None when none is set. A bare file name resolves inside
+    <ootp_save>/import_export (None when the league has no save to look in).
+    The file may not exist; the caller checks."""
+    v = (_merged()["leagues"].get(str(league_id)) or {}).get("roster_export")
+    if not isinstance(v, str) or not v.strip():
+        return None
+    full = expand_path(v)
+    if os.path.isabs(full):
+        return os.path.normpath(full)
+    save = ootp_save_dir(league_id)
+    return os.path.normpath(os.path.join(save, "import_export", full)) if save else None
 
 
 def history_settings():

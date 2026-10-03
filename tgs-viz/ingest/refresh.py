@@ -487,6 +487,21 @@ def main():
                      f"{S.redact(e)}).",
                   f"     Nothing was written to the app data; it keeps the last successful {league} data.")
 
+        # --- optional: roster-management fields from the OOTP org export ---
+        # Option years, Rule 5, 40-man, rookie status ... are not in StatsPlus. A league
+        # that sets roster_export gets them merged by player ID as NEW keys (ingest/
+        # roster_export.py). No setting = nothing happens. It can never stop a pull.
+        try:
+            import roster_export as RX
+            if RX.configured_path(league):
+                try:
+                    pull_date = S.fetch_date(base)[:10]    # the pull's own /date, kept for 60 s
+                except Exception:
+                    pull_date = None
+                RX.apply(league, [hrecs, precs], mirrors=[hrecs_park, precs_park], pull_game_date=pull_date)
+        except Exception as e:
+            print(f"  WARNING: roster export skipped ({type(e).__name__}: {S.redact(e)}). The pull is unchanged.")
+
         # Validate the mapping: compare to the sheet's existing hitters.json (same players).
         try:
             cur = {str(x.get("ID")): x for x in json.load(open(os.path.join(out_dir, "hitters.json"), encoding="utf-8"))}
