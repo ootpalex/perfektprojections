@@ -216,9 +216,10 @@ class ZrBracket(unittest.TestCase):
 
 class Gating(unittest.TestCase):
     def test_nothing_in_the_engine_reads_the_candidate_or_the_derivation(self):
-        # H38 / H39 must still come from the workbook: no engine or ingest module may import
-        # out_values or open out_values_candidate.json. (metadata_calibrate only imports it
-        # inside the opt-in branch of the docs/phase2/out_values.patch, which is not applied.)
+        # Decided 2026-10-03: out values are derived per league at the next Recalibrate. Only
+        # metadata_calibrate (its --derived-out-values branch) and tools/tasks.py (which passes
+        # that flag) may name out_values; nothing may open out_values_candidate.json.
+        allowed = {"engine/metadata_calibrate.py", "tools/tasks.py"}
         offenders = []
         for sub in ("engine", "ingest", "tools"):
             d = os.path.join(VIZ, sub)
@@ -226,7 +227,7 @@ class Gating(unittest.TestCase):
                 if not fn.endswith(".py") or fn == "out_values.py":
                     continue
                 txt = open(os.path.join(d, fn), encoding="utf-8", errors="replace").read()
-                if "out_values" in txt or "out_values_candidate" in txt:
+                if "out_values_candidate" in txt or ("out_values" in txt and f"{sub}/{fn}" not in allowed):
                     offenders.append(f"{sub}/{fn}")
         self.assertEqual(offenders, [], "an unapplied-by-default module is being read")
 

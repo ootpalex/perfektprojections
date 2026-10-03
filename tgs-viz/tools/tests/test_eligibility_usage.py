@@ -190,15 +190,20 @@ class BestPosAndFlips(unittest.TestCase):
 
 
 class ShippedFlags(unittest.TestCase):
-    """The tool's "his" rule is the engine's rule: it reproduces every committed flag, Best Pos and Max WAA."""
+    """engine_rule(league) is the engine's rule: it reproduces every committed flag, Best Pos and Max WAA.
+    (A league's committed files reproduce once they are rebuilt after a rule change: BLM, TGS and RG
+    at their next pull, SSB rebuilt 2026-10-03.)"""
 
     def check(self, lg):
         path = os.path.join(VIZ, "public", "data", lg, "hitters.json")
         if not os.path.exists(path):
             self.skipTest("no committed %s hitters.json" % lg)
         rows = E._hitters_json(lg)
-        self.assertEqual(sum(E.reproduces_flags(rows).values()), 0, lg)
-        n, bad_best, max_diff = E.reproduces_shipped(rows)
+        rule = E.engine_rule(lg)
+        if sum(E.reproduces_flags(rows, rule).values()) and rule != E.RULES["his"]:
+            rule = E.RULES["his"]       # files built before the rule change (until the league's next pull)
+        self.assertEqual(sum(E.reproduces_flags(rows, rule).values()), 0, lg)
+        n, bad_best, max_diff = E.reproduces_shipped(rows, rule)
         self.assertGreater(n, 1000)
         self.assertEqual(bad_best, 0, lg)
         self.assertLess(max_diff, 1e-9, lg)

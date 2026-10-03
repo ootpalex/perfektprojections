@@ -1535,7 +1535,9 @@ def t_recalibrate_blm():
         step("metadata_roles", "Your SP/RP paste",
              py(mi, "--league", "BLM", "--out", inputs_dir, "--stage", "roles", "--accept-paste"), echo=T["recal_blm.a2"]),
         step("metadata_calibrate", "Metadata data points",
-             py(r"tgs-viz\engine\metadata_calibrate.py", "--inputs-dir", inputs_dir, "--json", meta), echo=T["recal_blm.a3"]),
+             py(r"tgs-viz\engine\metadata_calibrate.py", "--inputs-dir", inputs_dir, "--json", meta,
+                "--derived-out-values"),     # out values from the league's own run values (docs/phase2/out_values.md)
+             echo=T["recal_blm.a3"]),
         step("calibrate", "Regressions from the BLM clone archive",
              calibrate_argv("BLM", "{saved_games:27}/0blm*.lg"), echo=T["recal_blm.b"]),
         excel_check("excel", "The Sheets BLM"),
@@ -1773,6 +1775,35 @@ def t_update_statsplus(ST, lg):
                 finish=fin("fails", ok=[""], fails=["", "  Steps that did not update:{fails}",
                                                      "  (each one said why above)"],
                            exit_ok=None, report_step="pull_report", report_verdict="strict"))
+
+
+def t_bank_season_league(ST, lg):
+    """Season end for one wizard-added StatsPlus league (Phase 2 row 10 decision, 2026-10-03):
+    bank the finished season's actuals, snapshot the projections, then the fielding referee on
+    that season (a report: it changes no number, so its failure never fails the task). TGS and
+    BLM keep the combined Bank Season task."""
+    lid = lg["id"]
+    slug = ST.slug(lid)
+    basis = lg.get("basis") or lid
+    actuals, snap = r"tgs-viz\backtest\fetch_actuals.py", r"tgs-viz\backtest\snapshot_projections.py"
+    steps = [
+        step("actuals", f"{lid} season actuals", py(actuals, "--league", lid, "--slug", slug, "--write"),
+             "collect", f"{lid}-actuals"),
+        step("snapshot", f"{lid} projection snapshot", py(snap, "--league", lid, "--slug", slug, "--write"),
+             "collect", f"{lid}-snapshot"),
+        step("referee", "Fielding check (real season vs the fielding curves)",
+             py(r"tgs-viz\backtest\referee_fielding.py", "--league", lid, "--basis", basis,
+                "--sample", "actuals:latest:auto"), "ignore"),
+    ]
+    headers(steps)
+    name = lg.get("name") or lid
+    return task(f"bank_season.{lid}", f"Bank {name} season",
+                f"Saves {name}'s finished season stats and a dated snapshot of the current projections, then "
+                "checks the fielding curves against that season. Run it after the season ends and after a "
+                f"ratings update. A season still in progress is skipped.",
+                "season", steps, leagues=[lid], requires=[lid], fl=flags(network=True), time="1 to 3 minutes",
+                finish=fin("fails", ok=[""], fails=["", "  Steps that did not finish:{fails}",
+                                                     "  (each one said why above)"], exit_ok=None))
 
 
 def t_update_local(ST, lg):
@@ -2313,6 +2344,8 @@ def all_tasks(ST, state=None):
         typ = lg.get("type")
         if typ == "statsplus":
             out.append(t_update_statsplus(ST, lg))
+            if lid not in defaults_ids:
+                out.append(t_bank_season_league(ST, lg))
         elif typ == "local_export":
             out.append(t_update_local(ST, lg))
         elif typ == "dev":

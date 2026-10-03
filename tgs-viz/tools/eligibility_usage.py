@@ -80,6 +80,21 @@ RULES["lf40"] = dict(RULES["his"], lf=40, rf=40)
 RULES["wide"] = dict(RULES["his"], lf=45, rf=45, b2_rng=45, b3_arm=45, ss_rng=50, ss_arm=45, cf=55)
 
 
+def engine_rule(league):
+    """The rule engine/hitters.py applies today to `league`: the sheet's ("his"), with the corner-OF
+    floor of the league's calibration basis (hitters.OF_CORNER_MIN, decided 2026-10-03: 45 on BLM)."""
+    sys.path.insert(0, os.path.join(VIZ, "engine"))
+    sys.path.insert(0, os.path.join(VIZ, "tools"))
+    import hitters as H
+    try:
+        import settings as ST
+        basis = (ST.league(league) or {}).get("basis") or league
+    except Exception:
+        basis = league
+    ofc = getattr(H, "OF_CORNER_MIN", {}).get(basis, RULES["his"]["lf"])
+    return dict(RULES["his"], lf=ofc, rf=ofc)
+
+
 def clauses(t, pos, rule):
     """{clause name: boolean pass array} for `pos` under `rule` (a dict from RULES), one
     entry per condition in the engine's `elig` dict. Missing ratings (NaN) fail, as in the

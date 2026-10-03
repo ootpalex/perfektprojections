@@ -490,8 +490,68 @@ def format_rungs(rows: Sequence[Mapping]) -> str:
     return "\n".join(lines)
 
 
+def latest_banked_year(league: str) -> int:
+    """The newest backtest/actuals/<LG>/<year> whose meta.json says season_complete."""
+    root = os.path.join(VIZ, "backtest", "actuals", league)
+    years = []
+    for name in (os.listdir(root) if os.path.isdir(root) else []):
+        try:
+            with open(os.path.join(root, name, "meta.json"), encoding="utf-8") as fh:
+                if json.load(fh).get("season_complete") and name.isdigit():
+                    years.append(int(name))
+        except (OSError, ValueError):
+            continue
+    if not years:
+        raise SystemExit(f"no completed banked season for {league} under {root} (run Bank Season first)")
+    return max(years)
+
+
+def season_end_pull(db_path: str, league: str, year: int) -> Tuple[int, str, int]:
+    """(pull_id, game_date, days from the season's end) of the league's ratings pull whose in-game
+    date is nearest {year}-10-01: the ratings the league actually played on at season's end."""
+    import datetime as _dt
+    import sqlite3
+    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        rows = con.execute("select pull_id, game_date from pulls where league = ? and game_date is not null",
+                           (league,)).fetchall()
+    finally:
+        con.close()
+    end = _dt.date(year, 10, 1)
+    best = None
+    for pid, gd in rows:
+        try:
+            gap = abs((_dt.date.fromisoformat(str(gd)[:10]) - end).days)
+        except ValueError:
+            continue
+        if best is None or gap < best[2]:
+            best = (int(pid), str(gd)[:10], gap)
+    if best is None:
+        raise SystemExit(f"no {league} ratings pull with an in-game date in {db_path}")
+    return best
+
+
+def app_heights(league: str) -> Optional[pd.DataFrame]:
+    """Heights (cm, the engine's HT Sort scale) from the league's app hitters.json, for a league
+    with no calib/<LG>/metadata_inputs (a wizard league priced on another league's basis)."""
+    p = os.path.join(VIZ, "public", "data", league, "hitters.json")
+    try:
+        with open(p, encoding="utf-8") as fh:
+            recs = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    ht = {}
+    for r in recs:
+        v = r.get("HT Sort", r.get("HT"))
+        try:
+            ht[str(r["ID"]).strip()] = float(v)
+        except (TypeError, ValueError, KeyError):
+            continue
+    return pd.DataFrame({"ht_cm": pd.Series(ht, dtype=float)})
+
+
 def run_sample(spec: str, league: str, basis: str, curves: Optional[Mapping], dp: Mapping[str, float],
-               pull: int, min_chances: int, linear: bool, n_boot: int, db: Optional[str]
+               pull, min_chances: int, linear: bool, n_boot: int, db: Optional[str]
                ) -> Tuple[str, List[dict]]:
     """Load one --sample spec and referee it. Returns (label, per-position rows)."""
     kind, _, rest = spec.partition(":")
@@ -500,13 +560,24 @@ def run_sample(spec: str, league: str, basis: str, curves: Optional[Mapping], dp
         label = f"live {league} ({label})"
     elif kind == "actuals":
         parts = rest.split(":")
-        year = int(parts[0])
-        pid = int(parts[1]) if len(parts) > 1 else pull
-        _, live_ratings, _ = load_live_inputs(league)                  # heights only
+        year = latest_banked_year(league) if parts[0] == "latest" else int(parts[0])
+        p = parts[1] if len(parts) > 1 else pull
+        note = ""
+        if str(p) == "auto":
+            pid, gd, gap = season_end_pull(db or _default_db(), league, year)
+            note = f" (auto: in-game {gd}, {gap} days from the season's end)"
+            if gap > 90:
+                note += " - WARNING: far from the season's end; ratings may have moved since"
+        else:
+            pid = int(p)
+        if os.path.isdir(os.path.join(ENGINE, "calib", league, "metadata_inputs")):
+            _, live_ratings, _ = load_live_inputs(league)              # heights only
+        else:
+            live_ratings = app_heights(league)                         # wizard league: app data heights
         obs = load_actuals_observed(os.path.join(VIZ, "backtest", "actuals", league, str(year), "fielding.csv"),
                                     year)
         ratings = load_db_ratings(db or _default_db(), league, pid, heights=live_ratings)
-        label = f"actuals {league} {year}, ratings pull {pid}"
+        label = f"actuals {league} {year}, ratings pull {pid}{note}"
     elif kind == "dir":
         obs, ratings = load_dashboard_dir(rest)
         label = f"dir {rest}"
@@ -530,7 +601,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--league", default="BLM", help="league whose samples are read (default BLM)")
     ap.add_argument("--basis", default=None, help="calibration that prices the sample (default: --league)")
     ap.add_argument("--sample", action="append", help="live | actuals:YEAR[:PULL] | dir:PATH (repeatable)")
-    ap.add_argument("--pull", type=int, default=4, help="default ratings pull id for actuals samples (BLM 2057: 4 = 2057-10-13)")
+    ap.add_argument("--pull", default="4", help="default ratings pull for actuals samples: an id (BLM 2057: 4 = "
+                                               "2057-10-13) or auto (the pull nearest the season's end)")
     ap.add_argument("--db", default=None, help="ratings_history.db (default: pull_order.DB_PATH)")
     ap.add_argument("--min-chances", type=int, default=MIN_CHANCES)
     ap.add_argument("--linear", action="store_true", help="price with the sheet's linear cells instead of the curves")
@@ -540,7 +612,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     basis = a.basis or a.league
     curves, dp = load_calibration(basis)
-    samples = a.sample or ["live", "actuals:2057"]
+    samples = a.sample or ["live", "actuals:2057"]   # actuals:latest[:auto] = newest banked season
     if HERE not in sys.path:
         sys.path.insert(0, HERE)
     report = dict(league=a.league, basis=basis, linear=bool(a.linear), samples=[])

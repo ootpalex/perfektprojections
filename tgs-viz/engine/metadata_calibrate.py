@@ -629,7 +629,7 @@ def pos_adj_calc(hit_out, fratings, ip_by_id, raw_ip, model_ids=None):
 # ---------------------------------------------------------------- assembly
 
 
-def compute_cells(inputs_dir, model_ids=None):
+def compute_cells(inputs_dir, model_ids=None, derived_out_values=False):
     p = lambda name: os.path.join(inputs_dir, name)
     for name in ["Hitting_Data.csv", "Pitching_Data.csv", "SP_Data.csv", "RP_Data.csv",
                  "Fielding_Data.csv", "Batter_Ratings.csv", "SP_Ratings.csv",
@@ -654,6 +654,13 @@ def compute_cells(inputs_dir, model_ids=None):
     _, padj = pos_adj_calc(H, fratings, ip_by_id, raw_ip, model_ids)
 
     c = dict(STATICS)
+    if derived_out_values:
+        # GATED (docs/phase2/out_values.md): F38 / F39 from the league's own linear weights and
+        # BIZ outfield hit mix instead of the hand-entered 0.75 / 0.90. Off by default.
+        import out_values as OV
+        ov = OV.derive_out_values(OV.league_totals(hit), OV.zone_accounting(
+            {pos: fld[pos] for pos in OV.IF_POS + OV.OF_POS}))
+        c["F38"], c["F39"] = ov["inf_out"], ov["of_out"]
     # --- Hitting Ratings anchors F2:F9 ='Hitting Calc'!V8..V15
     for cell, lab in zip(["F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9"],
                          ["Eye", "Power", "AvK", "BABIP", "Gap", "Speed", "Stealing", "Baserunning"]):
@@ -977,9 +984,12 @@ def main():
                     help="file of IDs (one per line or JSON array) the workbook's "
                          "Data-Model pivots contained; restricts the model-backed "
                          "layer to emulate the workbook's stale cache (validation)")
+    ap.add_argument("--derived-out-values", action="store_true",
+                    help="F38 / F39 (infield / outfield out value) derived from the league's "
+                         "own linear weights + BIZ data, not the hand-entered 0.75 / 0.90")
     a = ap.parse_args()
     model_ids = load_model_ids(a.model_ids) if a.model_ids else None
-    cells = compute_cells(a.inputs_dir, model_ids)
+    cells = compute_cells(a.inputs_dir, model_ids, a.derived_out_values)
     if a.json:
         with open(a.json, "w", encoding="utf-8") as f:
             json.dump(build_json(cells), f, indent=1)
