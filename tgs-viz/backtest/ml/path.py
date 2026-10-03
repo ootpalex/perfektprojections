@@ -532,6 +532,7 @@ def cmd_fit_final(roles):
     manifest["_meta"] = {"written": datetime.datetime.now().isoformat(timespec="seconds"),
                          "sklearn": sklearn.__version__, "python": sys.version.split()[0],
                          "basis": C.BASIS,
+                         "calib_fingerprint": C.calib_fingerprint(C.BASIS),
                          "basis_rule": "one model set per league: DEV priced with this league's engine calibration "
                                        f"(DEV engine price tag {C.waa_tag(C.BASIS)}); score only this league",
                          "settings_file": os.path.relpath(SETTINGS_PATH, C.ML_ROOT),

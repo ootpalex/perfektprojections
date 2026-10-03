@@ -176,6 +176,9 @@ def main(argv=None):
     basis = C.league_basis(lg)          # an exported league borrows its basis' models
     bundle = PR.load_bundle(basis)
     log(f"loaded {basis} models for {lg} ({time.time() - t0:.1f}s)")
+    fp_trained, fp_now, fp_msg = PR.calib_check(bundle, basis)
+    if fp_msg:
+        log(("WARNING: " if fp_trained else "note: ") + fp_msg)
     pm = bundle["peak"]
     seasons = (schema.get("source") or {}).get("dumps")
     players, counts = {}, {}
@@ -221,6 +224,7 @@ def main(argv=None):
                             "path": bundle["path"][role]["models"]["d1"].get("n_train")} for role in C.ROLES},
             "features": "every rating, potential, last year's growth, level and value",
             "calibration": pm.get("basis_rule"),
+            "calib_fingerprint": {"trained": fp_trained, "current": fp_now, "match": fp_msg is None},
         },
         "pull": pull,
         "pull_date": note.get("to_date"),

@@ -649,6 +649,7 @@ def cmd_fit_final(args):
     manifest.update({"method": METHOD, "group": GROUP, "date": args.date, "sklearn": sklearn.__version__,
                      "python": sys.version.split()[0],
                      "basis": C.BASIS,
+                     "calib_fingerprint": C.calib_fingerprint(C.BASIS),
                      "basis_rule": "one model set per league: DEV priced with this league's engine calibration "
                                    f"(DEV engine price tag {C.waa_tag(C.BASIS)}); score only this league",
                      "rows": args.rows,

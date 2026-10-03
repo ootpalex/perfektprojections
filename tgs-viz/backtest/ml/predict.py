@@ -43,6 +43,7 @@ import argparse
 import json
 import os
 import pickle
+import re
 import sys
 import time
 
@@ -96,6 +97,33 @@ def load_bundle(basis):
                 r["path"][name] = pickle.load(fh)
         out["models"][role] = r
     return out
+
+
+def calib_check(bundle, basis):
+    """(trained fingerprint or None, current fingerprint, message or None). The models
+    learned from DEV priced with one engine calibration; after the basis' calibration
+    changes they score prices they never saw. A mismatch is a message (score.py warns);
+    models written before the fingerprint was recorded give an info message."""
+    cur = C.calib_fingerprint(basis)
+    pm, am = bundle["peak"], bundle["path"].get("_meta") or {}
+
+    def recorded(m):
+        # the field, else the "DEV engine price tag <fp>-<basis>" text older manifests carry
+        if m.get("calib_fingerprint"):
+            return m["calib_fingerprint"]
+        hit = re.search(r"price tag ([0-9a-f]{10})-", str(m.get("basis_rule") or ""))
+        return hit.group(1) if hit else None
+
+    fps = {recorded(pm), recorded(am)}
+    fps.discard(None)
+    if not fps:
+        return None, cur, (f"the {basis} models do not record their calibration fingerprint (trained before "
+                           f"the check); current calibration {cur}")
+    if fps != {cur}:
+        return ",".join(sorted(fps)), cur, (f"the {basis} models were trained on calibration "
+                                            f"{', '.join(sorted(fps))} but the current one is {cur}; retrain "
+                                            f"(peak.py and path.py fit-final) before trusting these scores")
+    return cur, cur, None
 
 
 # ---------------------------------------------------------------- features
