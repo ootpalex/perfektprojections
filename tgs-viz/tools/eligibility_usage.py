@@ -86,11 +86,21 @@ def engine_rule(league):
     sys.path.insert(0, os.path.join(VIZ, "engine"))
     sys.path.insert(0, os.path.join(VIZ, "tools"))
     import hitters as H
-    try:
-        import settings as ST
-        basis = (ST.league(league) or {}).get("basis") or league
-    except Exception:
-        basis = league
+    basis = None
+    try:                                     # the committed manifest first: it works without local settings
+        with open(os.path.join(VIZ, "public", "data", "leagues.json"), encoding="utf-8") as fh:
+            for lg in json.load(fh).get("leagues", []):
+                if lg.get("id") == league:
+                    basis = lg.get("basis")
+    except (OSError, ValueError):
+        pass
+    if not basis:
+        try:
+            import settings as ST
+            basis = (ST.league(league) or {}).get("basis")
+        except Exception:
+            basis = None
+    basis = basis or league
     ofc = getattr(H, "OF_CORNER_MIN", {}).get(basis, RULES["his"]["lf"])
     return dict(RULES["his"], lf=ofc, rf=ofc)
 
