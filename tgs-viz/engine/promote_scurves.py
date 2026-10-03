@@ -167,7 +167,7 @@ def main():
                     f"S-curve only when more than {MARGIN:.0%} better")
     if three:
         live["gate"] = (f"per block on the live season: level-matched bucket RMSE, S-curve or piecewise "
-                        f"only when more than {MARGIN:.0%} better than the two-line, lowest RMSE wins")
+                        f"each only when more than {MARGIN:.0%} better than the curve it would replace (two-line, then S-curve)")
 
     if os.path.exists(live_p):
         shutil.copy2(live_p, live_p + ".bak-" + time.strftime("%Y%m%d-%H%M%S"))
