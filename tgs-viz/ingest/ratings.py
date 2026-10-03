@@ -242,11 +242,14 @@ def scurve_summary(scurves):
     for role in ("SP", "RP"):
         sc = scurves.get(role) or {}
         lvl = bool(((scurves.get("_twoline") or {}).get(role)))
-        s = [b for b in blocks if b in sc]
+        s = [b for b in blocks if b in sc and sc[b].get("type") != "piecewise"]
+        pw = [b for b in blocks if b in sc and sc[b].get("type") == "piecewise"]   # Phase 2 row 5 (gated)
         t = [b for b in blocks if b not in sc]
         bits = []
         if s:
             bits.append("S-curve " + " ".join(s))
+        if pw:
+            bits.append("piecewise " + " ".join(pw))
         if t:
             bits.append(("two-line (level-matched) " if lvl else "two-line ") + " ".join(t))
         parts.append(f"{role}: " + "; ".join(bits))

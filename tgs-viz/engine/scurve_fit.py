@@ -544,6 +544,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--league", required=True, choices=["TGS", "BLM"])
     ap.add_argument("--out", help="output json (default calib/<LG>/scurves-preview.json)")
+    ap.add_argument("--pw", action="store_true",
+                    help="GATED (Phase 2 row 5, default off): also gate the OOTP-27 piecewise family "
+                         "(pw_curves.py) and add a \"piecewise\" key to each pitching block")
     a = ap.parse_args()
     lg = a.league
     csv_dir = os.path.join(HERE, "calib", lg)
@@ -718,6 +721,15 @@ def main():
             gate = live_gate(mrole, blk, xcol, xcol_vl,
                              lambda r: f(r) + offset, lambda r: f_two(r) + tl_offset)
 
+            pw_block = None
+            if a.pw:
+                import pw_curves as PW   # lazy: pw_curves imports this module
+                if lg in PW.LEAGUES_27:
+                    pw_block = PW.preview_block(mrole, role, blk, xcol, xcol_vl,
+                                                lambda r: f(r) + offset, lambda r: f_two(r) + tl_offset, gate)
+                else:
+                    print(f"       --pw skipped: {lg} is not an OOTP-27 league (the family is a 27 calibration)")
+
             # bucket residual table (ARCHIVE frame: the clone-shape fit vs the
             # empirical bucket means vs the current two-line fit)
             rows = []
@@ -778,6 +790,12 @@ def main():
                                              "sig": sig, "two": two}
                             for rung, n, bf, emp, sig, two in rows},
             }
+
+            if pw_block:
+                result["roles"][role]["blocks"][blk]["piecewise"] = pw_block
+                g3 = pw_block["live_gate3"]["rmse"]
+                print(f"       piecewise (OOTP-27 family, live gate): {g3['piecewise']:.5f} vs "
+                      f"two-line {g3['twoline']:.5f} ({1.0 - g3['piecewise'] / g3['twoline']:+.1%})")
 
             # monotonicity scan (gate iii)
             worst_step = 0.0

@@ -252,6 +252,28 @@ def twoline_rate(dp, role, blk, r):
     return (r - g("anchor")) * g("sl") + g("il") + g("k")
 
 
+def _pw_rate(c, r):
+    """Rate of a `"type": "piecewise"` scurves block (pw_curves.py; Phase 2 row 5, GATED: no
+    committed scurves.json carries one, so the S-curve and two-line paths are untouched).
+    offset + cum(r) - cum(anchor), cum(v) = s0*v + sum (s[i+1]-s[i]) * max(v - knot[i], 0);
+    `cap` caps the rating first (the Stuff cap), `clamp_lo/hi` clip into the first/last knot
+    (an end slope of 0 makes that a flat floor/ceiling). Same arithmetic as ootp-dashboard
+    model/src/utils.py piecewise_delta."""
+    knots, slopes = c["knots"], c["slopes"]
+    x, a = (r if c.get("cap") is None else min(r, c["cap"])), c["anchor"]
+    if knots and c.get("clamp_lo"):
+        x, a = max(x, knots[0]), max(a, knots[0])
+    if knots and c.get("clamp_hi"):
+        x, a = min(x, knots[-1]), min(a, knots[-1])
+
+    def cum(v):
+        y = slopes[0] * v
+        for i, k in enumerate(knots):
+            y += (slopes[i + 1] - slopes[i]) * max(v - k, 0.0)
+        return y
+    return cum(x) - cum(a) + c["offset"]
+
+
 def compute(p, dp, filt, park_aa, scurves=None, currency=None, role_stuff=None):
     """p: dict of rating inputs + meta (incl. _row). Returns dict of computed outputs.
 
@@ -374,6 +396,8 @@ def compute(p, dp, filt, park_aa, scurves=None, currency=None, role_stuff=None):
 
         def sc_rate(blk, r):
             c = sc[blk]
+            if c.get("type") == "piecewise":      # Phase 2 row 5 (gated): no committed file has one
+                return _pw_rate(c, r)
             lo, hi = c.get("support", (20.0, 80.0))
             rr = min(max(r, lo), hi)
             v = c["A"] + c["B"] / (1.0 + math.exp(-c["k"] * (rr - c["m"]))) + c["offset"]
