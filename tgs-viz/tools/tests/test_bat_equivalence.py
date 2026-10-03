@@ -716,4 +716,9 @@ def main():
 
 
 if __name__ == "__main__":
+    if os.name != "nt":
+        # It proves the Windows .bat wrappers: batsim's commands spell paths with backslashes and
+        # run_task's plan uses the native separator off Windows (run_task.native).
+        print("test_bat_equivalence: skipped, Windows only (it proves the .bat wrappers).")
+        sys.exit(0)
     sys.exit(main())

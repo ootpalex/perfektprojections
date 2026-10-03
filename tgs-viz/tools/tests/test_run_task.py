@@ -31,7 +31,7 @@ import joblock as JL  # noqa: E402
 PY = sys.executable
 RUN = os.path.join(TOOLS, "run_task.py")
 BASE = os.environ.get("TGS_CONTROL_DIR") or tempfile.mkdtemp(prefix="tgs-control-test-")
-NO_WINDOW = 0x08000000
+NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
 def read_bytes(path):
@@ -44,7 +44,11 @@ def read_text(path):
 
 
 def child_pids(pid):
-    """Pids of the running children of pid (Toolhelp snapshot)."""
+    """Pids of the running children of pid (Toolhelp snapshot; ps off Windows)."""
+    if os.name != "nt":
+        out = subprocess.run(["ps", "-A", "-o", "pid=", "-o", "ppid="], capture_output=True, text=True).stdout
+        kids = [int(a) for a, b in (ln.split() for ln in out.splitlines() if len(ln.split()) == 2) if int(b) == pid]
+        return [p for p in kids if JL.proc_start_time(p) is not None]
     class PE(ctypes.Structure):
         _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
                     ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", wintypes.DWORD),
@@ -83,7 +87,10 @@ class Case(unittest.TestCase):
     def tearDown(self):
         for p in self.procs:
             if p.poll() is None:
-                subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True)
+                if os.name == "nt":
+                    subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True)
+                else:
+                    JL.posix_kill_tree(p.pid)
             for stream in (p.stdin, p.stdout):
                 if stream:
                     try:
@@ -189,7 +196,8 @@ class Case(unittest.TestCase):
         e.update(env or {})
         p = subprocess.Popen([PY, RUN, task, *args], cwd=REPO, env=e, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT,
-                             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if group else 0)
+                             start_new_session=group and os.name != "nt",
+                             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if group and os.name == "nt" else 0)
         self.procs.append(p)
         if stdin_text is not None:
             p.stdin.write(stdin_text.encode())
@@ -740,6 +748,7 @@ class TestConsole(Case):
         p1, jd1, j1 = self.hold_data()
         c = self.console("selftest.ok", "")
         c.stdin.close()
+        c.stdin = None     # POSIX communicate() flushes a set stdin
         time.sleep(4)
         self.assertIsNone(c.poll())
         self.stop(jd1, "after_step")
@@ -752,7 +761,10 @@ class TestConsole(Case):
         jd = self.wait_for(lambda: self.console_job("selftest.long"), 30, what="console job")
         self.wait_step_running(jd, 0)
         time.sleep(1)
-        c.send_signal(signal.CTRL_BREAK_EVENT)
+        if os.name == "nt":
+            c.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            os.killpg(c.pid, signal.SIGINT)     # a terminal's Ctrl+C: the whole console group
         out = c.communicate(timeout=60)[0].decode("utf-8", "replace")
         return c.returncode, self.state(jd), out
 
@@ -779,6 +791,7 @@ class TestConsole(Case):
         for task, args in (("get_history", ()), ("sim_dev", ("abc",)), ("sim_dev", ("3",))):
             c = self.console(task, "", env=env, args=args)
             c.stdin.close()
+            c.stdin = None     # POSIX communicate() flushes a set stdin
             out = c.communicate(timeout=60)[0].decode("utf-8", "replace")
             self.assertEqual(c.returncode, 2, out)
             self.assertIn("The ratings archive is missing", out)
