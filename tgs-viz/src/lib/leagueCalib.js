@@ -158,9 +158,21 @@ export const LEAGUE_CALIB = {
   },
 };
 
-// Fallback for unknown league ids: TGS's fitted values (the primary league).
+// A league without its own block (SSB, RG, any wizard league) is priced by the engine
+// on its manifest "basis" (TGS or BLM); the app must use the same calibration, or its
+// $/FV/optimizer numbers disagree with the engine's WAA. useLeagues registers the
+// bases when leagues.json loads.
+const BASIS_OF = {};
+export function setLeagueBases(leagues) {
+  for (const k of Object.keys(BASIS_OF)) delete BASIS_OF[k];
+  for (const lg of leagues || []) {
+    if (lg && lg.id && lg.basis && LEAGUE_CALIB[lg.basis]) BASIS_OF[lg.id] = lg.basis;
+  }
+}
+
+// Fallback for unknown league ids with no basis: TGS's fitted values (the primary league).
 export function leagueCalib(league) {
-  return LEAGUE_CALIB[league] || LEAGUE_CALIB.TGS;
+  return LEAGUE_CALIB[league] || LEAGUE_CALIB[BASIS_OF[league]] || LEAGUE_CALIB.TGS;
 }
 
 /**

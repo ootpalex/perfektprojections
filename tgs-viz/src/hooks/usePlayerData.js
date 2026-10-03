@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { calculateFutureValue } from '../lib/futureValue';
 import { controlWindow } from '../lib/serviceTime';
 import { buildAgeGroups, calculateDraftFV } from '../lib/draftFV';
-import { replacementOffset } from '../lib/leagueCalib.js';
+import { replacementOffset, setLeagueBases } from '../lib/leagueCalib.js';
 import { buildDevPercentileData, calculateG5FV } from '../lib/g5FV';
 import { calculateHybridFV } from '../lib/hybridFV';
 import { getBestWAA, getPlayerWAR, calculatePlayerValue, calculatePitcherValue, fitFAMarket, resolveRate } from '../lib/marketValue';
@@ -115,6 +115,7 @@ export function useLeagues() {
       })
       .then(async data => {
         const normalized = normalizeLeagues(data);
+        setLeagueBases(normalized);
         const present = await Promise.all(normalized.map(lg => (
           isTrendsOnly(lg) ? loadRatingTrends(lg.id).then(t => t != null) : Promise.resolve(true)
         )));
