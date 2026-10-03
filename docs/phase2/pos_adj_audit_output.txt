@@ -1,0 +1,238 @@
+
+====================================================================================================
+1. VERIFY BOTH SETS AS THEY EXIST NOW
+====================================================================================================
+positions                        C      1B      2B      3B      SS      LF      CF      RF      DH
+ours BLM  (1458 IP basis)    16.10  -13.10   -2.30   -0.70    9.60   -8.40    5.10   -6.20  -13.10
+ours SSB  (1458 IP basis)    21.00  -12.40   -0.30   -1.00   10.40  -12.00    2.30   -8.10  -13.00
+his  BLM  metadata-latest     9.65   -4.87   -2.14   -0.20    6.93   -3.77    2.15   -3.77   -6.80
+his  BLM  re-derived here     9.65   -4.87   -2.14   -0.20    6.93   -3.77    2.15   -3.77   -6.80
+  max |re-derived - metadata-latest| = 3.552713678800501e-15
+  max |compute_cells(metadata_inputs) - metadata-latest| = 0.0 (his own full recompute)
+ours field-8 mean (C..RF), BLM: 0.013  SSB: -0.012
+his  field-8 mean (C..RF), BLM: 0.496
+
+====================================================================================================
+2. THE UNIT GAP: ours is runs per 162 games (1458 IP); his is per 1200 IP (catcher 1000 IP)
+====================================================================================================
+ours restated BLM (x1200/1458, C x1000/1458)    11.04  -10.78   -1.89   -0.58    7.90   -6.91    4.20   -5.10  -10.78
+his P                                           9.65   -4.87   -2.14   -0.20    6.93   -3.77    2.15   -3.77   -6.80
+plan's gap, ours as published - his (runs)      6.45   -8.23   -0.16   -0.50    2.67   -4.63    2.95   -2.43   -6.30
+gap after the unit restatement (runs)           1.40   -5.91    0.25   -0.38    0.97   -3.14    2.05   -1.33   -3.98
+gap removed by the unit alone (runs)            5.06   -2.32   -0.41   -0.12    1.70   -1.49    0.90   -1.10   -2.32
+
+====================================================================================================
+3. WHAT ONE MORE PIECE AT A TIME DOES TO HIS BLM 2058 NUMBERS (engine basis, runs per std season)
+====================================================================================================
+a. his P (offence only, 1 season, LF=RF pooled)     9.65   -4.87   -2.14   -0.20    6.93   -3.77    2.15   -3.77   -6.80
+b. LF and RF kept separate                          9.65   -4.87   -2.14   -0.20    6.93   -2.20    2.15   -5.35   -6.80
+c. + centred (field-8 mean 0) + DH rule             9.03   -5.61   -2.88   -0.93    6.20   -2.94    1.41   -6.09   -7.54
+   (centring moves every position by -0.738 runs per 1200 IP; the C row is then rescaled to 1000 IP)
+d. + 1/2 ZR switcher, 2058 only                     9.03   -7.32   -5.19   -2.75    5.07   -1.87    5.15   -3.93   -7.54
+e. + 2057 (H_def 5, H_off 2.5)                      8.72   -8.46   -3.98   -2.06    5.05   -2.97    5.35   -3.39   -8.46
+   switcher n = 1264 (2058), 2407 (2057+2058)
+
+====================================================================================================
+4. SWITCHER (defence half) EXACTNESS AND STANDARD ERRORS
+====================================================================================================
+BLM 2058        n=1264  def   -7.48   -5.95   -3.01    5.49    0.74   10.43   -0.22   (runs per 1200 IP, mean 0 over the 7)
+                        SE     1.07    1.03    1.31    1.22    1.13    1.48    1.07
+BLM 2057+2058   n=2407  def   -8.03   -4.62   -2.09    6.04   -1.01    9.63    0.09   (runs per 1200 IP, mean 0 over the 7)
+                        SE     0.83    0.82    0.95    0.94    0.86    1.03    0.92
+SSB 2043        n=1335  def   -8.59   -3.02   -0.65    3.00   -0.76   10.06   -0.05   (runs per 1200 IP, mean 0 over the 7)
+                        SE     1.11    1.34    1.54    1.46    1.22    2.05    1.18
+SSB 2041-2043   n=3336  def   -6.49   -2.21   -1.38    5.99   -3.81    9.79   -1.88   (runs per 1200 IP, mean 0 over the 7)
+                        SE     0.69    0.85    0.98    0.93    0.76    1.14    0.79
+
+====================================================================================================
+5. DOES THE ZR SWITCHER MOVE WHEN THE GAME ENGINE CHANGES (OOTP 26 -> 27)?
+====================================================================================================
+BLM 2057 (OOTP 26) -> 2058 (27)  (n 1143 -> 1264); position: before +/- SE, after +/- SE, change, z
+   1B:  -8.81+/-1.41   -7.48+/-1.07    1.33  z  0.75
+   2B:  -2.96+/-1.33   -5.95+/-1.03   -2.98  z -1.78
+   3B:  -0.79+/-1.41   -3.01+/-1.31   -2.22  z -1.15
+   SS:   6.74+/-1.41    5.49+/-1.22   -1.25  z -0.67
+   LF:  -3.10+/-1.47    0.74+/-1.13    3.84  z  2.07
+   CF:   8.58+/-1.50   10.43+/-1.48    1.85  z  0.88
+   RF:   0.33+/-1.65   -0.22+/-1.07   -0.56  z -0.29
+   sum of z^2 = 10.6 (chi-square, 6 dof; 12.6 is the 5% line, 22.5 the 0.1% line)
+SSB 2041+2042 (26) -> 2043 (27)  (n 2001 -> 1335); position: before +/- SE, after +/- SE, change, z
+   1B:  -4.58+/-0.92   -8.59+/-1.11   -4.01  z -2.79
+   2B:  -1.46+/-1.04   -3.02+/-1.34   -1.56  z -0.92
+   3B:  -1.86+/-1.12   -0.65+/-1.54    1.21  z  0.64
+   SS:   8.86+/-1.20    3.00+/-1.46   -5.85  z -3.09
+   LF:  -6.40+/-1.00   -0.76+/-1.22    5.64  z  3.58
+   CF:   9.16+/-1.28   10.06+/-2.05    0.90  z  0.37
+   RF:  -3.71+/-0.98   -0.05+/-1.18    3.66  z  2.39
+   sum of z^2 = 37.2 (chi-square, 6 dof; 12.6 is the 5% line, 22.5 the 0.1% line)
+control, SSB 2041 -> 2042 (both 26)  (n 1010 -> 991); position: before +/- SE, after +/- SE, change, z
+   1B:  -2.95+/-1.11   -6.24+/-1.28   -3.29  z -1.95
+   2B:  -2.16+/-1.36   -0.89+/-1.67    1.27  z  0.59
+   3B:  -1.62+/-1.48   -1.96+/-1.51   -0.34  z -0.16
+   SS:   9.31+/-1.53    8.48+/-1.66   -0.83  z -0.37
+   LF:  -6.19+/-1.39   -6.63+/-1.40   -0.45  z -0.23
+   CF:   7.55+/-1.61   10.75+/-1.68    3.20  z  1.38
+   RF:  -3.95+/-1.31   -3.51+/-1.56    0.44  z  0.22
+   sum of z^2 = 6.3 (chi-square, 6 dof; 12.6 is the 5% line, 22.5 the 0.1% line)
+single-season offence-only spectrum, SD across seasons (engine units):
+   SSB 2041-43: C:2.03 1B:2.00 2B:1.45 3B:2.93 SS:1.93 LF:1.63 CF:1.60 RF:2.18 DH:1.35
+   BLM 2057-58: C:0.55 1B:2.98 2B:1.63 3B:0.60 SS:1.11 LF:0.88 CF:1.84 RF:1.14 DH:0.20
+
+====================================================================================================
+6. QUIRKS OF HIS pos_adj_calc: do they matter? (max change in any position, runs)
+====================================================================================================
+BLM 2058: RF branch quirk off -> 0.0000; thirds-notation divisor fixed -> 0.0035
+BLM 2057: RF branch quirk off -> 0.0000; thirds-notation divisor fixed -> 0.0046
+SSB 2041: RF branch quirk off -> 0.0000; thirds-notation divisor fixed -> 0.0056
+SSB 2043: RF branch quirk off -> 0.0000; thirds-notation divisor fixed -> 0.0057
+BLM 2058: 5 Hitting_Data players also pitched, 1022 of 183422 PA (his pos_adj_calc keeps them; the dashboard's drops pitcher-seasons)
+
+====================================================================================================
+7. CAREER-HISTORY CHECK: this tool on the dashboard's own 42-year BLM / 22-year SSB data
+====================================================================================================
+BLM 2016-2056: switcher n = 18442
+   this tool, 1458 basis        16.19  -12.99   -2.32   -0.71    9.55   -8.41    5.06   -6.38  -12.99
+   dashboard frozen literal     16.10  -13.10   -2.30   -0.70    9.60   -8.40    5.10   -6.20  -13.10
+   difference                    0.09    0.11   -0.02   -0.01   -0.05   -0.01   -0.04   -0.18    0.11
+   defence half vs the dashboard's recorded H5_C20 def_only: max |diff| = 0.005 runs per 1458 IP (rounded to 2 dp in the file)
+SSB 2021-2042: switcher n = 20990
+   this tool, 1458 basis        21.03  -12.19   -0.42   -1.04   10.27  -11.96    2.34   -8.03  -12.44
+   dashboard frozen literal     21.00  -12.40   -0.30   -1.00   10.40  -12.00    2.30   -8.10  -13.00
+   difference                    0.03    0.21   -0.12   -0.04   -0.13    0.04    0.04    0.07    0.56
+   defence half vs the dashboard's recorded H5_C20 def_only: max |diff| = 0.0041 runs per 1458 IP (rounded to 2 dp in the file)
+
+====================================================================================================
+8. CANDIDATES AND THEIR IMPACT (wins per player-season = delta P / RPW 10.036)
+====================================================================================================
+
+--- BLM: the engine currently writes BLM's P2..P10 (own)
+                                                    C      1B      2B      3B      SS      LF      CF      RF      DH
+current P                                        9.65   -4.87   -2.14   -0.20    6.93   -3.77    2.15   -3.77   -6.80
+ours as published                               16.10  -13.10   -2.30   -0.70    9.60   -8.40    5.10   -6.20  -13.10
+   delta wins per player-season                 0.643  -0.820  -0.016  -0.050   0.266  -0.461   0.294  -0.242  -0.628
+        MLB         Best Pos changes 57/460 (12.4%); Max WAA change mean -0.197, mean |change| 0.431, range -0.82..+0.64 wins
+        all levels  Best Pos changes 1061/6545 (16.2%); Max WAA change mean -0.347, mean |change| 0.542, range -0.82..+0.64 wins
+ours restated                                   11.04  -10.78   -1.89   -0.58    7.90   -6.91    4.20   -5.10  -10.78
+   delta wins per player-season                 0.139  -0.589   0.025  -0.038   0.096  -0.313   0.204  -0.132  -0.397
+        MLB         Best Pos changes 47/460 (10.2%); Max WAA change mean -0.180, mean |change| 0.259, range -0.59..+0.20 wins
+        all levels  Best Pos changes 913/6545 (13.9%); Max WAA change mean -0.282, mean |change| 0.331, range -0.59..+0.20 wins
+tool, career history (old engines)              11.11  -10.69   -1.91   -0.58    7.86   -6.92    4.17   -5.25  -10.69
+   delta wins per player-season                 0.146  -0.580   0.023  -0.038   0.092  -0.314   0.201  -0.148  -0.388
+        MLB         Best Pos changes 47/460 (10.2%); Max WAA change mean -0.179, mean |change| 0.258, range -0.58..+0.20 wins
+        all levels  Best Pos changes 904/6545 (13.8%); Max WAA change mean -0.279, mean |change| 0.329, range -0.58..+0.20 wins
+tool, BLM 2058 only                              9.03   -7.32   -5.19   -2.75    5.07   -1.87    5.15   -3.93   -7.54
+   delta wins per player-season                -0.061  -0.244  -0.303  -0.254  -0.186   0.189   0.299  -0.016  -0.073
+        MLB         Best Pos changes 18/460 (3.9%); Max WAA change mean -0.082, mean |change| 0.192, range -0.30..+0.30 wins
+        all levels  Best Pos changes 448/6545 (6.8%); Max WAA change mean -0.099, mean |change| 0.151, range -0.30..+0.30 wins
+tool, BLM 2057+2058                              8.72   -8.46   -3.98   -2.06    5.05   -2.97    5.35   -3.39   -8.46
+   delta wins per player-season                -0.092  -0.357  -0.184  -0.186  -0.188   0.080   0.319   0.039  -0.165
+        MLB         Best Pos changes 19/460 (4.1%); Max WAA change mean -0.113, mean |change| 0.191, range -0.36..+0.32 wins
+        all levels  Best Pos changes 608/6545 (9.3%); Max WAA change mean -0.157, mean |change| 0.191, range -0.36..+0.32 wins
+tool, BLM 2057+2058, LF=RF pooled                8.72   -8.46   -3.98   -2.06    5.05   -3.18    5.35   -3.18   -8.46
+   delta wins per player-season                -0.092  -0.357  -0.184  -0.186  -0.188   0.059   0.319   0.059  -0.165
+        MLB         Best Pos changes 20/460 (4.3%); Max WAA change mean -0.116, mean |change| 0.188, range -0.36..+0.32 wins
+        all levels  Best Pos changes 608/6545 (9.3%); Max WAA change mean -0.158, mean |change| 0.190, range -0.36..+0.32 wins
+tool, BLM offence 2057-58, defence 2058 only     8.72   -8.18   -4.65   -2.52    4.78   -2.10    5.75   -3.54   -8.18
+   delta wins per player-season                -0.092  -0.330  -0.250  -0.232  -0.215   0.167   0.359   0.023  -0.138
+        MLB         Best Pos changes 17/460 (3.7%); Max WAA change mean -0.101, mean |change| 0.213, range -0.33..+0.36 wins
+        all levels  Best Pos changes 574/6545 (8.8%); Max WAA change mean -0.139, mean |change| 0.191, range -0.33..+0.36 wins
+
+--- SSB: the engine currently writes BLM's P2..P10 (SSB is priced on BLM calibration)
+                                                    C      1B      2B      3B      SS      LF      CF      RF      DH
+current P                                        9.65   -4.87   -2.14   -0.20    6.93   -3.77    2.15   -3.77   -6.80
+ours as published                               21.00  -12.40   -0.30   -1.00   10.40  -12.00    2.30   -8.10  -13.00
+   delta wins per player-season                 1.131  -0.750   0.183  -0.080   0.345  -0.820   0.015  -0.431  -0.618
+        MLB         Best Pos changes 80/475 (16.8%); Max WAA change mean -0.225, mean |change| 0.572, range -0.82..+1.13 wins
+        all levels  Best Pos changes 1380/6866 (20.1%); Max WAA change mean -0.274, mean |change| 0.661, range -0.82..+1.13 wins
+ours restated                                   14.40  -10.21   -0.25   -0.82    8.56   -9.88    1.89   -6.67  -10.70
+   delta wins per player-season                 0.474  -0.531   0.189  -0.062   0.162  -0.608  -0.025  -0.288  -0.389
+        MLB         Best Pos changes 64/475 (13.5%); Max WAA change mean -0.201, mean |change| 0.373, range -0.61..+0.47 wins
+        all levels  Best Pos changes 957/6866 (13.9%); Max WAA change mean -0.244, mean |change| 0.416, range -0.61..+0.47 wins
+tool, career history (old engines)              14.42  -10.03   -0.35   -0.86    8.45   -9.84    1.93   -6.61  -10.24
+   delta wins per player-season                 0.476  -0.514   0.178  -0.066   0.151  -0.605  -0.022  -0.283  -0.343
+        MLB         Best Pos changes 67/475 (14.1%); Max WAA change mean -0.191, mean |change| 0.360, range -0.60..+0.48 wins
+        all levels  Best Pos changes 1054/6866 (15.4%); Max WAA change mean -0.228, mean |change| 0.400, range -0.60..+0.48 wins
+tool, SSB offence 2041-43, defence 2043 only    12.96  -10.16   -1.10   -0.55    4.83   -7.77    2.25   -3.04  -11.23
+   delta wins per player-season                 0.331  -0.527   0.104  -0.036  -0.209  -0.399   0.010   0.073  -0.442
+        MLB         Best Pos changes 88/475 (18.5%); Max WAA change mean -0.168, mean |change| 0.287, range -0.53..+0.33 wins
+        all levels  Best Pos changes 1170/6866 (17.0%); Max WAA change mean -0.213, mean |change| 0.342, range -0.53..+0.33 wins
+tool, SSB 2043 only                             11.76   -9.24   -1.61   -1.22    4.10   -6.97    2.77   -1.94  -10.73
+   delta wins per player-season                 0.211  -0.435   0.053  -0.102  -0.282  -0.319   0.062   0.182  -0.392
+        MLB         Best Pos changes 86/475 (18.1%); Max WAA change mean -0.146, mean |change| 0.242, range -0.44..+0.21 wins
+        all levels  Best Pos changes 1081/6866 (15.7%); Max WAA change mean -0.182, mean |change| 0.290, range -0.44..+0.21 wins
+tool, SSB 2041-2043                             12.96   -9.11   -0.69   -0.92    6.32   -9.30    2.11   -3.96  -11.23
+   delta wins per player-season                 0.331  -0.423   0.144  -0.072  -0.061  -0.551  -0.004  -0.019  -0.442
+        MLB         Best Pos changes 89/475 (18.7%); Max WAA change mean -0.175, mean |change| 0.294, range -0.55..+0.33 wins
+        all levels  Best Pos changes 1063/6866 (15.5%); Max WAA change mean -0.209, mean |change| 0.330, range -0.55..+0.33 wins
+
+====================================================================================================
+9. ROW 4 - bestPos INPUTS
+====================================================================================================
+RF arm threshold, the dashboard (mean OF ARM of listed-RF players, ALL levels, its own pool): {'BLM': 55.2, 'SSB': 54.6}
+   BLM listed-RF in the fork's hitters.json, all levels: n=663  mean OF ARM 54.03
+   BLM listed-RF in the fork's hitters.json, MLB only  : n=49   mean OF ARM 60.92
+   SSB listed-RF in the fork's hitters.json, all levels: n=709  mean OF ARM 54.60
+   SSB listed-RF in the fork's hitters.json, MLB only  : n=62   mean OF ARM 61.45
+   RF-innings-weighted mean OF ARM of deployed RFs (MLB, the existing anchor): {'BLM': 62.35, 'SSB': 61.72}  BLM I43 = 62.35
+   SSB 2041: 63.43
+   SSB 2042: 62.54
+   SSB 2043: 61.72
+defensive-only spectrum (engine units; C imputed on SS as the dashboard does):
+   BLM 2058         9.38   -7.48   -5.95   -3.01    5.49    0.74   10.43   -0.22   (C anchored on CF instead: 13.43)
+   BLM 2057+2058    9.55   -8.03   -4.62   -2.09    6.04   -1.01    9.63    0.09   (C anchored on CF instead: 12.29)
+   SSB 2043        10.85   -8.59   -3.02   -0.65    3.00   -0.76   10.06   -0.05   (C anchored on CF instead: 17.84)
+   SSB 2041-43     12.68   -6.49   -2.21   -1.38    5.99   -3.81    9.79   -1.88   (C anchored on CF instead: 19.36)
+   dashboard BLM      19.20  -10.10   -0.30   -0.50   12.70   -6.80    9.90   -4.90   (1458 basis); restated:   13.17   -8.31   -0.25   -0.41   10.45   -5.60    8.15   -4.03
+   dashboard SSB      22.50   -8.40   -0.00   -1.10   11.90   -6.30    9.40   -5.40   (1458 basis); restated:   15.43   -6.91   -0.00   -0.91    9.79   -5.19    7.74   -4.44
+
+His Best Pos (argmax of '{pos} WAA wtd' over eligible positions + DH) vs Option B, committed hitters.json
+BLM: his Best Pos re-derived from the JSON's own WAA/eligibility fields: 0 mismatches in 6545 rows
+  BLM dashboard spectrum as published, dashboard threshold (threshold 55.2)
+     MLB: 134/460 differ (29.1%); of which his-DH->field 40, LF<->RF label only 49, LF/RF-collapsed differ 85
+     all: 2523/6545 differ (38.5%); of which his-DH->field 1446, LF<->RF label only 592, LF/RF-collapsed differ 1931
+  BLM dashboard spectrum restated to engine basis, dashboard threshold (threshold 55.2)
+     MLB: 126/460 differ (27.4%); of which his-DH->field 40, LF<->RF label only 50, LF/RF-collapsed differ 76
+     all: 2427/6545 differ (37.1%); of which his-DH->field 1446, LF<->RF label only 596, LF/RF-collapsed differ 1831
+  BLM dashboard spectrum restated, data threshold (threshold 62.4)
+     MLB: 119/460 differ (25.9%); of which his-DH->field 40, LF<->RF label only 43, LF/RF-collapsed differ 76
+     all: 2418/6545 differ (36.9%); of which his-DH->field 1446, LF<->RF label only 587, LF/RF-collapsed differ 1831
+  BLM fork-data spectrum BLM 2057+58, data threshold (threshold 62.4)
+     MLB: 100/460 differ (21.7%); of which his-DH->field 40, LF<->RF label only 43, LF/RF-collapsed differ 57
+     all: 2279/6545 differ (34.8%); of which his-DH->field 1446, LF<->RF label only 587, LF/RF-collapsed differ 1692
+  BLM fork-data spectrum BLM 2058, data threshold (threshold 62.4)
+     MLB: 102/460 differ (22.2%); of which his-DH->field 40, LF<->RF label only 43, LF/RF-collapsed differ 59
+     all: 2235/6545 differ (34.1%); of which his-DH->field 1446, LF<->RF label only 587, LF/RF-collapsed differ 1648
+SSB: his Best Pos re-derived from the JSON's own WAA/eligibility fields: 0 mismatches in 6866 rows
+  SSB dashboard spectrum as published, dashboard threshold (threshold 54.6)
+     MLB: 153/475 differ (32.2%); of which his-DH->field 61, LF<->RF label only 58, LF/RF-collapsed differ 95
+     all: 2535/6866 differ (36.9%); of which his-DH->field 1447, LF<->RF label only 677, LF/RF-collapsed differ 1858
+  SSB dashboard spectrum restated to engine basis, dashboard threshold (threshold 54.6)
+     MLB: 141/475 differ (29.7%); of which his-DH->field 61, LF<->RF label only 58, LF/RF-collapsed differ 83
+     all: 2405/6866 differ (35.0%); of which his-DH->field 1447, LF<->RF label only 680, LF/RF-collapsed differ 1725
+  SSB dashboard spectrum restated, data threshold (threshold 61.7)
+     MLB: 123/475 differ (25.9%); of which his-DH->field 61, LF<->RF label only 40, LF/RF-collapsed differ 83
+     all: 2317/6866 differ (33.7%); of which his-DH->field 1447, LF<->RF label only 592, LF/RF-collapsed differ 1725
+  SSB fork-data spectrum SSB 2041-43, data threshold (threshold 61.7)
+     MLB: 113/475 differ (23.8%); of which his-DH->field 61, LF<->RF label only 41, LF/RF-collapsed differ 72
+     all: 2228/6866 differ (32.4%); of which his-DH->field 1447, LF<->RF label only 594, LF/RF-collapsed differ 1634
+  SSB fork-data spectrum SSB 2043, data threshold (threshold 61.7)
+     MLB: 135/475 differ (28.4%); of which his-DH->field 61, LF<->RF label only 41, LF/RF-collapsed differ 94
+     all: 2490/6866 differ (36.3%); of which his-DH->field 1447, LF<->RF label only 594, LF/RF-collapsed differ 1896
+
+Agreement with where MLB hitters (>=300 PA) really played most (innings; DH = PA beyond fielding innings):
+   BLM: 252 hitters; exact agreement his 120 (47.6%), Option B restated spectrum + data threshold 126 (50.0%)
+   SSB: 227 hitters; exact agreement his 108 (47.6%), Option B restated spectrum + data threshold 114 (50.2%)
+
+The LF/RF leaf: RF share of MLB hitters whose Option B label is LF or RF, by threshold (real deployment is 50/50: LF and RF log equal innings)
+   BLM: deployed LF arm 53.21, deployed RF arm 62.35, RF share of corner innings 0.500
+      dashboard (all-level listed-RF mean)         threshold  55.2: RF 55, LF 59, RF share 0.482; differs from his Best Pos for 126/460
+      midpoint of deployed LF and RF               threshold  57.8: RF 55, LF 59, RF share 0.482; differs from his Best Pos for 126/460
+      deployed-RF mean (MLB, innings-weighted)     threshold  62.4: RF 32, LF 82, RF share 0.281; differs from his Best Pos for 119/460
+   SSB: deployed LF arm 54.62, deployed RF arm 61.72, RF share of corner innings 0.500
+      dashboard (all-level listed-RF mean)         threshold  54.6: RF 84, LF 33, RF share 0.718; differs from his Best Pos for 141/475
+      midpoint of deployed LF and RF               threshold  58.2: RF 53, LF 64, RF share 0.453; differs from his Best Pos for 125/475
+      deployed-RF mean (MLB, innings-weighted)     threshold  61.7: RF 37, LF 80, RF share 0.316; differs from his Best Pos for 123/475
+
+Where the MLB disagreements fall (restated dashboard spectrum, deployed-RF-mean threshold):
+   BLM (460 MLB hitters): {'same': 341, 'his DH -> field position': 40, 'other field move': 36, 'LF <-> RF label': 43}
+   SSB (475 MLB hitters): {'same': 352, 'LF <-> RF label': 40, 'his DH -> field position': 61, 'other field move': 22}
