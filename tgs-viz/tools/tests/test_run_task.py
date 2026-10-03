@@ -478,6 +478,8 @@ class TestJobs(Case):
         self.assertEqual(p.wait(30), 0)
         st = self.wait_status(jd, ("done",), 60)
         self.assertNotEqual(st["pid"], p.pid)
+        # the detached runner writes state "done", then its last events (lock release, job_end)
+        self.wait_for(lambda: (self.events(jd) or [{}])[-1].get("type") == "job_end", 10, what="job_end event")
         self.check_events(jd)
         self.assertTrue(os.path.exists(os.path.join(jd, "runner.log")))
 
