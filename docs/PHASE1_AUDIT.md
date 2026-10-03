@@ -163,7 +163,10 @@ role credit cancels only if every team fills the same slots (inferred).
   all 475 SSB MLB hitters. BLM, TGS and RG get the columns at their next pull.
 - **D3 swingman role — deferred** until all the data is in.
 - **D5 thresholds — deferred** until there are real WAR values to look at (there now are, for SSB).
-- **D4, D6** — open (explained to the user in plain terms).
+- **D4 workload — decided:** the fitted values. `leagueCalib.js` BLM 0.930 / 0.990 → 0.922 / 0.982
+  (currency.json refit 2026-10-01); `tests/client/leagueCalibSync.test.mjs` fails CI whenever the
+  app's mirror (rpw, luck SD, workloads, market replacement) differs from the engine's files.
+- **D6 ML guard — decided:** warn, not refuse (already built that way).
 
 ## 4. Decisions needed before code (with the evidence gathered)
 

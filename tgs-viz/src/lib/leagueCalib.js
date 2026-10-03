@@ -23,9 +23,9 @@
  *                 scaled by the clone count. The Monte Carlo must not be
  *                 narrower than this.
  *  spWorkload     (D9) innings the sim actually hands a team's top-5 starters
- *                 vs the model's 5 x 800 BF (TGS 875/929 IP, BLM 870/935).
+ *                 vs the model's 5 x 800 BF (TGS 875/929 IP, BLM 870/943).
  *  rpWorkload     (D9) same for the top-8 relievers vs 8 x 300 BF
- *                 (TGS 533/557, BLM 556/561). The audit hypothesized ~0.90 on
+ *                 (TGS 533/557, BLM 556/566). The audit hypothesized ~0.90 on
  *                 the pen only; the measurement puts the pen near full (0.96/
  *                 0.99) and the ROTATION at ~0.93-0.94 — both are applied.
  *  rpEdgeSlope    (D6) calibration slope of ACTUAL RP RA/9 on the CURRENT
@@ -107,8 +107,8 @@ export const LEAGUE_CALIB = {
   BLM: {
     rpw: 10.036,
     luckSD: 6.37,
-    spWorkload: 0.930,
-    rpWorkload: 0.990,
+    spWorkload: 0.922,          // currency.json refit 2026-10-01 (was 0.930)
+    rpWorkload: 0.982,          // same (was 0.990); tests/client/leagueCalibSync.test.mjs keeps these equal
     rpEdgeSlope: 1.238,         // still TGS-fitted; BLM 2057 is banked, refit pending — see header
     rpTalentSD: 0.937,          // still TGS-fitted — same note
     rpModelIP: 70.13,
