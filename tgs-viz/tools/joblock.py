@@ -208,7 +208,10 @@ def _posix_start_time(pid):
         return _darwin_start_time(pid)
     try:
         with open(f"/proc/{pid}/stat", "r") as f:
-            return int(f.read().rsplit(")", 1)[1].split()[19])
+            fields = f.read().rsplit(")", 1)[1].split()
+        if fields[0] in ("Z", "X"):        # exited, not yet reaped: gone, as on Windows
+            return None
+        return int(fields[19])
     except (OSError, ValueError, IndexError):
         return None
 

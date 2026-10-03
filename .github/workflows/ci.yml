@@ -49,6 +49,8 @@ jobs:
         run: |
           rc=0
           for f in tgs-viz/tools/tests/test_*.py; do
+            # a script, not a unittest module (pytest would find no tests and exit 5)
+            [ "$(basename "$f")" = test_bat_equivalence.py ] && continue
             echo "::group::$f"
             python -m pytest "$f" -q -p no:cacheprovider || rc=1
             echo "::endgroup::"
