@@ -1,0 +1,18 @@
+{
+ "league": "BLM",
+ "status": "CANDIDATE - nothing in the engine reads this file",
+ "derived_at": "2026-10-03T09:49:40",
+ "source": "tgs-viz/engine/calib/BLM/metadata_inputs CSVs (season 2058, in-game date 2058-12-30, ratings pull C:\\Users\\perfe\\Desktop\\TGS Projections\\tgs-viz\\ingest\\.cache\\history\\statsplus_blm_20260913-1942.json, CSVs saved 2026-10-03 09:32)",
+ "method": "engine/out_values.py derive_out_values (linear weights + BIZ outfield hit mix)",
+ "inf_out": 0.7013002396748097,
+ "of_out": 0.834120485653996,
+ "frozen": {
+  "inf_out": 0.75,
+  "of_out": 0.9
+ },
+ "of_mix_1b_2b_3b": [
+  0.5864711447492904,
+  0.38107852412488175,
+  0.03245033112582781
+ ]
+}
