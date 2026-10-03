@@ -413,6 +413,15 @@ def main():
                      f"({type(e).__name__}{': ' + detail if detail else ''}).",
                   f"     Nothing was written to the app data; it keeps the last successful {league} data. "
                   "Try again in a minute.")
+        # Phase 3 (additive): signed extensions ride the same pull. Anything that goes wrong here
+        # only leaves ContractExt off the records; it never stops the pull.
+        ext_rows = None
+        try:
+            ext_rows = S.fetch_contract_extensions(base, **reuse)
+        except S.StatsPlusRefused as e:
+            print(f"  note: contract extensions not read, so no ContractExt this run. {e.user_message(league)}")
+        except Exception as e:
+            print(f"  note: contract extensions not read ({type(e).__name__}); no ContractExt this run.")
         names = S.team_name_map(teams)
         S.enrich_org_lev(rows, names, league=league)   # readable ORG + Lev for the app/org-builder
 
@@ -487,6 +496,25 @@ def main():
                      f"{S.redact(e)}).",
                   f"     Nothing was written to the app data; it keeps the last successful {league} data.")
 
+        # Phase 3 (additive, new keys only): option / buyout / extension terms and the waiver
+        # clock + service detail. Never fatal: a failure here only leaves those keys off.
+        try:
+            import contract_terms as CT, roster_clock as RC
+            ext_map = CT.build_extension_map(ext_rows)
+            n_opt = n_ws = 0
+            for recs_, count in ((hrecs, True), (precs, True), (hrecs_park, False), (precs_park, False)):
+                k_opt = CT.attach_contract_terms(recs_, cmap, ext_map, columns=cols)
+                k_ws = RC.attach_waiver_service(recs_, pmap, columns=cols)
+                if count:                    # the My Park copies carry the same players
+                    n_opt += k_opt
+                    n_ws += k_ws
+            print(f"  contract terms: {n_opt} players carry option years"
+                  + ("" if ext_map is None else f", {len(ext_map)} have a signed extension")
+                  + f"; waiver/service detail on {n_ws} players")
+        except Exception as e:
+            print(f"  note: option/extension/waiver keys not attached ({type(e).__name__}: "
+                  f"{(S.redact(str(e)).splitlines() or [''])[0][:160]}); the rest of the pull is unaffected")
+
         # Validate the mapping: compare to the sheet's existing hitters.json (same players).
         try:
             cur = {str(x.get("ID")): x for x in json.load(open(os.path.join(out_dir, "hitters.json"), encoding="utf-8"))}
@@ -542,6 +570,15 @@ def main():
                 print(f"  park lineup values not rebuilt this run ({type(e).__name__}: "
                       f"{str(e).splitlines()[0] if str(e) else 'no detail'}). The pull is fine; "
                       f"the series lineup tool keeps its last file.")
+        # The league's in-game date, for the app (serviceTime.js cannot print free-agency years
+        # without it). Additive: merged into metadata.json, never fatal.
+        if overwrite:
+            try:
+                import roster_clock as RC
+                gd = S.fetch_date(base)          # held in memory from the reads above; /date is the cheap gate
+                print(f"  game date {gd[:10]} -> metadata.json: {RC.write_game_date(out_dir, league, gd)}")
+            except Exception as e:
+                print(f"  note: game date not written to metadata.json ({type(e).__name__})")
         print("done." + ("" if overwrite else "  (side files — add --write to go live)"))
         return
 
