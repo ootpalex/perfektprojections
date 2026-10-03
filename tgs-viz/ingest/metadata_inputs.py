@@ -45,6 +45,10 @@ so the two bat stages download it once. The stat feeds are saved per season in
 script sums is there and it has rows, and a saved feed that fails that check
 is downloaded again.
 
+Engine boundary: a league with leagues.<LG>.engine_first_season in settings refuses
+a season before it (older seasons were played on another OOTP engine), before the
+/teams and stat-feed requests; with --year, before any request.
+
 Exit codes: 1 = a stop with a message (season, paste or workbook problem);
 2 = bad arguments; 3 = StatsPlus refused a request or sent something that is
 not the data. On 3 no input CSV or manifest is written, and no bad feed is
@@ -141,6 +145,27 @@ def season_of(date_str, year_arg, allow_partial):
         sys.exit(f"in-game date {date_str}: the regular season is still running. "
                  f"Run this after the season ends (October), or pass --year/--allow-partial.")
     return y
+
+
+def engine_boundary_problem(league, season, first, version=None):
+    """Why `season` can not feed `league`'s metadata, or None. first = the league's
+    engine_first_season (settings), None when it has no boundary. Seasons before it
+    were played on another OOTP engine: their rates are not this engine's."""
+    if first is None or season >= first:
+        return None
+    on = f" (OOTP {version})" if version else ""
+    return (f"STOP: {league} season {season} was played before this league's engine boundary: "
+            f"leagues.{league}.engine_first_season = {first}{on}. Metadata from an older engine "
+            f"would put the wrong rates into the calibration. Build season {first} or later "
+            f"(--year), or correct engine_first_season in settings.local.json if the boundary is wrong.")
+
+
+def check_engine_boundary(league, season):
+    """Stop (exit 1, with the message) when `season` is before the league's boundary."""
+    lg = ST.league(league) or {}
+    msg = engine_boundary_problem(league, season, ST.engine_first_season(league), lg.get("ootp_version"))
+    if msg:
+        sys.exit(msg)
 
 
 def aggregate(rows, key, cols):
@@ -689,6 +714,8 @@ def main():
     ap.add_argument("--refresh", action="store_true", help="refetch the API feeds (ignore cache)")
     a = ap.parse_args()
 
+    if a.year:
+        check_engine_boundary(a.league, a.year)     # before any request
     slug = a.slug or SLUGS.get(a.league) or ST.slug(a.league)
     base = S.normalize_base(slug)
     try:
@@ -696,6 +723,7 @@ def main():
     except S.StatsPlusRefused as e:
         stop_refused(e, a.league)
     season = season_of(date, a.year, a.allow_partial)
+    check_engine_boundary(a.league, season)         # after /date, before /teams and the stat feeds
     pull_path = a.pull or season_end_pull(a.league, season) or os.path.join(HERE, ".cache", f"statsplus_{slug}.json")
     xlsx = a.workbook or os.path.join(REPO, LEAGUE_DIRS[a.league], "25 Metadata.xlsx")
     from_wb = {t.strip() for t in a.from_workbook.split(",") if t.strip()} | set(PASTE_TABS)

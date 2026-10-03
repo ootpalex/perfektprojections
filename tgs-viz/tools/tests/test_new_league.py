@@ -194,6 +194,23 @@ class Check(unittest.TestCase):
         self.assertTrue(check(dict(good, ootp_version="27", ootp_save="Fun Save", foreign_league_ids="117, 118",
                                    history_first_date="2040-01-01"))["ok"])
 
+    def test_engine_first_season(self):
+        """The optional engine boundary: checked as a whole year, written into the settings entry."""
+        good = {"type": "statsplus", "id": "ZTS", "name": "S", "slug": "ztsl", "basis": "BLM"}
+        self.assertNotIn("engine_first_season", NL.settings_entry(NL.normalize(good)[0]))
+        for typ_obj in (good, {"type": "local_export", "id": "ZTL", "name": "L", "ootp_version": "27",
+                               "ootp_save": "Fun Save"}):
+            self.assertNotIn("engine_first_season", check(dict(typ_obj, engine_first_season="2043"))["errors"])
+            for bad in ("abc", "43", "20431", "2043.5"):
+                self.assertIn("engine_first_season", check(dict(typ_obj, engine_first_season=bad))["errors"], bad)
+            f, errs = NL.normalize(dict(typ_obj, engine_first_season=2043))
+            self.assertEqual(errs, {})
+            self.assertEqual(NL.settings_entry(f)["engine_first_season"], 2043)
+            # the entry the profile step writes passes the settings checks
+            m = ST.defaults_raw()
+            m["leagues"]["ZZ"] = dict(NL.settings_entry(f))
+            self.assertEqual(ST.validate(m), [])
+
     def test_dev(self):
         good = {"type": "dev", "id": "ZTD", "name": "D", "ootp_version": "27", "ootp_save": "AllAI"}
         self.assertTrue(check(good)["ok"])

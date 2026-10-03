@@ -17,6 +17,11 @@ A file that is not valid JSON, or a value that fails the checks, raises
 SettingsError with a plain message that names the file and the key. Pipeline
 scripts stop on it; they never fall back silently.
 
+A league may carry "engine_first_season": the first season played on its
+ootp_version, a whole year such as 2043. ingest/metadata_inputs.py refuses to
+build a league's metadata from an earlier season (older seasons were played on
+another OOTP engine). Absent = no boundary.
+
 Interpreters are argv lists and are never expanded. Paths expand %VAR% and a
 leading ~, nothing else.
 
@@ -326,6 +331,11 @@ def validate(merged):
                 py_ = h.get("probe_years", 0)
                 if not isinstance(py_, int) or isinstance(py_, bool) or py_ < 0:
                     out.append(f"{p}.history.probe_years: must be a whole number, 0 or more")
+        if "engine_first_season" in lg:
+            efs = lg["engine_first_season"]
+            if not isinstance(efs, int) or isinstance(efs, bool) or not 1000 <= efs <= 9999:
+                out.append(f"{p}.engine_first_season: must be a season year like 2043 "
+                           "(the first season played on this league's OOTP version)")
         for k in ("dispersal_orgs", "foreign_league_ids"):
             if k in lg and not (isinstance(lg[k], list) and all(isinstance(x, str) for x in lg[k])):
                 out.append(f"{p}.{k}: must be a list of text values")
@@ -453,6 +463,13 @@ def ootp_profiles():
         if isinstance(prof, dict) and lid not in out:
             out[lid] = copy.deepcopy(prof)
     return out
+
+
+def engine_first_season(league_id):
+    """The league's engine boundary (first season on its ootp_version), or None
+    when none is set. Any configured league, enabled or not."""
+    v = (_merged()["leagues"].get(str(league_id)) or {}).get("engine_first_season")
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
 
 
 def history_settings():

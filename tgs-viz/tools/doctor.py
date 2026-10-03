@@ -4,7 +4,8 @@ tasks can run, and what to do about each gap.
 
     python tgs-viz/tools/doctor.py            one line per check, then the fix
     python tgs-viz/tools/doctor.py --json     {"schema": 1, "ok": bool, "checks": [...]}
-    python tgs-viz/tools/doctor.py --deep     also parse each league's player files
+    python tgs-viz/tools/doctor.py --deep     also parse each league's player files and
+                                              check each league's data (doctor_deep.py)
 
 No network and no writes: tokens are read in memory (never printed, only
 "present", "empty" or "looks wrong: N characters"), the ratings archive opens
@@ -528,6 +529,9 @@ def collect(deep=False):
         check_tokens(d)
         check_ootp(d, leagues)
         check_leagues(d, leagues, read_manifest())
+        if deep:
+            import doctor_deep
+            doctor_deep.check_deep(d, leagues, read_manifest(), DATA, os.path.join(VIZ, "engine", "calib"))
         check_pending_leagues(d)
     check_archive(d)
     check_models(d)
@@ -539,7 +543,7 @@ def collect(deep=False):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Setup check for TGS Projections (no network, no writes).")
     ap.add_argument("--json", action="store_true", help="print one JSON object")
-    ap.add_argument("--deep", action="store_true", help="also parse each league's player files")
+    ap.add_argument("--deep", action="store_true", help="also parse each league's player files and check its settings, calibration, metadata, app data and parks")
     a = ap.parse_args(argv)
     rows = collect(a.deep)
     fails = sum(1 for r in rows if r["status"] == "fail")

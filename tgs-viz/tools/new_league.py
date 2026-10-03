@@ -167,6 +167,12 @@ def normalize(spec):
     f["ootp_version"] = _text(spec.get("ootp_version"))
     f["ootp_save"] = spec.get("ootp_save") if isinstance(spec.get("ootp_save"), str) else _text(spec.get("ootp_save"))
     typ, lid = f["type"], f["id"]
+    if typ in ("statsplus", "local_export"):
+        # optional engine boundary (settings leagues.<id>.engine_first_season); 0 = not given
+        try:
+            f["engine_first_season"] = _int(spec.get("engine_first_season"), 0)
+        except ValueError:
+            errors["engine_first_season"] = "Type a whole year, for example 2043."
     if typ == "statsplus":
         f["slug"] = _text(spec.get("slug")) or lid.lower()
         f["basis"] = _text(spec.get("basis"))
@@ -230,6 +236,10 @@ def check(spec, manifest=MANIFEST):
             errors["id"] = "The ratings archive could not be read to check this id. Try again in a minute."
         elif used or os.path.exists(os.path.join(vint, lid)):
             errors["id"] = "This id was used before. Pick another id."
+
+    efs = f.get("engine_first_season", 0)
+    if efs and "engine_first_season" not in errors and not 1000 <= efs <= 9999:
+        errors["engine_first_season"] = "Type a whole year, for example 2043."
 
     # name and my_org
     if not 1 <= len(f["name"]) <= 40:
@@ -419,6 +429,8 @@ def settings_entry(f):
     e = {"type": typ, "name": f["name"], "pending": True}
     if f.get("my_org"):
         e["my_org"] = f["my_org"]
+    if f.get("engine_first_season"):
+        e["engine_first_season"] = f["engine_first_season"]
     if typ == "statsplus":
         e.update(slug=f["slug"], basis=f["basis"])
         if f["ootp_version"] and f["ootp_save"]:
