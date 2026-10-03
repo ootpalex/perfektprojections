@@ -434,20 +434,24 @@ def main():
         # the app's "My Park" toggle.
         hit_rows = [r for r in trows if not is_pit(r)]
         pit_rows = [r for r in trows if is_pit(r)]
+        repl = R.live_replacement(league)       # Phase 1: WAR columns beside WAA
+        print(f"  replacement: " + (f"{repl['hitter']} / {repl['sp']} / {repl['rp']} wins (hitter / SP / RP, "
+                                     f"{repl['league']}{', proxy' if repl['league'] != league else ''})"
+                                     if repl else "none (no WAR columns)"))
         hrecs = R.run_hitters(hit_rows, calib, currency=currency,
-                              tails=tails, fielding=fielding, park_mode="neutral")
+                              tails=tails, fielding=fielding, park_mode="neutral", replacement=repl)
         if own:
             hrecs_park = R.run_hitters(hit_rows, calib, currency=currency,
-                                       tails=tails, fielding=fielding, park_mode="blend")
+                                       tails=tails, fielding=fielding, park_mode="blend", replacement=repl)
         scurves = R.live_scurves(calib)   # audit D1: per-block curves from calib/<LG>/scurves.json, or None
         print(f"  pitching curves: {R.scurve_summary(scurves)}")
         role_stuff = R.live_role_stuff(calib)   # 2026-09-26: measured SP <-> RP stuff change
         print(f"  role stuff: {'MEASURED (calib/' + calib + '/role_stuff.json)' if role_stuff else 'sheet flat 5 (no role_stuff.json)'}")
         precs = R.run_pitchers(pit_rows, calib, scurves=scurves, currency=currency, park_mode="neutral",
-                               role_stuff=role_stuff, observed=own)
+                               role_stuff=role_stuff, observed=own, replacement=repl)
         if own:
             precs_park = R.run_pitchers(pit_rows, calib, scurves=scurves, currency=currency, park_mode="blend",
-                                        role_stuff=role_stuff)
+                                        role_stuff=role_stuff, replacement=repl)
             print(f"  park layer: neutral default + blend variant "
                   f"({len(hrecs_park)} hitters / {len(precs_park)} pitchers on the My-Park basis)")
         else:

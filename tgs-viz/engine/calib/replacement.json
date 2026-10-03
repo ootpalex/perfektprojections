@@ -1,0 +1,27 @@
+{
+  "_about": "Replacement level per app league: WAR = WAA + credit(role), in wins at the engine's fixed playing time (hitter: per 600 PA = H31; catcher: hitter x H32/H31 = 500/600; SP: per 800 BF = H33 IP; RP: per 300 BF = H34 IP). Read by engine/war.py through ingest/ratings.py live_replacement(). Kept outside calib/<LG>/ on purpose: the calibration fingerprint hashes calib/<LG>/currency.json and friends, and WAR = WAA + a constant leaves every WAA cache valid. A league with \"use\" takes another league's credits (a labelled proxy); its own measurement, when there is one, sits beside it under \"measured\". See docs/PHASE1_AUDIT.md.",
+  "TGS": {
+    "hitter": 1.65, "sp": 2.5, "rp": 0.45,
+    "source": "market replacement, measured (src/lib/leagueCalib.js replacementMarket, 2026-08-07 re-measurement)"
+  },
+  "BLM": {
+    "hitter": 1.91, "sp": 2.5, "rp": 0.31,
+    "source": "market replacement, measured: median of budget identity on BLM 2057 (1.912 / 2.643 / 0.298), delivered-WAR regression (2.059 / 2.362 / 0.313) and the hitter market pin (1.815) (src/lib/leagueCalib.js replacementMarket)"
+  },
+  "SSB": {
+    "use": "BLM",
+    "note": "BLM's credits as a labelled proxy (decision 2026-10-03) until the user signs off on SSB's own measurement below.",
+    "measured": {
+      "method": "budget identity on OOTP's own war, SSB 2043 (league 155, level 1, split 1, stint 0; 28 clubs x 162 G; SP when GS >= G/2; slots per 600 PA / 800 BF / 300 BF)",
+      "season": 2043,
+      "hitter": 1.872, "sp": 2.630, "rp": 0.350,
+      "ci95_club_bootstrap": {"hitter": [1.57, 2.18], "sp": [2.26, 3.00], "rp": [0.20, 0.50]},
+      "war_per_club": 33.66,
+      "control": "the same code on BLM 2057 gives 1.912 / 2.643 / 0.298, his route-1 numbers exactly"
+    }
+  },
+  "RG": {
+    "use": "BLM",
+    "note": "Regular Game is priced on BLM's calibration; no measurement of its own."
+  }
+}
