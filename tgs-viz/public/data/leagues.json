@@ -51,6 +51,24 @@
       "save": "Regular Game"
     },
     {
+      "id": "SSB",
+      "name": "SSB",
+      "datasets": [
+        "hitters",
+        "pitchers"
+      ],
+      "features": {
+        "players": true,
+        "trends": true,
+        "draft": false,
+        "fa": false,
+        "contracts": true
+      },
+      "basis": "BLM",
+      "source": "StatsPlus",
+      "slug": "ssb"
+    },
+    {
       "id": "TGS",
       "name": "TGS",
       "folder": "The Sheets TGS",

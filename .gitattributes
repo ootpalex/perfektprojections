@@ -1,2 +1,3 @@
 *.bat text eol=crlf
 *.bat.legacy -text
+tgs-viz/backtest/vintages/*/_pulls.csv text

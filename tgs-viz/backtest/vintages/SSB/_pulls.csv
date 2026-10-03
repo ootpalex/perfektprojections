@@ -1,0 +1,2 @@
+pull_id,league,real_date,real_ts,source,source_files,n_players,content_hash,ingested_at,game_date
+575,SSB,2026-10-02,2026-10-02T21:37:28,live,"[""tgs-viz/ingest/.cache/history/statsplus_ssb_20261002-2137.json""]",13991,88c4d7eca3f998b85ddc241d2b3c761c352335ff,2026-10-02T21:37:29,2044-05-02
