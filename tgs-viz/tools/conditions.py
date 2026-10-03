@@ -55,7 +55,8 @@ def evaluate(cond, tokens=None, inputs=None, flags=None, exists=None, repo=None)
         if exists is not None:
             return bool(exists(str(arg)))
         base = repo or os.getcwd()
-        return os.path.exists(os.path.join(base, str(arg)))
+        rel = str(arg) if os.name == "nt" else str(arg).replace("\\", "/")   # tasks.py writes Windows paths
+        return os.path.exists(os.path.join(base, rel))
     if key == "flag":
         if isinstance(flags, dict):
             return bool(flags.get(str(arg)))

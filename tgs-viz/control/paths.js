@@ -59,15 +59,28 @@ function parseOrNull(text) {
   try { return JSON.parse(text.replace(/^﻿/, '')) } catch { return null }
 }
 
+// Off Windows there is no python or py launcher: a defaults value still equal to its
+// committed Windows text becomes python3, as in settings.py _platform_defaults. The local
+// file is never swapped.
+const POSIX = process.platform !== 'win32'
+const WIN_PYTHON = { main: ['python'], ml: ['py', '-3.14'] }
+export const FALLBACK_PYTHON = POSIX ? { main: ['python3'], ml: ['python3'] } : WIN_PYTHON
+
+function platformDefault(argv, key) {
+  if (POSIX && argv && JSON.stringify(argv) === JSON.stringify(WIN_PYTHON[key])) return ['python3']
+  return argv
+}
+
 // The python.main rule (3.2): the local value when the local file parses and holds a
-// non-empty list of strings, else the defaults value, else ["python"]. No expansion.
-// defaultsText and localText are file contents, or null when the file is missing.
+// non-empty list of strings, else the defaults value, else ["python"] (python3 off
+// Windows). No expansion. defaultsText and localText are file contents, or null when the
+// file is missing.
 export function resolvePythonMain(defaultsText, localText) {
   const local = mainOf(parseOrNull(localText))
   if (local) return local
-  const defaults = mainOf(parseOrNull(defaultsText))
+  const defaults = platformDefault(mainOf(parseOrNull(defaultsText)), 'main')
   if (defaults) return defaults
-  return ['python']
+  return FALLBACK_PYTHON.main.slice()
 }
 
 function argvAt(obj, keys) {
@@ -84,9 +97,9 @@ function argvAt(obj, keys) {
 export function commandsView(defaultsText, localText) {
   const d = parseOrNull(defaultsText)
   const l = parseOrNull(localText)
-  const pick = (keys, fallback) => argvAt(l, keys) || argvAt(d, keys) || fallback
+  const pick = (keys, fallback) => argvAt(l, keys) || platformDefault(argvAt(d, keys), keys[1]) || fallback
   return {
-    python: { main: pick(['python', 'main'], ['python']), ml: pick(['python', 'ml'], ['py', '-3.14']) },
+    python: { main: pick(['python', 'main'], FALLBACK_PYTHON.main.slice()), ml: pick(['python', 'ml'], FALLBACK_PYTHON.ml.slice()) },
     node: pick(['node'], ['node']),
   }
 }

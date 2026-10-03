@@ -39,7 +39,11 @@ import settings as ST  # noqa: E402
 
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0            # CREATE_NO_WINDOW
 WARN_DAYS = 80
-PY_FIX = "Install Python 3.13 from python.org and tick Add python.exe to PATH, or set the command on the Setup page."
+PY_FIX = ("Install Python 3.13 from python.org and tick Add python.exe to PATH, or set the command on the Setup page."
+          if os.name == "nt" else
+          "Install Python 3.13 (python.org or Homebrew) or make the repo's .venv, or set the command on the Setup page.")
+# pywin32 (win32gui) exists only on Windows; the OOTP automation is Windows-only
+GUI_MODULES = ["pyautogui", "win32gui", "cv2", "PIL"] if os.name == "nt" else ["pyautogui", "cv2", "PIL"]
 
 
 class Doctor:
@@ -159,14 +163,14 @@ def check_python(d):
     try:
         main_argv, ml_argv = ST.interp("main"), ST.interp("ml")
     except (ST.SettingsError, KeyError):
-        main_argv, ml_argv = ["python"], ["py", "-3.14"]
+        main_argv, ml_argv = (["python"], ["py", "-3.14"]) if os.name == "nt" else (["python3"], ["python3"])
     pm = probe_python(main_argv)
     if pm["ok"] and pm["version"] >= (3, 11):
         d.add("python.main", "Python (main)", "ok", f"{_vtext(pm['version'])} ({_shown(main_argv)}): {pm['executable']}")
-        miss = missing_modules(main_argv, ["openpyxl", "numpy", "pyautogui", "win32gui", "cv2", "PIL"])
+        miss = missing_modules(main_argv, ["openpyxl", "numpy"] + GUI_MODULES)
         if miss is None:
             d.add("python.main.packages", "Packages (main)", "warn", "the package check did not answer",
-                  "Run: python -m pip install -r requirements.txt")
+                  f"Run: {_shown(main_argv)} -m pip install -r requirements.txt")
         else:
             core = [m for m in miss if m in ("openpyxl", "numpy")]
             gui = [{"win32gui": "pywin32", "cv2": "opencv-python", "PIL": "Pillow"}.get(m, m)
@@ -180,14 +184,14 @@ def check_python(d):
                 if gui:
                     parts.append(f"missing {', '.join(gui)} (needed only for Grind, Sim Dev League and the OOTP tools)")
                 d.add("python.main.packages", "Packages (main)", "warn", "; ".join(parts),
-                      "Run: python -m pip install -r requirements.txt")
+                      f"Run: {_shown(main_argv)} -m pip install -r requirements.txt")
     else:
         if pm["ok"]:
             detail = f"{_vtext(pm['version'])} is too old ({_shown(main_argv)}); the tasks need 3.11 or newer"
         else:
             detail = f"{_shown(main_argv)} does not start: {pm['message']}"
         fix = PY_FIX
-        alt = probe_python(["py", "-3"]) if main_argv != ["py", "-3"] else {"ok": False}
+        alt = probe_python(["py", "-3"]) if os.name == "nt" and main_argv != ["py", "-3"] else {"ok": False}
         if alt["ok"] and alt["version"] >= (3, 11):
             fix = "Set Python (main) to py -3 on the Setup page."
         d.add("python.main", "Python (main)", "warn", detail + ". The app still opens; every task needs Python.", fix)
@@ -204,7 +208,7 @@ def check_python(d):
             extra = "; the ML gain models do not load without xgboost" if "xgboost" in (miss or []) else ""
             d.add("python.ml.packages", "Packages (ML)", "warn",
                   (f"missing {names}" if names else "the package check did not answer") + f" ({why}{extra})",
-                  "Run: py -3.14 -m pip install -r requirements-ml.txt")
+                  f"Run: {_shown(ml_argv)} -m pip install -r requirements-ml.txt")
         else:
             d.add("python.ml.packages", "Packages (ML)", "ok", "numpy, pandas, scikit-learn, xgboost")
     else:
@@ -239,7 +243,7 @@ def check_node(d):
               "Install Node.js 22 LTS.")
     else:
         d.add("node", "Node.js", "fail", f"{_shown(argv)} does not start", "Install Node.js 22 LTS.")
-    vite_cmd = os.path.join(VIZ, "node_modules", ".bin", "vite.cmd")
+    vite_cmd = os.path.join(VIZ, "node_modules", ".bin", "vite.cmd" if os.name == "nt" else "vite")
     vite_pkg = os.path.join(VIZ, "node_modules", "vite", "package.json")
     ver = None
     try:

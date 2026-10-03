@@ -3,19 +3,22 @@
     "name": "no local file",
     "defaults": null,
     "local": null,
-    "expect": ["python"]
+    "expect": ["python"],
+    "expect_posix": ["python3"]
   },
   {
     "name": "local file without python",
     "defaults": null,
     "local": "{\"schema\": 1}",
-    "expect": ["python"]
+    "expect": ["python"],
+    "expect_posix": ["python3"]
   },
   {
     "name": "local python.ml only keeps the default main",
     "defaults": null,
     "local": "{\"python\": {\"ml\": [\"py\", \"-3.14\"]}}",
-    "expect": ["python"]
+    "expect": ["python"],
+    "expect_posix": ["python3"]
   },
   {
     "name": "local python.main valid",
@@ -28,6 +31,7 @@
     "defaults": null,
     "local": "{\"python\": {\"main\": []}}",
     "expect": ["python"],
+    "expect_posix": ["python3"],
     "expect_python": "SettingsError"
   },
   {
@@ -35,6 +39,7 @@
     "defaults": null,
     "local": "{\"python\": {\"main\": \"python3\"}}",
     "expect": ["python"],
+    "expect_posix": ["python3"],
     "expect_python": "SettingsError"
   },
   {
@@ -42,6 +47,7 @@
     "defaults": null,
     "local": "{bad",
     "expect": ["python"],
+    "expect_posix": ["python3"],
     "expect_python": "SettingsError"
   },
   {

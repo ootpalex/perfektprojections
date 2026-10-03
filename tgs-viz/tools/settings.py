@@ -140,10 +140,35 @@ def _patch(base, patch):
 _CACHE = {"key": None, "merged": None}
 
 
+_WIN_PYTHON = {"main": ["python"], "ml": ["py", "-3.14"]}
+_WIN_FOLDER = re.compile(r"^([A-Za-z]:[\\/]|%USERPROFILE%)")
+OOTP_MAC_ROOT = "~/Library/Application Support/Out of the Park Developments"
+
+
+def _platform_defaults(defaults):
+    """Off Windows, swap each committed Windows value for this platform's: the python and
+    py launchers become python3, a C:/ or %USERPROFILE% saved_games folder becomes the
+    macOS one (OOTP ships for Windows and macOS only; other systems get the macOS layout).
+    Only values still equal to the Windows text are swapped; the local file is never touched.
+    paths.js applies the same swap to python.main."""
+    if os.name == "nt" or not isinstance(defaults, dict):
+        return defaults
+    py = defaults.get("python")
+    if isinstance(py, dict):
+        for k, win in _WIN_PYTHON.items():
+            if py.get(k) == win:
+                py[k] = ["python3"]
+    inst = (defaults.get("ootp") or {}).get("installs") if isinstance(defaults.get("ootp"), dict) else None
+    for ver, v in (inst or {}).items():
+        if isinstance(v, dict) and isinstance(v.get("saved_games"), str) and _WIN_FOLDER.match(v["saved_games"]):
+            v["saved_games"] = f"{OOTP_MAC_ROOT}/OOTP Baseball {ver}/saved_games"
+    return defaults
+
+
 def _load_files():
     """(defaults, local or None, merged). Raises SettingsError."""
     dpath, lpath = DEFAULTS_PATH, local_path()
-    defaults = _read_json(dpath, required=True)
+    defaults = _platform_defaults(_read_json(dpath, required=True))
     problems = validate(defaults) + _pending_in(defaults)
     if problems:
         raise SettingsError(f"{_label(dpath)}: " + "; ".join(problems), problems, dpath)
@@ -517,7 +542,7 @@ def write_local(patch):
 
 
 def _load_files_defaults_only():
-    defaults = _read_json(DEFAULTS_PATH, required=True)
+    defaults = _platform_defaults(_read_json(DEFAULTS_PATH, required=True))
     problems = validate(defaults) + _pending_in(defaults)
     if problems:
         raise SettingsError(f"{_label(DEFAULTS_PATH)}: " + "; ".join(problems), problems, DEFAULTS_PATH)

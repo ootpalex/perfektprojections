@@ -15,6 +15,9 @@ const cases = JSON.parse(fs.readFileSync(path.join(here, 'fixtures', 'python_mai
 const defaultsFile = path.resolve(here, '..', '..', 'tools', 'settings.defaults.json')
 const SPEC_DEFAULTS = JSON.stringify({ schema: 1, python: { main: ['python'], ml: ['py', '-3.14'] }, node: ['node'] })
 const committedDefaults = fs.existsSync(defaultsFile) ? fs.readFileSync(defaultsFile, 'utf8') : SPEC_DEFAULTS
+// Off Windows the committed defaults' python becomes python3 (paths.js platformDefault).
+const POSIX = process.platform !== 'win32'
+const FALLBACK = POSIX ? ['python3'] : ['python']
 
 let passed = 0
 let failed = 0
@@ -24,18 +27,19 @@ function check(name, fn) {
 
 for (const c of cases) {
   const defaultsText = c.defaults === null ? committedDefaults : JSON.stringify(c.defaults)
-  check(`shared: ${c.name}`, () => assert.deepEqual(resolvePythonMain(defaultsText, c.local), c.expect))
+  const expect = (POSIX && c.expect_posix) || c.expect
+  check(`shared: ${c.name}`, () => assert.deepEqual(resolvePythonMain(defaultsText, c.local), expect))
 }
 
 // Node-only cases (not in the shared file: Python never runs without its defaults file).
 check('defaults value used', () => assert.deepEqual(resolvePythonMain(JSON.stringify({ python: { main: ['py', '-3'] } }), null), ['py', '-3']))
-check('no files at all', () => assert.deepEqual(resolvePythonMain(null, null), ['python']))
-check('broken defaults', () => assert.deepEqual(resolvePythonMain('{bad', null), ['python']))
-check('defaults main empty', () => assert.deepEqual(resolvePythonMain(JSON.stringify({ python: { main: [] } }), null), ['python']))
-check('local main with an empty word', () => assert.deepEqual(resolvePythonMain(SPEC_DEFAULTS, JSON.stringify({ python: { main: ['py', ''] } })), ['python']))
-check('local main with a number', () => assert.deepEqual(resolvePythonMain(SPEC_DEFAULTS, JSON.stringify({ python: { main: ['py', 3] } })), ['python']))
-check('local python a list', () => assert.deepEqual(resolvePythonMain(SPEC_DEFAULTS, JSON.stringify({ python: ['x'] })), ['python']))
-check('local file is a list', () => assert.deepEqual(resolvePythonMain(SPEC_DEFAULTS, '[1,2]'), ['python']))
+check('no files at all', () => assert.deepEqual(resolvePythonMain(null, null), FALLBACK))
+check('broken defaults', () => assert.deepEqual(resolvePythonMain('{bad', null), FALLBACK))
+check('defaults main empty', () => assert.deepEqual(resolvePythonMain(JSON.stringify({ python: { main: [] } }), null), FALLBACK))
+check('local main with an empty word', () => assert.deepEqual(resolvePythonMain(SPEC_DEFAULTS, JSON.stringify({ python: { main: ['py', ''] } })), FALLBACK))
+check('local main with a number', () => assert.deepEqual(resolvePythonMain(SPEC_DEFAULTS, JSON.stringify({ python: { main: ['py', 3] } })), FALLBACK))
+check('local python a list', () => assert.deepEqual(resolvePythonMain(SPEC_DEFAULTS, JSON.stringify({ python: ['x'] })), FALLBACK))
+check('local file is a list', () => assert.deepEqual(resolvePythonMain(SPEC_DEFAULTS, '[1,2]'), FALLBACK))
 check('local with BOM', () => assert.deepEqual(resolvePythonMain(SPEC_DEFAULTS, '\uFEFF{"python": {"main": ["py"]}}'), ['py']))
 check('tilde not expanded', () => assert.deepEqual(resolvePythonMain(SPEC_DEFAULTS, JSON.stringify({ python: { main: ['~/py/python'] } })), ['~/py/python']))
 

@@ -89,7 +89,9 @@ LOW_A = ("california", "carolina", "florida state")
 def csv_dir_for(save, game):
     """<save>.lg/import_export/csv in the version's saved_games folder: the
     settings folder (ootp.installs.<game>) when set, else Documents."""
-    saved = ST.saved_games(game) or os.path.join(os.path.expanduser("~"), "Documents",
+    saved = ST.saved_games(game) or os.path.join(os.path.expanduser("~"),
+                                                 *(("Library", "Application Support") if sys.platform == "darwin"
+                                                   else ("Documents",)),
                                                  "Out of the Park Developments", f"OOTP Baseball {game}",
                                                  "saved_games")
     return os.path.join(saved, f"{save}.lg", "import_export", "csv")

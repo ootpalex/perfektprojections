@@ -147,7 +147,9 @@ def saved_games_dirs(game):
     home = os.path.expanduser("~")
     cands = [_settings().saved_games(game),
              os.path.join(home, "Documents", "Out of the Park Developments",
-                          f"OOTP Baseball {game}", "saved_games")]
+                          f"OOTP Baseball {game}", "saved_games"),
+             os.path.join(home, "Library", "Application Support", "Out of the Park Developments",
+                          f"OOTP Baseball {game}", "saved_games")]     # macOS
     for root in ("C:\\", "D:\\"):
         cands.append(os.path.join(root, f"OOTP {game}", "data", "saved_games"))
     out = []

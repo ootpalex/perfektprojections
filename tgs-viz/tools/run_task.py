@@ -54,6 +54,25 @@ SECRET_MIN, SECRET_MAX = 8, 4096
 COUNTDOWN = 5
 
 
+def native(path_template):
+    """A step's path template with this system's separator: tasks.py writes Windows
+    backslashes, which POSIX reads as part of a file name. Applied before the
+    placeholders are filled, so typed inputs pass through unchanged."""
+    return path_template if WIN else path_template.replace("\\", "/")
+
+
+def press_enter(ask):
+    """The console pause of a gate: cmd's pause on Windows, else ask() (Ctrl+C sets
+    interrupted and ends the wait, as it ends pause)."""
+    if WIN:
+        subprocess.call("pause", shell=True)
+        return
+    try:
+        ask("Press Enter to continue . . . ")
+    except (EOFError, KeyboardInterrupt):
+        pass
+
+
 def now_iso():
     return JL.now_iso()
 
@@ -533,7 +552,7 @@ class Engine:
             elif a == "@node":
                 out += self.ST.interp("node")
             else:
-                out.append(fill(a, ctx))
+                out.append(fill(native(a), ctx))
         return out
 
     # -- output
@@ -574,7 +593,7 @@ class Engine:
     def exists(self, rel):
         if self.plan and rel in (self.assume.get("exists") or {}):
             return bool(self.assume["exists"][rel])
-        return os.path.exists(os.path.join(REPO, fill(rel, self.rctx())))
+        return os.path.exists(os.path.join(REPO, fill(native(rel), self.rctx())))
 
     def cond(self, c):
         tokens = {k[4:]: bool(v) for k, v in self.flags.items() if k.startswith("tok_")}
@@ -944,7 +963,7 @@ class Engine:
                 self.items.append({"type": "pause", "step_id": s["id"]})
                 return
             self.echo(s.get("echo"))
-            subprocess.call("pause", shell=True)
+            press_enter(self.ask)
             time.sleep(0.05)
             if self.interrupted:
                 raise Cancelled()
@@ -1194,7 +1213,7 @@ class Engine:
                 self.items.append({"type": "pause", "step_id": s["id"]})
                 return "ok"
             self.start_step(k, s, None)
-            subprocess.call("pause", shell=True)
+            press_enter(self.ask)
             if self.interrupted:
                 self.judge_ctrl_c(k, s)
             self.mark(k, s, "ok", None)
@@ -1361,7 +1380,7 @@ class Engine:
 
 def reset_input(ST, log=None):
     """Release keys and the mouse button after a kill of an OOTP step (winsim --reset-input)."""
-    argv = ST.interp("main") + [r"ootp\winsim.py", "--reset-input"]
+    argv = ST.interp("main") + [native(r"ootp\winsim.py"), "--reset-input"]
     try:
         r = subprocess.run(argv, cwd=REPO, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                            creationflags=CREATE_NO_WINDOW if WIN else 0, timeout=15)

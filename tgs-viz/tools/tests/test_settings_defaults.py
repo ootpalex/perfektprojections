@@ -55,8 +55,14 @@ OLD_SLUGS = {"TGS": "tgs", "BLM": "blm"}
 OLD_OOTP26 = r"C:\OOTP 26\data\saved_games"
 OLD_OOTP27 = os.path.join(os.path.expanduser("~"), "Documents", "Out of the Park Developments",
                           "OOTP Baseball 27", "saved_games")
+if os.name != "nt":   # settings.py swaps the Windows folders for the macOS ones (_platform_defaults)
+    _MAC = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Out of the Park Developments")
+    OLD_OOTP26 = os.path.join(_MAC, "OOTP Baseball 26", "saved_games")
+    OLD_OOTP27 = os.path.join(_MAC, "OOTP Baseball 27", "saved_games")
+OLD_PY = {"main": ["python"], "ml": ["py", "-3.14"]} if os.name == "nt" else {"main": ["python3"], "ml": ["python3"]}
 OLD_DRAFT_CSV = {
-    "TGS": [[r"C:\OOTP 26\data\saved_games\TheGrandestSalami.lg\import_export\major_league_baseball_draft_pool_-_draft_pool_default.csv"]],
+    "TGS": [[os.path.join(OLD_OOTP26, "TheGrandestSalami.lg", "import_export",
+                          "major_league_baseball_draft_pool_-_draft_pool_default.csv")]],
     "BLM": [[os.path.join(OLD_OOTP27, "BLM.lg", "import_export",
                           "major_league_baseball_draft_pool_-_draft_pool_default.csv")],
             [os.path.join(OLD_OOTP27, "BLM.lg", "import_export",
@@ -173,6 +179,10 @@ class Defaults(unittest.TestCase):
                              {k: norm(v) for k, v in old.items()}, mod.__name__)
 
     def test_saved_games_raw(self):
+        if os.name != "nt":
+            self.assertEqual(ST.saved_games_raw("26"), OLD_OOTP26.replace(os.sep, "/"))
+            self.assertEqual(ST.saved_games_raw("27"), OLD_OOTP27.replace(os.sep, "/"))
+            return
         self.assertEqual(ST.saved_games_raw("26"), "C:/OOTP 26/data/saved_games")
         self.assertEqual(ST.saved_games_raw("27"), os.environ["USERPROFILE"]
                          + "/Documents/Out of the Park Developments/OOTP Baseball 27/saved_games")
@@ -183,8 +193,8 @@ class Defaults(unittest.TestCase):
 
     def test_settings_answers(self):
         self.assertEqual(ST.validate(ST.load()), [])
-        self.assertEqual(ST.interp("main"), ["python"])
-        self.assertEqual(ST.interp("ml"), ["py", "-3.14"])
+        self.assertEqual(ST.interp("main"), OLD_PY["main"])
+        self.assertEqual(ST.interp("ml"), OLD_PY["ml"])
         self.assertEqual(ST.interp("node"), ["node"])
         self.assertEqual(ST.slug_map(), OLD_SLUGS)
         self.assertEqual(ST.online_leagues(), ["TGS", "BLM"])
@@ -536,7 +546,7 @@ class PythonMainCases(unittest.TestCase):
                 out = run_py(code, env=dict(env, TGS_SETTINGS_LOCAL=os.path.join(d, "missing.json")))
             else:
                 out = run_py(code, local=local, env=env)
-            want = c.get("expect_python", c["expect"])
+            want = c.get("expect_python", (os.name != "nt" and c.get("expect_posix")) or c["expect"])
             self.assertEqual(out, want, c["name"])
 
 

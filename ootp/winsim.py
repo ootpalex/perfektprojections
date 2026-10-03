@@ -290,7 +290,7 @@ def keep_awake():
     except Exception as e:
         print(f"  (keep-awake failed: {e} - keep the screen on manually)")
 
-_user32 = ctypes.windll.user32
+_user32 = ctypes.windll.user32 if os.name == "nt" else None   # Windows-only; None keeps --list/--dry-run importable
 MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP = 0x0002, 0x0004
 
 def _cursor_moves():
