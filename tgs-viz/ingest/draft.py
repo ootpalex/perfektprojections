@@ -1,15 +1,22 @@
 """
-Build the Draft Board JSON from OOTP's draft-pool CSV + the cached StatsPlus pull.
+Build the Draft Board JSON from the draft pool + the cached StatsPlus pull.
 
-StatsPlus has no list of this year's draft class: /players carries a draft_eligible flag,
-but it marks the whole amateur pool, future classes included (its draft_year = year
-drafted, /draft = past results). So OOTP's draft-pool export is the authoritative "this
-year's class." With no export, BLM falls back to the /players draft_eligible flag
-(API_POOL_FALLBACK); TGS leaves its board as it is. The RATINGS for every prospect ARE in
-the StatsPlus ratings pull. So: the CSV supplies the IDs, the cached pull supplies the
-ratings, the engine projects them. No manual ratings paste.
+WHO IS IN THE CLASS comes from StatsPlus first: the league's /draftpool/ list (statsplus.fetch_draftpool).
+/players carries a draft_eligible flag, but it marks the whole amateur pool, future classes
+included (its draft_year = year drafted, /draft = past results), so the flag is only a last resort
+(API_POOL_FALLBACK). When /draftpool/ is refused, unreachable or empty, OOTP's own draft-pool export
+is the fallback (settings: ootp_version and ootp_save). A league with neither (SSB on a Mac without
+OOTP) keeps its board as it is. The RATINGS for every prospect ARE in the StatsPlus ratings pull. So:
+the pool supplies the IDs, the cached pull supplies the ratings, the engine projects them. No manual
+ratings paste.
 
-  python tgs-viz/ingest/draft.py --league TGS [--csv "<path>"] [--write]
+  python tgs-viz/ingest/draft.py --league TGS [--csv "<path>"] [--pool-source auto|statsplus|export] [--write]
+
+--pool-source auto (default): StatsPlus /draftpool/ first; an OOTP export, when one is found,
+only adds the columns StatsPlus does not send (DEM, Sign, SctAcc, NAT, Inf) for players that are
+in the StatsPlus pool, and its hitter/pitcher tag. statsplus: never read an export. export: the
+old behaviour, the export only (--csv implies it). /draftpool/ is read through the date-keyed
+cache (one request per in-game day at most). The shape of its reply has not been seen live yet.
 
 DISPERSAL mode (--orgs): a commish-run draft that doesn't exist in the game at all —
 teams are folding and their entire orgs go into the pool. Eligibility is just org
@@ -151,7 +158,10 @@ def _pick_group(groups):
     return []
 
 
-def _load_pool(paths):
+POOL_SOURCES = ("auto", "statsplus", "export")
+
+
+def _load_pool(paths, warn_stale=True):
     """Read one or more draft-pool CSVs. Returns {id: row}; rows from a file whose
     name says 'pitcher' are tagged _isPit=True, 'hitter' -> False, else None
     (fall back to POS). Later files never clobber earlier ids."""
@@ -173,13 +183,82 @@ def _load_pool(paths):
             n += 1
         age_d = (time.time() - os.path.getmtime(path)) / 86400.0
         print(f"  {os.path.basename(path)}: {n} players  (exported {age_d:.0f} days ago)")
-        if age_d > 14:
+        if age_d > 14 and warn_stale:
             print(f"    ^ WARNING: that export is {age_d:.0f} days old - re-export the pool "
                   f"from OOTP's Amateur Draft screen if this is a NEW draft.")
     return by_id, seen
 # CSV columns the pull lacks but the Draft Board uses (signing demand etc.). Kept verbatim.
 CSV_EXTRA = ["DEM", "Sign", "SctAcc", "NAT", "Inf"]
 PITCHER_POS = {"SP", "RP", "CL", "P"}
+
+
+def _api_pool(slug):
+    """{id: row} from StatsPlus /draftpool/ (date-keyed cache). Rows look like the export
+    rows the board reads: ID, Name, _isPit=None (the ratings pull's POS decides), plus any
+    column the reply sent under a CSV_EXTRA name. Raises StatsPlusRefused or the network error."""
+    rows = S.fetch_draftpool(S.normalize_base(slug), cache=True)
+    by_id, other = {}, set()
+    for r in rows:
+        pid = str(r.get("ID", "")).strip()
+        if not pid or pid in by_id:
+            continue
+        row = {"ID": pid, "Name": str(r.get("Player Name") or "").strip(), "_isPit": None}
+        for k, v in r.items():
+            k = str(k).strip()
+            if k in CSV_EXTRA and str(v or "").strip():
+                row[k] = str(v).strip()
+            elif k not in ("ID", "Player Name"):
+                other.add(k)
+        by_id[pid] = row
+    if other:
+        # the shape of /draftpool/ is unverified: say what else it sends (not mapped to anything)
+        print(f"  note: /draftpool/ also sends {', '.join(sorted(other))} (not used)")
+    return by_id
+
+
+def _resolve_pool(league, slug, csv_paths, source):
+    """(pool {id: row}, labels) by the precedence in the module docstring. May raise SystemExit
+    through _stop when StatsPlus refuses /draftpool/ and nothing else can supply the class."""
+    def named(pool_files):
+        return [os.path.basename(f) for f in pool_files]
+    if source == "export":
+        by_id, files = _load_pool(csv_paths)
+        return by_id, named(files)
+    api, refused, failed = {}, None, None
+    try:
+        api = _api_pool(slug)
+    except S.StatsPlusRefused as e:
+        refused = e
+    except Exception as e:      # network error or OffSiteError; S.redact keeps tokens out of the line
+        failed = f"{type(e).__name__}: {S.redact(e)}"
+    export, files = ({}, []) if source == "statsplus" else _load_pool(csv_paths, warn_stale=not api)
+    if api:
+        got = [f"StatsPlus /draftpool/ ({len(api)})"]
+        if export:
+            both = set(api) & set(export)
+            for pid in both:               # the export only adds what StatsPlus does not send
+                for f in CSV_EXTRA:
+                    if export[pid].get(f) not in (None, "") and api[pid].get(f) in (None, ""):
+                        api[pid][f] = export[pid][f]
+                if export[pid].get("_isPit") is not None:
+                    api[pid]["_isPit"] = export[pid]["_isPit"]
+            print(f"  StatsPlus pool {len(api)}, OOTP export {len(export)}, in both {len(both)}"
+                  + ("" if len(both) == len(api) == len(export) else
+                     "  (they differ: the StatsPlus list is used; export-only players are left out)"))
+            got.append(f"export extras ({len(both)})")
+        return api, got
+    if refused is not None:
+        print(f"  WARNING: {refused.user_message(league)}")
+        if not export and league not in API_POOL_FALLBACK:
+            _stop(refused, league, "No pool export was found either, so there is no draft pool. "
+                                   "The existing board was left as-is.")
+    elif failed:
+        print(f"  WARNING: StatsPlus /draftpool/ could not be read ({failed})")
+    else:
+        print("  StatsPlus /draftpool/ sent an empty list (no pool yet)")
+    if export:
+        print("  using the OOTP draft-pool export instead")
+    return export, named(files)
 
 
 def main():
@@ -192,7 +271,11 @@ def main():
     write = "--write" in sys.argv
     out_dir = os.path.join(REPO, "tgs-viz", "public", "data", league)
 
-    by_id, found = _load_pool(csv_paths)
+    source = "export" if cli_csv else _arg("--pool-source", "auto")   # --csv names the export to use
+    if source not in POOL_SOURCES:
+        print(f"--pool-source must be {', '.join(POOL_SOURCES)} (got {source!r}).")
+        raise SystemExit(2)
+    by_id, found = _resolve_pool(league, slug, csv_paths, source)
     if not by_id and league in API_POOL_FALLBACK:
         # No local export. StatsPlus /players has a draft_eligible flag, but it marks the
         # WHOLE amateur pool, not this year's class (measured 2026-09-04: TGS 4,801 flagged
@@ -225,13 +308,14 @@ def main():
         for g in (DEFAULT_CSV.get(league) or _pool_groups(league) or []):
           for p in (g if isinstance(g, list) else [g]):
             print("   " + str(p))
-        print("Export the pool from OOTP's Amateur Draft screen (Draft Pool report -> CSV),")
-        print("or pass --csv <path> (repeat --csv for separate hitter/pitcher exports).")
+        print("StatsPlus /draftpool/ gave no pool either (see above). Export the pool from OOTP's")
+        print("Amateur Draft screen (Draft Pool report -> CSV), or pass --csv <path> (repeat --csv")
+        print("for separate hitter/pitcher exports).")
         if league not in API_POOL_FALLBACK:
             print("(The StatsPlus draft_eligible flag is NOT used for this league - it marks "
                   "the whole amateur pool, not the class. The existing board was left as-is.)")
         return
-    print(f"{len(by_id)} draft-pool players from {len(found)} file(s)")
+    print(f"{len(by_id)} draft-pool players from " + (", ".join(found) or "the draft_eligible flag"))
 
     # StatsPlus /draft is the LIVE pick list (matches the pool by ID). The FULL class is
     # projected and kept (with each drafted player stamped with his real pick) for the Mock

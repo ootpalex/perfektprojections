@@ -50,6 +50,7 @@ Endpoints (base = https://statsplus.net/<slug>/api):
   /contract   salaries, options, no-trade, bonuses
   /teams/     team hierarchy (ID, Name, Nickname, Parent Team ID)
   /draft      draft results (the "Draft API from S+")
+  /draftpool/ the IDs of this year's draft class (shape not yet seen live; see fetch_draftpool)
   /lgdata/    league metadata (JSON; league_id, level, parent, primary flag)
   /playerbatstatsv2/    per-player season batting stats   (params: year, lid, pid, split)
   /playerpitchstatsv2/  per-player season pitching stats  (same params)
@@ -1055,6 +1056,8 @@ COLUMNS = {
     "contract": (("player_id",), ("current_year", "years", "salary0", "is_major", "no_trade")),
     "teams": (("ID", "Name"), ("Nickname",)),
     "draft": (("ID", "Player Name", "Overall"), ("Round", "Pick In Round", "Team")),
+    # /draftpool/: only ID is needed; the shape is from model/src/draftpool.py (never saved from a live reply)
+    "draftpool": (("ID",), ("Player Name",)),
     "playerbatstatsv2": (("player_id", "year"), ("league_id", "split_id", "team_id", "pa")),
     "playerpitchstatsv2": (("player_id", "year"), ("league_id", "split_id", "team_id", "bf")),
     "playerfieldstatsv2": (("player_id", "year"), ("league_id", "split_id", "team_id", "position")),
@@ -1158,6 +1161,19 @@ def fetch_draft(base, *, cache=False, fresh=False, token=None):
     """/draft rows (the live pick list; empty before the draft). Needs ID,
     Player Name and Overall."""
     return _fetch_csv(base, f"{base}/draft", "draft", cache, fresh, token, allow_empty=True)
+
+
+def fetch_draftpool(base, *, cache=False, fresh=False, token=None):
+    """/draftpool/ rows: the players of the league's current (or just finished) draft class.
+    Needs ID; warns when Player Name is missing. An empty reply is no rows (no pool yet).
+    Every other column of the reply is kept in the row as sent.
+
+    UNVERIFIED SHAPE: no live reply has been saved. The columns ("ID","Player Name") are what
+    ootp-dashboard's model/src/draftpool.py parses; a note in the research workspace says the
+    endpoint may now take the league token and carry draft demands. Like every request here it
+    carries the saved league token on its own. cache=True fits a caller that only needs the class
+    list: it changes with the in-game date, so the date-keyed copy is reused for up to 6 hours."""
+    return _fetch_csv(base, f"{base}/draftpool/", "draftpool", cache, fresh, token, allow_empty=True)
 
 
 def fetch_lgdata(base, *, cache=False, fresh=False, token=None):
