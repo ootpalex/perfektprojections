@@ -1,0 +1,101 @@
+diff --git a/tgs-viz/src/lib/positionalStrength.js b/tgs-viz/src/lib/positionalStrength.js
+index 7205ad6..5592dad 100644
+--- a/tgs-viz/src/lib/positionalStrength.js
++++ b/tgs-viz/src/lib/positionalStrength.js
+@@ -37,6 +37,14 @@
+  * this module; the replacement offsets appear only to convert an empty slot into
+  * its WAA equivalent.
+  *
++ * OPTIONAL SLOT SHARES (off by default). options.slotShares = { C:[..], '1B':[..], .., DH:[..], SP:[..], RP:[..] }
++ * replaces the starter-only / equal-weight score with MEASURED playing-time shares by depth rank
++ * (docs/phase2/slot_shares.json, tools/slot_shares.py). Bats: s1*starter + s2*next-up + (1-s1-s2)*replacement
++ * body; arms: sum over the first shares.length arms of share*WAA. A depth slot (the bat's next-up, an SP
++ * beyond the rotation) is floored at the replacement body, because the next-man-up pass can force a bench bat
++ * into a slot he cannot field (WAA -5 to -10) and no club plays him; an absent arm is charged at replacement.
++ * Left unset, every score below is exactly what it was.
++ *
+  * LENSES: 'mlb' scores the current major-league club (Lev === 'MLB') off the
+  * weighted columns; 'farm' scores everything below the majors off the engine's
+  * POTENTIAL columns ('C WAA P' …, 'WAP', 'WAP RP') — the raw scouting ceiling,
+@@ -105,7 +113,7 @@ const _num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : n
+  * Bat side of one org: the everyday assignment (score) plus the assignment of
+  * whoever is left (next man up, reported but never blended in).
+  */
+-function batGroups(teamHitters, split, replWAA) {
++function batGroups(teamHitters, split, replWAA, shares = null) {
+   const scored = teamHitters.map(h => ({ ...h, _positions: getEligiblePositions(h) }));
+   const starters = optimalPositionAssignment(scored, split).assignments;
+   const startIds = new Set(Object.values(starters).map(_idOf));
+@@ -125,6 +133,12 @@ function batGroups(teamHitters, split, replWAA) {
+       top: filled ? { name: s.Name, waa: sWAA, age: _num(s.Age), lev: s.Lev } : null,
+       depth: Number.isFinite(bWAA) ? { name: b.Name, waa: bWAA, age: _num(b.Age), lev: b.Lev } : null,
+     };
++    const sh = shares && shares[pos];
++    if (sh) {                         // measured depth weighting (gated; see header)
++      const w1 = sh[0], w2 = sh[1] || 0;
++      const next = out[pos].depth ? Math.max(out[pos].depth.waa, replWAA) : replWAA;
++      out[pos].waa = w1 * out[pos].waa + w2 * next + (1 - w1 - w2) * replWAA;
++    }
+   }
+   return out;
+ }
+@@ -135,7 +149,7 @@ function batGroups(teamHitters, split, replWAA) {
+  * comes out of whoever is left. Slots the org cannot fill are charged at the
+  * league's org replacement level for that role.
+  */
+-function armGroups(teamPitchers, lens, repl) {
++function armGroups(teamPitchers, lens, repl, shares = null) {
+   const scored = teamPitchers.map(p => {
+     const pos = (p.POS || '').toUpperCase();
+     return {
+@@ -155,11 +169,17 @@ function armGroups(teamPitchers, lens, repl) {
+     .filter(x => !spIds.has(_idOf(x.p)) && x.rp !== null)
+     .sort((a, b) => b.rp - a.rp);
+ 
+-  const group = (sorted, key, slots, replRole) => {
++  const group = (sorted, key, slots, replRole, w = null) => {
+     const picked = sorted.slice(0, slots);
+     const vals = picked.map(x => x[key]);
+     const missing = slots - vals.length;
+-    const waa = vals.reduce((s, v) => s + v, 0) + missing * -replRole;
++    let waa = vals.reduce((s, v) => s + v, 0) + missing * -replRole;
++    if (w) {                          // measured depth weighting (gated; see header)
++      waa = w.reduce((s, wk, k) => {
++        const v = k < sorted.length ? sorted[k][key] : -replRole;
++        return s + wk * (k < slots ? v : Math.max(v, -replRole));
++      }, 0);
++    }
+     const one = (x) => (x ? { name: x.p.Name, waa: x[key], age: _num(x.p.Age), lev: x.p.Lev } : null);
+     return {
+       waa,
+@@ -173,8 +193,8 @@ function armGroups(teamPitchers, lens, repl) {
+   };
+ 
+   return {
+-    SP: group(spSorted, 'sp', 5, repl.sp),
+-    RP: group(rpSorted, 'rp', 8, repl.rp),
++    SP: group(spSorted, 'sp', 5, repl.sp, shares && shares.SP),
++    RP: group(rpSorted, 'rp', 8, repl.rp, shares && shares.RP),
+   };
+ }
+ 
+@@ -198,7 +218,7 @@ function moments(values) {
+  *   summary[pos]     = { mean, sd, best, worst, teamCount }
+  */
+ export function buildPositionalStrength(hitters = [], pitchers = [], options = {}) {
+-  const { league = null, knownTeams = null, lens: lensKey = DEFAULT_LENS } = options;
++  const { league = null, knownTeams = null, lens: lensKey = DEFAULT_LENS, slotShares = null } = options;
+   const lens = LENSES[lensKey] || LENSES[DEFAULT_LENS];
+ 
+   // Team set comes from the FULL pools so it doesn't shrink when a lens is
+@@ -221,8 +241,8 @@ export function buildPositionalStrength(hitters = [], pitchers = [], options = {
+ 
+   const cells = {};
+   for (const team of teams) {
+-    const bats = batGroups(byOrgH[team] || [], lens.split, replBatWAA);
+-    const arms = armGroups(byOrgP[team] || [], lens, repl);
++    const bats = batGroups(byOrgH[team] || [], lens.split, replBatWAA, slotShares);
++    const arms = armGroups(byOrgP[team] || [], lens, repl, slotShares);
+     cells[team] = { ...bats, ...arms };
+   }
+ 

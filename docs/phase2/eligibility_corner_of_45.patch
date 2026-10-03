@@ -1,0 +1,32 @@
+diff --git a/tgs-viz/engine/hitters.py b/tgs-viz/engine/hitters.py
+index 6bc8adc..5d633bc 100644
+--- a/tgs-viz/engine/hitters.py
++++ b/tgs-viz/engine/hitters.py
+@@ -93,6 +93,12 @@ def piece(r, anchor, slope_hi, int_hi, slope_lo, int_lo):
+ # each league's calibration archive (career SB% by STE bucket, regulars).
+ SB_CAP = {"TGS": 0.88, "BLM": 0.888}
+ 
++# Corner-OF eligibility floor (OF RNG), by calibration league; the sheet's 50 is the default.
++# Real innings (docs/phase2/eligibility.md): at 50, BLM / SSB leave 12.5% of LF and 7.6% of RF
++# innings with ineligible players (2.7% / 0.9% at 45); TGS leaves 2.3% / 2.0%, so TGS keeps 50.
++# SSB and RG run on the BLM basis, so they follow the "BLM" key. INTENTIONAL divergence from the sheet.
++OF_CORNER_MIN = {"BLM": 45}
++
+ 
+ def _interp_knots(knots, r):
+     """Piecewise-linear eval of sorted [[rating, value], ...]; flat beyond ends."""
+@@ -380,12 +386,13 @@ def compute(p, dp, filt, park, league="TGS", currency=None, tails=None, fielding
+             out[f"{pos} WAA {suf}"] = (rp[pos] + BSR + BatR + g(posadj[pos])) / H30
+         out[f"DH WAA {suf}"] = (BSR * 0.98 + out[f"DH BatR {suf}"] + g("W10")) / H30
+     # Max WAA across eligible positions (eligibility from rating thresholds)
++    OFC = OF_CORNER_MIN.get(league, 50)
+     elig = {
+         "C": CFRM >= 45, "1B": HTS > 179 and IFR > 20,
+         "2B": IFR >= 50 and p.get("T") == "R" and TDP >= 45,
+         "3B": IFR >= 40 and IFA >= 50 and p.get("T") == "R",
+         "SS": IFR >= 60 and IFA >= 50 and p.get("T") == "R",
+-        "LF": OFR >= 50, "CF": OFR >= 60, "RF": OFR >= 50, "DH": True,
++        "LF": OFR >= OFC, "CF": OFR >= 60, "RF": OFR >= OFC, "DH": True,
+     }
+     out["_eligible_pos"] = {k for k, v in elig.items() if v}
+     for pos in ("C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"):
