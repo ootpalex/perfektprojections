@@ -23,6 +23,9 @@ the current scurves.json as it is.
 
     python tgs-viz/engine/promote_scurves.py --league TGS
     python tgs-viz/engine/promote_scurves.py --league BLM --calib-dir <copy of calib/BLM>
+
+--three-way (GATED, Phase 2 row 5; default off): also offer the piecewise family when the preview
+carries one (scurve_fit.py --pw). See choose3(). A preview without it gives choose()'s answer.
 """
 import os
 import sys
@@ -80,8 +83,39 @@ def choose(b):
                         f"needs more than {MARGIN:.0%})")
 
 
+def choose3(b):
+    """Three-way variant of choose() (Phase 2 row 5, GATED: only `--three-way` calls it).
+
+    The same margin rule, applied in sequence: the two-line is the incumbent; the S-curve replaces
+    it only when monotone and more than MARGIN better (exactly choose()); the piecewise family
+    (`b["piecewise"]`, written by `scurve_fit.py --pw`) then replaces whichever is current only when
+    monotone and more than MARGIN better than it. So a tie never switches the curve. A preview block
+    with no "piecewise" key gets exactly choose()'s answer, so nothing changes until a preview
+    carries one. ('S-curve' | 'piecewise' | 'two-line', reason)."""
+    pw = b.get("piecewise")
+    g3 = (pw or {}).get("live_gate3")
+    if not g3:
+        return choose(b)
+    r = g3["rmse"]
+    best = "two-line"
+    cur = r["twoline"]
+    steps = []
+    if b.get("monotone_ok") is True and cur > 0 and r["sigmoid"] < (1.0 - MARGIN) * cur:
+        steps.append(f"S-curve {1.0 - r['sigmoid'] / cur:+.1%} vs two-line")
+        best, cur = "S-curve", r["sigmoid"]
+    if pw.get("monotone_ok") is True and cur > 0 and r["piecewise"] < (1.0 - MARGIN) * cur:
+        steps.append(f"piecewise {1.0 - r['piecewise'] / cur:+.1%} vs {best}")
+        best, cur = "piecewise", r["piecewise"]
+    desc = (f"live RMSE two-line {r['twoline']:.5f}, S-curve {r['sigmoid']:.5f}, "
+            f"piecewise {r['piecewise']:.5f}")
+    if steps:
+        return best, f"{desc} ({'; '.join(steps)})"
+    return best, f"{desc} (no challenger more than {MARGIN:.0%} better, or not monotone)"
+
+
 def main():
     league = sys.argv[sys.argv.index("--league") + 1] if "--league" in sys.argv else "TGS"
+    three = "--three-way" in sys.argv   # GATED (Phase 2 row 5): off by default
     cal = (sys.argv[sys.argv.index("--calib-dir") + 1] if "--calib-dir" in sys.argv
            else os.path.join(HERE, "calib", league))
     prev_p, live_p = os.path.join(cal, "scurves-preview.json"), os.path.join(cal, "scurves.json")
@@ -114,20 +148,26 @@ def main():
             b = blocks.get(blk)
             if b is None:
                 continue
-            curve, why = choose(b)
+            curve, why = (choose3 if three else choose)(b)
             rd["curve"][blk] = curve
             if curve == "S-curve":
-                keep[blk] = b
+                keep[blk] = {k: v for k, v in b.items() if k != "piecewise"} if three else b
                 picked.append(f"{role} {blk}")
+            elif curve == "piecewise":
+                keep[blk] = b["piecewise"]
+                picked.append(f"{role} {blk} (piecewise)")
             print(f"    {role} {blk:4} -> {curve:8}  {why}")
         rd["blocks"] = keep
-        if "SO" not in keep:
+        if "SO" not in keep or keep["SO"].get("type") == "piecewise":
             # the live K%-by-STU ladder plots the S-curve's SO block, which is not live here
             rd.pop("live_k_by_stu", None)
             rd.pop("k_gap_45_50", None)
     live["promoted_at"] = time.strftime("%Y-%m-%d %H:%M")
     live["gate"] = (f"per block on the live season: level-matched bucket RMSE, "
                     f"S-curve only when more than {MARGIN:.0%} better")
+    if three:
+        live["gate"] = (f"per block on the live season: level-matched bucket RMSE, S-curve or piecewise "
+                        f"only when more than {MARGIN:.0%} better than the two-line, lowest RMSE wins")
 
     if os.path.exists(live_p):
         shutil.copy2(live_p, live_p + ".bak-" + time.strftime("%Y%m%d-%H%M%S"))
