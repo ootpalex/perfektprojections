@@ -37,11 +37,19 @@ def local_settings_path():
 
 # ---------------------------------------------------------------- process identity (7.6)
 
+WIN = sys.platform == "win32"
+if not WIN:   # the real joblock's POSIX process identity and kill (stdlib only)
+    sys.path.insert(0, str(TGS_VIZ / "tools"))
+    import joblock as _JL  # noqa: E402
+
+
 def proc_start_time(pid):
     try:
         pid = int(pid)
     except (TypeError, ValueError):
         return None
+    if not WIN:
+        return _JL.proc_start_time(pid)
     k32 = ctypes.WinDLL("kernel32", use_last_error=True)
     k32.OpenProcess.restype = ctypes.c_void_p
     h = k32.OpenProcess(0x1000, False, pid)
@@ -251,7 +259,11 @@ class Job:
             tmp = LOCKS / f"{name}.json.{self.pid}.tmp"
             tmp.write_text(json.dumps(rec), encoding="utf-8")
             try:
-                os.rename(tmp, target)
+                if WIN:
+                    os.rename(tmp, target)
+                else:
+                    os.link(tmp, target)     # POSIX rename overwrites; link fails when target exists
+                    tmp.unlink(missing_ok=True)
                 self.locks.append(name)
                 self.state["locks_held"] = list(self.locks)
                 self.event("lock", name=name, action="taken")
@@ -498,6 +510,10 @@ def launch(job_dir):
     log = open(Path(job_dir) / "runner.log", "ab")
     flags = 0x00000008 | 0x00000200 | 0x01000000  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB
     argv = [sys.executable, str(Path(__file__).resolve()), "--job", str(job_dir)]
+    if not WIN:
+        subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, close_fds=True,
+                         start_new_session=True)
+        return 0
     try:
         subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, close_fds=True, creationflags=flags)
     except OSError:
@@ -560,7 +576,9 @@ def lock_status():
 
 def kill(job_id):
     entry = read_json(ACTIVE / f"{job_id}.json")
-    if entry and alive(entry):
+    if entry and alive(entry) and not WIN:
+        _JL.posix_kill_tree(entry["pid"])
+    elif entry and alive(entry):
         subprocess.call(["taskkill", "/PID", str(entry["pid"]), "/T", "/F"], stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL, creationflags=0x08000000)
     sp = JOBS / job_id / "state.json"

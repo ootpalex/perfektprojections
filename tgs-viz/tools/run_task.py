@@ -839,7 +839,7 @@ class Engine:
             reader = None
         else:
             proc = subprocess.Popen(argv, cwd=REPO, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT,
+                                    stderr=subprocess.STDOUT, start_new_session=not WIN,
                                     creationflags=(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP) if WIN else 0)
             reader = threading.Thread(target=self._read_child, args=(proc, capture), daemon=True)
             reader.start()
@@ -886,6 +886,9 @@ class Engine:
             self.sink.flush_carry()
 
     def kill_tree(self, pid):
+        if not WIN:
+            JL.posix_kill_tree(pid)
+            return
         try:
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
@@ -1909,7 +1912,7 @@ def cmd_launch(job_dir):
     try:
         try:
             subprocess.Popen(argv, cwd=REPO, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
-                             close_fds=True, creationflags=flags)
+                             close_fds=True, creationflags=flags, start_new_session=not WIN)
         except OSError:
             if not WIN:
                 raise
@@ -1940,8 +1943,12 @@ def cmd_kill(job_id):
         return {"ok": True, "status": st or "lost"}
     pid = entry["pid"]
     try:
-        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                       stdin=subprocess.DEVNULL, creationflags=CREATE_NO_WINDOW if WIN else 0, timeout=30)
+        if WIN:
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, creationflags=CREATE_NO_WINDOW,
+                           timeout=30)
+        else:
+            JL.posix_kill_tree(pid)
     except (OSError, subprocess.SubprocessError):
         pass
     for _ in range(50):

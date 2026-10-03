@@ -204,11 +204,111 @@ def proc_start_time(pid):
 
 
 def _posix_start_time(pid):
+    if sys.platform == "darwin":
+        return _darwin_start_time(pid)
     try:
         with open(f"/proc/{pid}/stat", "r") as f:
             return int(f.read().rsplit(")", 1)[1].split()[19])
     except (OSError, ValueError, IndexError):
         return None
+
+
+_LIBPROC = []
+
+
+def _darwin_start_time(pid):
+    """Start time in microseconds from libproc proc_pidinfo(PROC_PIDTBSDINFO), or None
+    when no such process runs or it is a zombie (macOS has no /proc)."""
+    import ctypes
+
+    class BsdInfo(ctypes.Structure):           # struct proc_bsdinfo, <sys/proc_info.h>
+        _fields_ = [("flags", ctypes.c_uint32), ("status", ctypes.c_uint32), ("xstatus", ctypes.c_uint32),
+                    ("pid", ctypes.c_uint32), ("ppid", ctypes.c_uint32), ("ids", ctypes.c_uint32 * 6),
+                    ("rfu_1", ctypes.c_uint32), ("comm", ctypes.c_char * 16), ("name", ctypes.c_char * 32),
+                    ("nfiles", ctypes.c_uint32), ("pgid", ctypes.c_uint32), ("pjobc", ctypes.c_uint32),
+                    ("tdev", ctypes.c_uint32), ("tpgid", ctypes.c_uint32), ("nice", ctypes.c_int32),
+                    ("start_tvsec", ctypes.c_uint64), ("start_tvusec", ctypes.c_uint64)]
+
+    PROC_PIDTBSDINFO, SZOMB = 3, 5
+    try:
+        if not _LIBPROC:
+            lib = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+            lib.proc_pidinfo.restype = ctypes.c_int
+            lib.proc_pidinfo.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int]
+            _LIBPROC.append(lib)
+        info = BsdInfo()
+        n = _LIBPROC[0].proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, ctypes.byref(info), ctypes.sizeof(info))
+    except (OSError, AttributeError):
+        return None
+    if n != ctypes.sizeof(info) or info.pid != pid or info.status == SZOMB:
+        return None
+    return info.start_tvsec * 1_000_000 + info.start_tvusec
+
+
+def posix_kill_tree(pid, grace=3.0):
+    """POSIX twin of taskkill /PID pid /T /F: SIGTERM the process, its descendants (from
+    ps) and the process groups they lead, then SIGKILL whatever is left after grace
+    seconds. Never signals the caller's own process group."""
+    import signal
+    import subprocess
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return
+    try:
+        out = subprocess.run(["ps", "-A", "-o", "pid=", "-o", "ppid="], capture_output=True, text=True,
+                             timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        out = ""
+    kids = {}
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            kids.setdefault(int(parts[1]), []).append(int(parts[0]))
+    pids, todo = [], [pid]
+    while todo:
+        p = todo.pop()
+        if p not in pids:
+            pids.append(p)
+            todo.extend(kids.get(p, []))
+    own = os.getpgrp()
+    groups = set()
+    for p in pids:
+        try:
+            if os.getpgid(p) == p and p != own:
+                groups.add(p)
+        except OSError:
+            pass
+
+    def send(sig):
+        for g in groups:
+            try:
+                os.killpg(g, sig)
+            except OSError:
+                pass
+        for p in pids:
+            try:
+                os.kill(p, sig)
+            except OSError:
+                pass
+
+    def running(p):
+        try:
+            os.kill(p, 0)
+        except OSError:
+            return False
+        try:                                   # a child of ours that exited is a zombie: reap it
+            done, _ = os.waitpid(p, os.WNOHANG)
+            return done == 0
+        except ChildProcessError:
+            return proc_start_time(p) is not None
+
+    send(signal.SIGTERM)
+    end = time.time() + grace
+    while time.time() < end and any(running(p) for p in pids):
+        time.sleep(0.05)
+    if any(running(p) for p in pids):
+        send(signal.SIGKILL)
 
 
 def alive(rec):
@@ -294,7 +394,10 @@ def take_lock(name, holder):
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(rec, f)
             try:
-                os.rename(tmp, path)
+                if sys.platform == "win32":
+                    os.rename(tmp, path)
+                else:
+                    os.link(tmp, path)      # POSIX rename overwrites; link fails when path exists
                 return True, None
             except FileExistsError:
                 pass
