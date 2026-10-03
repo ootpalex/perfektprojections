@@ -341,3 +341,41 @@ class GateAndFiles(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LevelDhAndOverlay(unittest.TestCase):
+    """Decision 2026-10-03 (PHASE2_STATUS): the engine prices SSB with its own spectrum, at his
+    engine's level (no field-8 centring) and his DH rule."""
+
+    def test_offence_level_with_no_defence_weight_reproduces_his_cells(self):
+        d = os.path.join(TGS, "engine", "calib", "BLM", "metadata_inputs")
+        if not os.path.isdir(d):
+            self.skipTest("no BLM metadata_inputs")
+        blm = M.load_season(d, 2058)
+        r = M.pos_adj_multiyear([blm], w=0.0, lf_rf="pooled", level="offence", dh="offence")
+        with open(os.path.join(TGS, "engine", "calib", "BLM", "metadata-latest.json"), encoding="utf-8") as fh:
+            live = json.load(fh)
+        live = live.get("cells", live)
+        for k, v in r["P"].items():
+            self.assertAlmostEqual(v, live[k], places=9, msg=k)
+
+    def test_blend_switches(self):
+        off = {p: float(i) for i, p in enumerate(M.NINE)}
+        same, _ = M.blend(None, off, 0.0, "split", level="offence", dh="offence")
+        self.assertEqual({p: round(v, 12) for p, v in same.items()}, off)
+        tied, _ = M.blend(None, dict(off, DH=100.0), 0.0, "split", level="offence", dh="min")
+        self.assertAlmostEqual(tied["DH"], min(off[p] for p in M.POSITIONS))
+        with self.assertRaises(ValueError):
+            M.blend(None, off, level="nope")
+
+    def test_overlay_cells_reach_pricing(self):
+        sys.path.insert(0, os.path.join(TGS, "ingest"))
+        import ratings as R
+        cells = R.live_pos_adj("SSB")
+        self.assertEqual(sorted(cells, key=lambda k: int(k[1:])), [f"W{i}" for i in range(2, 11)])
+        self.assertEqual(R.live_pos_adj("BLM"), {})              # BLM prices with its own sheet cells
+        cur = {"hitter_cells": {"H30": 10.0, "W2": 1.0}, "pitcher_cells": {"H30": 10.0}}
+        out = R.with_hitter_cells(cur, {"W2": 2.0, "W3": 3.0})
+        self.assertEqual(out["hitter_cells"], {"H30": 10.0, "W2": 2.0, "W3": 3.0})
+        self.assertEqual(cur["hitter_cells"]["W2"], 1.0)            # the input is not changed
+        self.assertIs(R.with_hitter_cells(cur, {}), cur)

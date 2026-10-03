@@ -423,6 +423,10 @@ def main():
         if not own:
             print(f"  engine calibration: {calib} (the sheets and calib layers of {calib})")
         currency = R.live_currency(calib)   # audit D2/D9: fitted currency layer (both leagues)
+        pos_adj = R.live_pos_adj(league)    # Phase 2 row 1: the league's own positional adjustments
+        if pos_adj:
+            currency = R.with_hitter_cells(currency, pos_adj)
+            print(f"  positional adjustments: {league}'s own (engine/calib/pos_adj_overlay.json)")
         print(f"  currency layer: {'FITTED (D2 exponents + D9 RPW, calib/' + calib + '/currency.json)' if currency else 'sheet constants (no currency.json)'}")
         tails = R.live_hitter_tails(calib)      # audit D4: measured tail corrections (both leagues)
         fielding = R.live_fielding(calib)       # audit D3: monotone piecewise PM% (both leagues)

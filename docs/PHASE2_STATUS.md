@@ -60,7 +60,24 @@ report mismatches **identically on his untouched `upstream/main`** on this Mac (
   SSB (`LEAGUE_TEAMS`, `pages/TeamStandingsPage.jsx:14`), so SSB's board ranks 50 clubs incl. 22
   foreign ones at replacement level.
 
-## Decisions (yours)
+## Decisions taken (2026-10-03)
+
+The user took every recommendation below; BLM moved to OOTP 27 in 2058.
+
+| Row | Decision | What was done |
+|---|---|---|
+| 1 | SSB's own positional adjustments; batting from all seasons, defence from OOTP 27 seasons only (until 3 such seasons); LF/RF pooled; **his engine's level (no centring — parked with the Phase 1 thresholds)** | `pos_adj_multiyear.py --overlay` writes `engine/calib/pos_adj_overlay.json`; `ratings.live_pos_adj` lays SSB's W2..W10 over BLM's cells at pricing (`refresh.py`). SSB: C +13.81, 1B −9.15, 2B −0.09, 3B +0.46, SS +5.84, LF/RF −4.40, CF +3.26, DH −10.22 runs (BLM's: 9.65 / −4.87 / −2.14 / −0.20 / 6.93 / −3.77 / 2.15 / −6.80). Per player: C +0.41, 1B −0.43, DH −0.34, 2B +0.20 wins, others ≤ 0.11; 39 of 475 SSB MLB best positions change. Rebuilt SSB: every position's WAA moved by exactly its predicted amount; pitchers byte-identical. With no defence weight the switches reproduce his BLM cells exactly. |
+| 1 | DH rule (7c) | **Moot for SSB:** at his level SSB's offence DH (−10.22) is already below every position, so "tie to lowest" and "offence only" give the same value. The overlay uses his rule (`--dh offence`). Revisit only if a league's offence DH sits above its lowest position. |
+| 2 | Out values derived per league | `metadata_calibrate --derived-out-values`; Recalibrate BLM passes it. 0.75 / 0.90 → 0.7013 / 0.8341 at the next recalibration (dry run: only F38 / F39 change). |
+| 3 | Corner-OF floor 45 on BLM basis; TGS 50 | `hitters.OF_CORNER_MIN = {"BLM": 45}`. SSB rebuilt: only LF/RF Eligible flags change (56 of 475 MLB). BLM / RG at their next pull. |
+| 4 | Keep his Best Pos; no Option B column | No change. |
+| 5 | Curves: don't wire | No change; refit our family when his sim CSVs arrive. |
+| 6 | UBR: keep his | No change. |
+| 10 | Fielding check after each banked season | `referee_fielding.py` `actuals:latest` + `--pull auto` + app-data heights; new task `bank_season.<ID>` for wizard leagues (SSB). His combined Bank Season unchanged. |
+| 12 | Engine start years | `settings.local.json`: SSB 2043, BLM 2058. |
+| 14 | Slot weights: don't wire | No change. |
+
+## Decisions as presented (for the record)
 
 | Row | Decision | Recommendation |
 |---|---|---|

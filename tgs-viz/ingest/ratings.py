@@ -290,6 +290,30 @@ def live_role_stuff(league):
     return P.load_role_stuff(path) if os.path.exists(path) else None
 
 
+def live_pos_adj(league):
+    """Phase 2 row 1 (decision 2026-10-03): the APP league's own positional adjustments as hitter
+    cells W2..W10 from engine/calib/pos_adj_overlay.json, or {} when it has none (it then prices
+    with its basis' cells). Callers lay them over the basis currency with with_hitter_cells."""
+    p = os.path.join(ENGINE, "calib", "pos_adj_overlay.json")
+    try:
+        with open(p, encoding="utf-8") as fh:
+            ent = json.load(fh).get(str(league)) or {}
+    except (OSError, ValueError):
+        return {}
+    cells = ent.get("cells") or {}
+    return {k: float(v) for k, v in cells.items() if re.fullmatch(r"W([2-9]|10)", k)}
+
+
+def with_hitter_cells(currency, cells):
+    """A copy of a currency dict with extra hitter cells laid over its own (cells win). The
+    currency file itself is never changed, so no calibration fingerprint moves."""
+    if not cells:
+        return currency
+    cur = dict(currency or {})
+    cur["hitter_cells"] = {**(cur.get("hitter_cells") or {}), **cells}
+    return cur
+
+
 def live_replacement(league):
     """Phase 1 (docs/PHASE1_AUDIT.md): the APP league's replacement credits from
     engine/calib/replacement.json ({"hitter","sp","rp","league","source"}), or None.

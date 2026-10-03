@@ -1,0 +1,38 @@
+{
+ "_about": "Per-app-league positional adjustments laid over the calibration basis' hitter cells (W2..W10, runs per standard season; catcher per 1000 IP). Written by engine/pos_adj_multiyear.py --overlay; read by ingest/ratings.live_pos_adj(). Kept outside calib/<LG>/ so no calibration fingerprint changes.",
+ "SSB": {
+  "cells": {
+   "W2": 13.808497606969711,
+   "W3": -9.151206454466244,
+   "W4": -0.08722893435140855,
+   "W5": 0.45799757243264994,
+   "W6": 5.84476240750625,
+   "W7": -4.396791860424948,
+   "W8": 3.2593206182018677,
+   "W9": -4.396791860424948,
+   "W10": -10.217829332442298
+  },
+  "seasons": [
+   2041,
+   2042,
+   2043
+  ],
+  "defence_from": 2043,
+  "n_switch_obs": 1335,
+  "rule": {
+   "blend_w_def": 0.5,
+   "lf_rf": "pooled",
+   "level": "offence",
+   "dh": "offence",
+   "h_def": 5.0,
+   "cut_def": 20,
+   "h_off": 2.5,
+   "cut_off": 8
+  },
+  "sources": [
+   "2041",
+   "2042",
+   "2043"
+  ]
+ }
+}

@@ -386,10 +386,15 @@ def bootstrap_se(obs_list, end, half_life=H_DEF, cut=CUT_DEF, n_boot=1000, seed=
 # ------------------------------------------------------------------ blend
 
 
-def blend(def7, off9, w=BLEND_W, lf_rf="split"):
+def blend(def7, off9, w=BLEND_W, lf_rf="split", level="field8", dh="min"):
     """def7: {pos: runs/1200 IP} on SEVEN or None. off9: offence {C,1B..RF,DH} in runs per 1200 IP
-    (C already converted). Returns (nine, parts): nine = blended spectrum, field-8 mean 0,
-    DH = min; parts has the intermediate stages for the audit."""
+    (C already converted). Returns (nine, parts): nine = blended spectrum; parts has the
+    intermediate stages for the audit.
+    level "field8": the 8 field positions average 0 (the dashboard's centring).
+    level "offence": the offence half's own level is kept (his metadata_calibrate convention:
+      offence runs vs the league average, uncentred) - with w = 0 this returns off9 exactly.
+    dh "min": DH tied to the lowest position (the dashboard). dh "offence": DH from offence
+      only (his pos_adj_calc)."""
     off7_mean = sum(off9[p] for p in SEVEN) / 7.0
     offc = {p: v - off7_mean for p, v in off9.items()}
     out = {}
@@ -401,8 +406,16 @@ def blend(def7, off9, w=BLEND_W, lf_rf="split"):
     elif lf_rf != "split":
         raise ValueError("lf_rf must be 'split' or 'pooled'")
     raw = dict(out)
-    out["DH"] = min(out["DH"], min(out[p] for p in POSITIONS))          # DH tied to the lowest position
-    f8 = sum(out[p] for p in POSITIONS) / 8.0
+    if dh == "min":
+        out["DH"] = min(out["DH"], min(out[p] for p in POSITIONS))      # DH tied to the lowest position
+    elif dh != "offence":
+        raise ValueError("dh must be 'min' or 'offence'")
+    if level == "field8":
+        f8 = sum(out[p] for p in POSITIONS) / 8.0
+    elif level == "offence":
+        f8 = -off7_mean                                                 # put the offence level back
+    else:
+        raise ValueError("level must be 'field8' or 'offence'")
     final = {p: out[p] - f8 for p in NINE}
     return final, {"offence_centred": offc, "blend_before_dh_rule": raw, "field8_mean_removed": f8}
 
@@ -478,7 +491,7 @@ def rf_arm_threshold(season, pos="RF"):
 
 def pos_adj_multiyear(seasons, h_def=H_DEF, cut_def=CUT_DEF, h_off=H_OFF, cut_off=CUT_OFF,
                       w=BLEND_W, lf_rf="split", rf_quirk=True, thirds_quirk=True, min_obs=MIN_OBS,
-                      def_from_year=None):
+                      def_from_year=None, level="field8", dh="min"):
     """The whole calculation for a list of seasons (load_* outputs). The window ends at the
     latest season in the list. def_from_year: only seasons from this year on feed the
     defence half (the offence half keeps every season) - for a game-engine boundary."""
@@ -491,7 +504,7 @@ def pos_adj_multiyear(seasons, h_def=H_DEF, cut_def=CUT_DEF, h_off=H_OFF, cut_of
     off1200["C"] = off_eng["C"] * 1200.0 / mc.STD_IP["C"]          # C to the 1200 IP common basis
     obs = [switcher_obs(s) for s in seasons if def_from_year is None or s["year"] >= def_from_year]
     def7, n_obs = solve_switcher(obs, end, h_def, cut_def, min_obs)
-    final, parts = blend(def7, off1200, w, lf_rf)
+    final, parts = blend(def7, off1200, w, lf_rf, level, dh)
     eng = to_engine_units(final)
     return {"end_year": end, "n_switch_obs": n_obs, "defence_runs_per_1200": def7,
             "offence_runs_engine_units": off_eng, "offence_runs_per_1200": off1200,
@@ -501,6 +514,49 @@ def pos_adj_multiyear(seasons, h_def=H_DEF, cut_def=CUT_DEF, h_off=H_OFF, cut_of
                                            for s in seasons if 0 <= end - s["year"] < cut_off},
                                "defence": {s["year"]: 0.5 ** ((end - s["year"]) / h_def)
                                            for s in seasons if 0 <= end - s["year"] < cut_def}}}
+
+
+OVERLAY_PATH = os.path.join(HERE, "calib", "pos_adj_overlay.json")
+WCELL = {"C": "W2", "1B": "W3", "2B": "W4", "3B": "W5", "SS": "W6", "LF": "W7", "CF": "W8", "RF": "W9", "DH": "W10"}
+
+
+def _short(label):
+    """A season source without the machine's home directory (repo-relative where possible)."""
+    label = str(label).replace("\\", "/")
+    for marker in ("ootp-dashboard/", "tgs-viz/"):
+        if marker in label:
+            return marker + label.split(marker, 1)[1]
+    return os.path.basename(label.rstrip("/"))
+
+
+def write_overlay(seasons, a, path=OVERLAY_PATH):
+    """The league's positional adjustments as hitter-sheet cells W2..W10 (= metadata P2..P10),
+    into engine/calib/pos_adj_overlay.json under --league. ingest/ratings.live_pos_adj() lays
+    them over the basis' cells when that league is priced (decision 2026-10-03, PHASE2_STATUS)."""
+    dfy = a.engine_first_season
+    r = pos_adj_multiyear(seasons, a.h_def, a.cut_def, a.h_off, a.cut_off, a.blend, a.lf_rf,
+                          def_from_year=dfy, level=a.level, dh=a.dh)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            table = json.load(fh)
+    except (OSError, ValueError):
+        table = {}
+    table.setdefault("_about", "Per-app-league positional adjustments laid over the calibration basis' "
+                     "hitter cells (W2..W10, runs per standard season; catcher per 1000 IP). Written by "
+                     "engine/pos_adj_multiyear.py --overlay; read by ingest/ratings.live_pos_adj(). Kept "
+                     "outside calib/<LG>/ so no calibration fingerprint changes.")
+    table[a.league] = {
+        "cells": {WCELL[p]: r["spectrum_engine_units"][p] for p in NINE},
+        "seasons": [s["year"] for s in seasons], "defence_from": dfy,
+        "n_switch_obs": r["n_switch_obs"],
+        "rule": {"blend_w_def": a.blend, "lf_rf": a.lf_rf, "level": a.level, "dh": a.dh,
+                 "h_def": a.h_def, "cut_def": a.cut_def, "h_off": a.h_off, "cut_off": a.cut_off},
+        "sources": [_short(s["label"]) for s in seasons],
+    }
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(table, fh, indent=1)
+        fh.write("\n")
+    print(f"wrote {a.league} into {path}: " + ", ".join(f"{p} {r['spectrum_engine_units'][p]:+.2f}" for p in NINE))
 
 
 def _variant(seasons, a, def_from_year=None):
@@ -544,6 +600,13 @@ def main():
     ap.add_argument("--blend", type=float, default=BLEND_W, help="weight on the defence half")
     ap.add_argument("--se", type=int, default=0, metavar="N", help="bootstrap the defence half N times")
     ap.add_argument("--out", help="write the candidate file here (the engine does not read it)")
+    ap.add_argument("--overlay", action="store_true",
+                    help="write ONE spectrum into engine/calib/pos_adj_overlay.json for --league (the "
+                         "values the engine prices that league with), using --lf-rf / --level / --dh and "
+                         "--engine-first-season as the defence window start")
+    ap.add_argument("--lf-rf", choices=("split", "pooled"), default="pooled")
+    ap.add_argument("--level", choices=("field8", "offence"), default="offence")
+    ap.add_argument("--dh", choices=("min", "offence"), default="offence")
     a = ap.parse_args()
     seasons = []
     for spec in a.season:
@@ -553,6 +616,9 @@ def main():
             s["engine"] = "current" if s["year"] >= a.engine_first_season else "old"
         seasons.append(s)
     seasons.sort(key=lambda s: s["year"])
+    if a.overlay:
+        write_overlay(seasons, a)
+        return
     variants = {"all_seasons": _variant(seasons, a)}
     cur = [s for s in seasons if s.get("engine") == "current"]
     if cur and len(cur) < len(seasons):
