@@ -225,6 +225,26 @@ export default function PlayerTable({
     return result.slice(0, maxRows);
   }, [players, search, posFilter, orgFilter, levelFilter, minWAA, sortKey, sortDir, maxRows]);
 
+  // Presentational: a column whose shown values are all numbers reads right-aligned
+  // (the mockup's .num). Text columns (Name, POS, ORG, …) stay left.
+  const numericCols = useMemo(() => {
+    const nums = new Set();
+    for (const col of visibleColumns) {
+      let seen = false;
+      let allNum = true;
+      for (const pl of displayPlayers) {
+        const v = pl[col];
+        if (v === null || v === undefined) continue;
+        const t = String(v).trim();
+        if (t === '' || t === '-' || t === '—') continue;
+        seen = true;
+        if (!Number.isFinite(Number(t))) { allNum = false; break; }
+      }
+      if (seen && allNum) nums.add(col);
+    }
+    return nums;
+  }, [visibleColumns, displayPlayers]);
+
   const handleSort = useCallback((key) => {
     setSortKey(prev => {
       if (prev === key) {
@@ -333,9 +353,9 @@ export default function PlayerTable({
                   onClick={() => handleSort(col)}
                   title={col}
                   aria-sort={sortKey === col ? (sortDir === 'desc' ? 'descending' : 'ascending') : undefined}
-                  className={[idx === 0 ? 'col-sticky' : '', sortKey === col ? 'sorted' : '', groupStarts.has(col) ? 'col-group-start' : ''].filter(Boolean).join(' ') || undefined}
+                  className={[idx === 0 ? 'col-sticky' : '', sortKey === col ? 'sorted' : '', groupStarts.has(col) ? 'col-group-start' : '', numericCols.has(col) ? 'num' : ''].filter(Boolean).join(' ') || undefined}
                 >
-                  <div className="flex items-center gap-1">
+                  <div className={`flex items-center gap-1 ${numericCols.has(col) ? 'justify-end' : ''}`}>
                     <span>{COLUMN_LABELS[col] || col}</span>
                     {sortKey === col && (
                       <span className="text-[10px]" aria-hidden="true">{sortDir === 'desc' ? '▼' : '▲'}</span>
@@ -375,7 +395,7 @@ export default function PlayerTable({
                     // (user, 2026-09-24).
                     const isName = col === 'Name';
                     const lvl = col === 'Lev' ? levelKey(raw) : null;
-                    const cellClass = [colorClass, idx === 0 ? 'col-sticky' : '', isName ? 'col-name' : '', groupStarts.has(col) ? 'col-group-start' : ''].filter(Boolean).join(' ') || undefined;
+                    const cellClass = [colorClass, idx === 0 ? 'col-sticky' : '', isName ? 'col-name' : '', groupStarts.has(col) ? 'col-group-start' : '', numericCols.has(col) ? 'num' : ''].filter(Boolean).join(' ') || undefined;
                     const cellTitle = title || (isName && raw ? String(raw) : undefined);
                     return (
                       <td key={col} className={cellClass} title={cellTitle}>

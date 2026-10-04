@@ -20,7 +20,6 @@ import ControlPage from './pages/ControlPage';
 import { useActiveJobs, useControlStatus, useAppConfig } from './lib/controlApi';
 import { loadRatingTrends } from './lib/ratingTrends';
 import { loadLeagueMetadata, pickGameDate } from './lib/gameDate';
-import { Loader2, AlertCircle } from 'lucide-react';
 
 // The dot next to Control: the most urgent active job. Warn = a job waits for
 // an answer, focus = one runs, muted = one only waits for its turn.
@@ -208,26 +207,25 @@ function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeC
 
 function LoadingScreen({ progress, league, full = true }) {
   return (
-    <div className={`flex items-center justify-center ${full ? 'h-screen' : 'h-full'} bg-slate-950`}>
+    <div className={`flex items-center justify-center ${full ? 'h-screen' : 'h-full'}`}>
       <div className="text-center space-y-4">
-        <Loader2 size={48} className="animate-spin text-blue-500 mx-auto" />
         <div>
-          <h2 className="text-xl font-bold text-white">Loading Player Data</h2>
-          <p className="text-sm text-slate-400 mt-1">
+          <h2 className="text-xl font-bold ns-text">Loading Player Data</h2>
+          <p className="text-sm ns-text-2 mt-1">
             {league ? `Loading ${league} league...` : 'Processing thousands of players...'}
           </p>
         </div>
         <div className="space-y-1.5 text-left">
           {Object.entries(progress).map(([key, status]) => (
             <div key={key} className="flex items-center gap-2 text-sm">
-              <span className={`w-2 h-2 rounded-full ${
-                status === 'loaded' ? 'bg-green-400' :
-                status === 'loading' ? 'bg-blue-400 animate-pulse' :
-                status === 'error' ? 'bg-red-400' :
-                'bg-slate-600'
+              <span className={`w-2 h-2 ${
+                status === 'loaded' ? 'bg-[var(--good)]' :
+                status === 'loading' ? 'bg-[var(--text)] animate-pulse' :
+                status === 'error' ? 'bg-[var(--bad)]' :
+                'bg-[var(--text-disabled)]'
               }`} />
-              <span className="text-slate-400 capitalize">{key.replace(/_/g, ' ')}</span>
-              <span className="text-xs text-slate-600">{status}</span>
+              <span className="ns-text-2 capitalize">{key.replace(/_/g, ' ')}</span>
+              <span className="text-xs ns-muted">{status}</span>
             </div>
           ))}
         </div>
@@ -239,18 +237,17 @@ function LoadingScreen({ progress, league, full = true }) {
 // Shown inside the app shell, so the league menu and Control stay usable.
 function ErrorPanel({ error }) {
   return (
-    <div className="flex items-center justify-center h-full bg-slate-950 p-6">
+    <div className="flex items-center justify-center h-full p-6">
       <div className="text-center space-y-4 max-w-md">
-        <AlertCircle size={48} className="text-red-400 mx-auto" />
         <div>
-          <h2 className="text-xl font-bold text-white">This league's data could not be loaded</h2>
-          <p className="text-sm text-red-400 mt-2">{error}</p>
+          <h2 className="text-xl font-bold ns-text">This league's data could not be loaded</h2>
+          <p className="text-sm ns-bad mt-2">{error}</p>
         </div>
-        <div className="text-sm text-slate-400 bg-slate-900 border border-slate-800 rounded-lg p-4 text-left">
+        <div className="ns-box ns-box-body text-sm ns-text-2 text-left">
           <p>
             Pick another league in the menu on the left, or open Control, then Setup check, to see what is missing.
           </p>
-          <Link to="/control/setup" className="inline-block mt-3 text-blue-400 hover:text-blue-300 font-semibold">
+          <Link to="/control/setup" className="ns-link inline-block mt-3">
             Open Setup check
           </Link>
         </div>

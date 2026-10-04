@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Stethoscope, Loader2, Play, Save, RotateCcw, KeyRound, RefreshCw } from 'lucide-react';
 import {
   useControlStatus, useCatalog, getDoctor, getSettings, patchSettings, resetLocalSettings, startJob,
   findTask, reloadPing, reloadCatalog, reprobePython,
@@ -10,9 +9,10 @@ import { Notice, ConfirmDialog } from './PromptCard';
 import TaskForm from './TaskForm';
 import JobPanel, { StatusDot } from './JobPanel';
 
-const fieldClass = 'w-full bg-slate-800 text-white text-sm rounded-lg px-3 py-2 border border-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';
-const card = 'bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3';
-const btn = 'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg disabled:opacity-40';
+const fieldClass = 'ns-input w-full';
+const card = 'ns-card space-y-3';
+const btn = 'ns-btn ns-btn-sm';
+const btnPrimary = 'ns-btn ns-btn-sm ns-btn-primary';
 
 const RESET_TEXT = 'This renames settings.local.json to settings.local.bad-<time>.json and goes back to the default settings. '
   + 'No league data is touched. Leagues you added with New League keep their data and stay in the league menu, but their '
@@ -40,26 +40,26 @@ const onThisPage = (text) => String(text).replace(/ on the Setup page/g, ' below
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 function PythonLine({ python }) {
-  if (!python) return <p className="text-sm text-slate-400">Python: checking...</p>;
+  if (!python) return <p className="text-sm ns-text-2">Python: checking...</p>;
   if (python.ok) {
     const v = String(python.version || '').split(/\s/)[0];
-    return <p className="text-sm text-slate-200">Python: {v || 'found'} <span className="text-slate-500">({argvToText(python.argv)})</span></p>;
+    return <p className="text-sm ns-text">Python: {v || 'found'} <span className="ns-muted">({argvToText(python.argv)})</span></p>;
   }
   const known = python.code === 'ENOENT' || String(python.code) === '9009';
   return (
     <div className="text-sm space-y-0.5">
-      <p className="text-red-300">Python does not start{python.argv ? ` (${argvToText(python.argv)})` : ''}.</p>
-      {!known && python.message && <p className="text-xs text-slate-400">{python.message}</p>}
-      <p className="text-amber-200">{PY_FIX}</p>
+      <p className="ns-bad">Python does not start{python.argv ? ` (${argvToText(python.argv)})` : ''}.</p>
+      {!known && python.message && <p className="text-xs ns-text-2">{python.message}</p>}
+      <p className="ns-warn">{PY_FIX}</p>
     </div>
   );
 }
 
 function DoctorRows({ result, catalog, onRunTask }) {
   const rows = [...(result?.checks || [])].sort((a, b) => (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9));
-  if (!rows.length) return <p className="text-xs text-slate-500">No checks came back.</p>;
+  if (!rows.length) return <p className="text-xs ns-muted">No checks came back.</p>;
   return (
-    <ul className="divide-y divide-slate-800">
+    <ul className="divide-y divide-[var(--line)]">
       {rows.map(r => {
         const task = r.task ? findTask(catalog, r.task) : null;
         const dot = r.status === 'fail' ? 'failed' : r.status === 'warn' ? 'partial' : r.status === 'ok' ? 'done' : 'skipped';
@@ -67,15 +67,15 @@ function DoctorRows({ result, catalog, onRunTask }) {
           <li key={r.id} className="py-2 flex items-start gap-3" data-check={r.id} data-check-status={r.status}>
             <span className="mt-1.5"><StatusDot status={dot} /></span>
             <div className="flex-1 min-w-0">
-              <p className="text-sm text-slate-200">
+              <p className="text-sm ns-text">
                 <span className="font-semibold">{r.title}</span>
-                {r.detail && <span className="text-slate-400">: {r.detail}</span>}
+                {r.detail && <span className="ns-text-2">: {r.detail}</span>}
               </p>
-              {r.fix && r.status !== 'ok' && <p className="text-xs text-amber-200/80 mt-0.5">{onThisPage(r.fix)}</p>}
+              {r.fix && r.status !== 'ok' && <p className="text-xs ns-warn mt-0.5">{onThisPage(r.fix)}</p>}
             </div>
             {task && r.status !== 'ok' && (
-              <button onClick={() => onRunTask(task)} className={`${btn} bg-blue-600 text-white hover:bg-blue-500 shrink-0`}>
-                <Play size={12} /> {task.title}
+              <button onClick={() => onRunTask(task)} className={`${btnPrimary} shrink-0`}>
+                {task.title}
               </button>
             )}
           </li>
@@ -142,8 +142,8 @@ function SettingsForm({ onSaved, catalog, onRunTask }) {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  if (loadErr) return <p className="text-xs text-red-400">The settings did not load: {loadErr}</p>;
-  if (!data) return <p className="text-xs text-slate-500 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Loading the settings...</p>;
+  if (loadErr) return <p className="text-xs ns-bad">The settings did not load: {loadErr}</p>;
+  if (!data) return <p className="text-xs ns-muted flex items-center gap-1.5">Loading the settings...</p>;
 
   const set = (k, v) => { setForm(prev => ({ ...prev, [k]: v })); setFieldErr(prev => ({ ...prev, [k]: undefined })); setMsg(null); };
   const leagues = Object.keys(data.merged?.leagues || {});
@@ -184,17 +184,17 @@ function SettingsForm({ onSaved, catalog, onRunTask }) {
 
   const input = (k, label, hint) => (
     <div className="space-y-1" data-setting={k}>
-      <label htmlFor={`set-${k}`} className="block text-xs font-semibold text-slate-300">{label}</label>
+      <label htmlFor={`set-${k}`} className="block ns-label">{label}</label>
       <input id={`set-${k}`} value={form[k] ?? ''} onChange={(e) => set(k, e.target.value)} className={fieldClass} spellCheck={false} autoComplete="off" />
-      {hint && <p className="text-[11px] text-slate-500">{hint}</p>}
-      {fieldErr[k] && <pre className="text-[11px] text-red-400 whitespace-pre-wrap font-sans">{fieldErr[k]}</pre>}
+      {hint && <p className="text-[11px] ns-muted">{hint}</p>}
+      {fieldErr[k] && <pre className="text-[11px] ns-bad whitespace-pre-wrap">{fieldErr[k]}</pre>}
     </div>
   );
 
   return (
     <div className="space-y-4">
       {data.python_failed && (
-        <p className="text-xs text-amber-200">Python does not start, so only the commands show here. Fix Python (main), then save.</p>
+        <p className="text-xs ns-warn">Python does not start, so only the commands show here. Fix Python (main), then save.</p>
       )}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {input('python.main', 'Python (main)', 'For example: python, or py -3')}
@@ -205,13 +205,13 @@ function SettingsForm({ onSaved, catalog, onRunTask }) {
         {versions.map(v => <React.Fragment key={v}>{input(`ootp.${v}`, `OOTP ${v} saved games folder`, '%USERPROFILE% and ~ work here.')}</React.Fragment>)}
       </div>
       <div className={`space-y-2 ${leagues.length ? '' : 'hidden'}`}>
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Leagues</p>
+        <p className="ns-subhead">Leagues</p>
         {leagues.map(id => (
-          <div key={id} className="border border-slate-800 rounded-lg p-3 space-y-2" data-league={id}>
-            <label className="flex items-center gap-2 text-sm text-slate-200">
-              <input type="checkbox" checked={form[`lg.${id}.enabled`] !== false} onChange={(e) => set(`lg.${id}.enabled`, e.target.checked)} className="accent-blue-500" />
+          <div key={id} className="ns-box ns-box-body space-y-2" data-league={id}>
+            <label className="flex items-center gap-2 text-sm ns-text">
+              <input type="checkbox" checked={form[`lg.${id}.enabled`] !== false} onChange={(e) => set(`lg.${id}.enabled`, e.target.checked)} className="accent-[var(--accent)]" />
               <span className="font-semibold">{id}</span>
-              <span className="text-xs text-slate-500">{form[`lg.${id}.enabled`] === false ? 'off: its tasks are hidden, its data stays' : 'on'}</span>
+              <span className="text-xs ns-muted">{form[`lg.${id}.enabled`] === false ? 'off: its tasks are hidden, its data stays' : 'on'}</span>
             </label>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               {input(`lg.${id}.name`, 'Name')}
@@ -224,23 +224,23 @@ function SettingsForm({ onSaved, catalog, onRunTask }) {
         ))}
       </div>
       <div className="flex items-center gap-3">
-        <button onClick={save} disabled={!changed || busy} className={`${btn} bg-blue-600 text-white hover:bg-blue-500`}>
-          {busy ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save settings
+        <button onClick={save} disabled={!changed || busy} className={btnPrimary}>
+          Save settings
         </button>
-        {!changed && !msg && <span className="text-xs text-slate-500">No changes.</span>}
-        {msg && <span className={`text-xs ${msg.tone === 'ok' ? 'text-green-400' : 'text-red-400'}`}>{msg.text}</span>}
+        {!changed && !msg && <span className="text-xs ns-muted">No changes.</span>}
+        {msg && <span className={`text-xs ${msg.tone === 'ok' ? 'ns-good' : 'ns-bad'}`}>{msg.text}</span>}
       </div>
       {parkHint && (
         <div className="flex items-center gap-3">
-          <p className="text-xs text-amber-300">Run Update park factors to apply this.</p>
+          <p className="text-xs ns-warn">Run Update park factors to apply this.</p>
           {findTask(catalog, 'parks_update') && (
-            <button onClick={() => onRunTask(findTask(catalog, 'parks_update'))} className={`${btn} bg-blue-600 text-white hover:bg-blue-500`}>
-              <Play size={12} /> {findTask(catalog, 'parks_update').title}
+            <button onClick={() => onRunTask(findTask(catalog, 'parks_update'))} className={btnPrimary}>
+              {findTask(catalog, 'parks_update').title}
             </button>
           )}
         </div>
       )}
-      {data.paths?.local && <p className="text-[11px] text-slate-600">Your changes go to {data.paths.local}.</p>}
+      {data.paths?.local && <p className="text-[11px] ns-muted">Your changes go to {data.paths.local}.</p>}
     </div>
   );
 }
@@ -259,7 +259,7 @@ function TokenForm({ catalog, pythonBad }) {
   useEffect(() => { if (!league && choices.length) setLeague(String(choices[0].value)); }, [choices.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!task) {
-    return <p className="text-xs text-slate-500">{pythonBad ? 'Needs Python. Fix Python above first.' : 'This task is not in the task list.'}</p>;
+    return <p className="text-xs ns-muted">{pythonBad ? 'Needs Python. Fix Python above first.' : 'This task is not in the task list.'}</p>;
   }
   const line = (catalog?.leagues || []).find(l => l.id === league)?.token_line;
 
@@ -285,22 +285,22 @@ function TokenForm({ catalog, pythonBad }) {
     <form onSubmit={submit} className="space-y-3" autoComplete="off">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="space-y-1">
-          <label htmlFor="token-league" className="block text-xs font-semibold text-slate-300">League</label>
+          <label htmlFor="token-league" className="block ns-label">League</label>
           <select id="token-league" value={league} onChange={(e) => setLeague(e.target.value)} className={fieldClass}>
             {choices.map(c => <option key={c.value} value={c.value}>{c.label ?? c.value}</option>)}
           </select>
-          {line && <p className="text-[11px] text-slate-500">It writes the line {line} in StatsPlus Tokens.txt.</p>}
+          {line && <p className="text-[11px] ns-muted">It writes the line {line} in StatsPlus Tokens.txt.</p>}
         </div>
         <div className="space-y-1">
-          <label htmlFor="token-value" className="block text-xs font-semibold text-slate-300">New token</label>
+          <label htmlFor="token-value" className="block ns-label">New token</label>
           <input id="token-value" type="password" value={token} onChange={(e) => { setToken(e.target.value); setErr(null); }}
             className={fieldClass} autoComplete="new-password" spellCheck={false} />
-          <p className="text-[11px] text-slate-500">From statsplus.net, your league, Prefs. Tokens expire every 90 days.</p>
+          <p className="text-[11px] ns-muted">From statsplus.net, your league, Prefs. Tokens expire every 90 days.</p>
         </div>
       </div>
-      {err && <p className="text-xs text-red-400" role="alert">{err}</p>}
-      <button type="submit" disabled={busy || !league} className={`${btn} bg-blue-600 text-white hover:bg-blue-500`}>
-        {busy ? <Loader2 size={12} className="animate-spin" /> : <KeyRound size={12} />} Save the token
+      {err && <p className="text-xs ns-bad" role="alert">{err}</p>}
+      <button type="submit" disabled={busy || !league} className={btnPrimary}>
+        Save the token
       </button>
       {jobId && <JobPanel jobId={jobId} compact onDismiss={() => setJobId(null)} />}
     </form>
@@ -379,22 +379,22 @@ export default function SetupPanel() {
 
       <div className={card}>
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-bold text-white flex items-center gap-2"><Stethoscope size={16} className="text-blue-400" /> Setup check</h2>
-          <button onClick={() => runCheck(true)} disabled={checking} className={`${btn} bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700`}>
-            {checking ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Check again
+          <h2 className="ns-strip">Setup check</h2>
+          <button onClick={() => runCheck(true)} disabled={checking} className={btn}>
+            {checking ? 'Checking...' : 'Check again'}
           </button>
         </div>
         <PythonLine python={status.python} />
         {doctorErr && (
-          <p className="text-xs text-red-400">
+          <p className="text-xs ns-bad">
             {/* the Python line above already gives the install advice: say it once */}
             {pythonBad && doctorErr.code === 'python_failed' ? 'The setup check needs Python. Fix Python first.' : doctorErr.text}
           </p>
         )}
-        {checking && !doctor && <p className="text-xs text-slate-500">Checking. This takes up to 20 seconds.</p>}
+        {checking && !doctor && <p className="text-xs ns-muted">Checking. This takes up to 20 seconds.</p>}
         {doctor && (
           <>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs ns-text-2">
               {counts.fail === 0 && counts.warn === 0 ? 'Everything checks out.'
                 : `${plural(counts.fail, 'problem', 'problems')}, ${plural(counts.warn, 'warning', 'warnings')}.`}
             </p>
@@ -405,17 +405,17 @@ export default function SetupPanel() {
 
       {!settingsError && (
         <div className={card}>
-          <h2 className="text-sm font-bold text-white">Settings</h2>
+          <h2 className="ns-strip">Settings</h2>
           <SettingsForm key={settingsKey} onSaved={runCheck} catalog={catalog} onRunTask={setFormTask} />
         </div>
       )}
 
       {showReset && (
         <div className={card}>
-          <h2 className="text-sm font-bold text-white">Reset local settings</h2>
-          <p className="text-xs text-slate-400">Goes back to the default settings. Your league data stays.</p>
-          <button onClick={() => setConfirmReset(true)} className={`${btn} bg-slate-800 text-slate-100 hover:bg-slate-700 border border-slate-700`}>
-            <RotateCcw size={12} /> Reset local settings
+          <h2 className="ns-strip">Reset local settings</h2>
+          <p className="text-xs ns-text-2">Goes back to the default settings. Your league data stays.</p>
+          <button onClick={() => setConfirmReset(true)} className={btn}>
+            Reset local settings
           </button>
         </div>
       )}
@@ -427,7 +427,7 @@ export default function SetupPanel() {
 
       {!settingsError && (
         <div className={card}>
-          <h2 className="text-sm font-bold text-white flex items-center gap-2"><KeyRound size={16} className="text-blue-400" /> Replace a StatsPlus token</h2>
+          <h2 className="ns-strip">Replace a StatsPlus token</h2>
           <TokenForm catalog={catalog} pythonBad={pythonBad} />
         </div>
       )}

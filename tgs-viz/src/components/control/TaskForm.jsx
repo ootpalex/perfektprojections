@@ -1,11 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { Play, Loader2 } from 'lucide-react';
 import { useCatalog, useActiveJobs, startJob, startConflict, findTask } from '../../lib/controlApi';
 import { visibleInputs, checkInputValue, conflictText, lockReason } from '../../lib/inputConditions';
 import { Modal } from './PromptCard';
 import { flagNotes } from './TaskCard';
 
-const fieldClass = 'w-full bg-slate-800 text-white text-sm rounded-lg px-3 py-2 border border-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';
+const fieldClass = 'ns-input w-full';
 
 function initialValues(task) {
   const v = {};
@@ -23,9 +22,9 @@ export function InputField({ inp, value, onChange, error }) {
   let control;
   if (inp.type === 'confirm') {
     control = (
-      <label htmlFor={id} className="flex items-start gap-2 text-sm text-slate-200 cursor-pointer">
+      <label htmlFor={id} className="flex items-start gap-2 text-sm ns-text cursor-pointer">
         <input id={id} type="checkbox" checked={value === true} onChange={(e) => onChange(e.target.checked)}
-          className="mt-0.5 accent-blue-500" />
+          className="mt-0.5 accent-[var(--accent)]" />
         <span>{inp.label}{inp.required ? '' : ' (optional)'}</span>
       </label>
     );
@@ -47,13 +46,13 @@ export function InputField({ inp, value, onChange, error }) {
   return (
     <div className="space-y-1" data-input={inp.name}>
       {inp.type !== 'confirm' && (
-        <label htmlFor={id} className="block text-xs font-semibold text-slate-300">
+        <label htmlFor={id} className="block ns-label">
           {inp.label || inp.name}{inp.required ? '' : ' (optional)'}
         </label>
       )}
       {control}
-      {inp.help && <p className="text-[11px] text-slate-500">{inp.help}</p>}
-      {error && <p className="text-[11px] text-red-400" role="alert">{error}</p>}
+      {inp.help && <p className="text-[11px] ns-muted">{inp.help}</p>}
+      {error && <p className="text-[11px] ns-bad" role="alert">{error}</p>}
     </div>
   );
 }
@@ -139,9 +138,9 @@ function TaskFormBody({ task, onClose, onStarted, presetInputs = null, onSwitch 
   return (
     <Modal title={task.title} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4" autoComplete="off">
-        {task.description && <p className="text-xs text-slate-400 leading-relaxed">{task.description}</p>}
+        {task.description && <p className="text-xs ns-text-2 leading-relaxed">{task.description}</p>}
         {notes.length > 0 && (
-          <ul className="text-[11px] text-slate-500 space-y-0.5 list-disc pl-4">
+          <ul className="text-[11px] ns-muted space-y-0.5 list-disc pl-4">
             {notes.map(n => <li key={n}>{n}</li>)}
           </ul>
         )}
@@ -155,34 +154,33 @@ function TaskFormBody({ task, onClose, onStarted, presetInputs = null, onSwitch 
             ))}
           </div>
         ) : (
-          <p className="text-xs text-slate-500">This task asks nothing. Press Start to run it.</p>
+          <p className="text-xs ns-muted">This task asks nothing. Press Start to run it.</p>
         )}
 
         {conflict && conflict.kind !== 'waits' && (
-          <p className="text-xs text-amber-300 bg-amber-950/30 border border-amber-600/40 rounded-lg px-3 py-2" role="status">
+          <p className="ns-alert-warn text-xs px-3 py-2" role="status">
             {conflictText(conflict)}
           </p>
         )}
         {serverError && (
-          <div className="text-xs text-red-300 bg-red-950/30 border border-red-600/40 rounded-lg px-3 py-2 space-y-1" role="alert">
+          <div className="ns-alert-bad text-xs px-3 py-2 space-y-1" role="alert">
             <p>{serverError.message}</p>
-            {serverError.tail && <pre className="whitespace-pre-wrap text-[11px] text-red-300/80">{serverError.tail}</pre>}
+            {serverError.tail && <pre className="whitespace-pre-wrap text-[11px]">{serverError.tail}</pre>}
             {fixTask && (
               <button type="button" onClick={() => onSwitch(fixTask)}
-                className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-500">
-                <Play size={12} /> {fixTask.title}
+                className="ns-btn ns-btn-sm ns-btn-primary mt-1">
+                {fixTask.title}
               </button>
             )}
           </div>
         )}
 
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700">
+          <button type="button" onClick={onClose} className="ns-btn ns-btn-sm">
             Cancel
           </button>
           <button type="submit" disabled={!!blocked || busy}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed">
-            {busy ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+            className="ns-btn ns-btn-sm ns-btn-primary">
             {conflict?.kind === 'waits' ? conflictText(conflict) : 'Start'}
           </button>
         </div>

@@ -1,5 +1,4 @@
 import React from 'react';
-import { Play, Clock } from 'lucide-react';
 
 /** Plain-words notes for a task's flags (DESIGN 10.3). */
 export function flagNotes(task) {
@@ -28,28 +27,28 @@ export function flagNotes(task) {
 export default function TaskCard({ task, onRun }) {
   const notes = flagNotes(task);
   return (
-    <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col gap-2" data-task={task.id}>
+    <div className="ns-box ns-box-body flex flex-col gap-2" data-task={task.id}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-bold text-white">{task.title}</h3>
+          <h3 className="text-sm font-bold ns-text">{task.title}</h3>
           {task.time && (
-            <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-              <Clock size={11} /> {task.time}
+            <p className="text-[11px] ns-muted flex items-center gap-1 mt-0.5">
+              {task.time}
             </p>
           )}
         </div>
         <button onClick={onRun}
-          className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-500">
-          <Play size={12} /> Run
+          className="ns-btn ns-btn-sm ns-btn-primary shrink-0">
+          Run
         </button>
       </div>
-      {task.description && <p className="text-xs text-slate-400 leading-relaxed">{task.description}</p>}
+      {task.description && <p className="text-xs ns-text-2 leading-relaxed">{task.description}</p>}
       {notes.length > 0 && (
-        <ul className="text-[11px] text-slate-500 space-y-0.5 list-disc pl-4">
+        <ul className="text-[11px] ns-muted space-y-0.5 list-disc pl-4">
           {notes.map(n => <li key={n}>{n}</li>)}
         </ul>
       )}
-      {task.bat && <p className="text-[10px] text-slate-600">Same as {task.bat}</p>}
+      {task.bat && <p className="text-[11px] ns-muted">Same as {task.bat}</p>}
     </div>
   );
 }

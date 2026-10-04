@@ -6,12 +6,12 @@ const MAX_TEAMS_PER_PARK = 3;
 const SWITCH_COST = 50_000_000;
 
 export const factorClass = (v) => {
-  if (!Number.isFinite(v)) return 'text-slate-500';
-  if (v >= 1.10) return 'text-red-400 font-semibold';
-  if (v >= 1.03) return 'text-orange-300';
-  if (v <= 0.90) return 'text-blue-400 font-semibold';
-  if (v <= 0.97) return 'text-sky-300';
-  return 'text-slate-300';
+  if (!Number.isFinite(v)) return 'ns-muted';
+  if (v >= 1.10) return 'ns-bad font-semibold';
+  if (v >= 1.03) return 'ns-warn';
+  if (v <= 0.90) return 'ns-series-1 font-semibold';
+  if (v <= 0.97) return 'ns-series-1';
+  return 'ns-text-2';
 };
 export const f3 = (v) => (Number.isFinite(v) ? v.toFixed(3) : '');
 
@@ -39,7 +39,9 @@ function Head({ cols, sort, clickSort }) {
     <thead>
       <tr>
         {cols.map(([label, key, title, numeric]) => (
-          <th key={key} title={title || undefined} onClick={() => clickSort(key, numeric)}>
+          <th key={key} title={title || undefined} onClick={() => clickSort(key, numeric)}
+            aria-sort={sort.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
+            className={`${numeric ? 'num' : ''} ${sort.key === key ? 'sorted' : ''}`}>
             {label}{sort.key === key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
           </th>
         ))}
@@ -92,49 +94,51 @@ export default function ParksPage({ parks, parkList, league }) {
 
   if ((!parks || parks.length === 0) && !hasList) {
     return (
-      <div className="p-6 text-slate-400 text-sm">
-        No park data for {league}. Run <span className="font-mono text-slate-200">python tgs-viz/ingest/parks.py --write</span> after
+      <div className="p-6 ns-text-2 text-sm">
+        No park data for {league}. Run <span className="ns-text">python tgs-viz/ingest/parks.py --write</span> after
         checking in the league&apos;s park-factor export.
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col overflow-auto">
-      <div className="px-4 pt-3 pb-1">
-        <h1 className="text-xl font-bold text-white">Parks</h1>
-        <p className="text-xs text-slate-500 mt-0.5">
+    <div className="ns-page block overflow-auto">
+      <header className="ns-page-head">
+        <div>
+        <h1>Parks</h1>
+        <p className="ns-page-sub">
           A park can be used by at most {MAX_TEAMS_PER_PARK} clubs, each on its own version · switching costs {fmtMoney(SWITCH_COST)} ·
           factors: 1.00 = neutral, batter-hand splits are the batter&apos;s side
-          {hasList && <> · {parkRows.length} parks, {openParks} with an open slot · sources: <span className="font-mono">calib/{league}/park_list.csv</span> + <span className="font-mono">park_assignments.csv</span></>}
+          {hasList && <> · {parkRows.length} parks, {openParks} with an open slot · sources: <span>calib/{league}/park_list.csv</span> + <span>park_assignments.csv</span></>}
         </p>
-      </div>
+        </div>
+      </header>
 
       {home && (
-        <div className="mx-4 my-2 px-3 py-2 rounded-lg bg-blue-900/20 border border-blue-800/50 text-xs text-slate-300 flex flex-wrap gap-x-5 gap-y-1">
-          <span className="font-bold text-blue-300">Your park</span>
+        <div className="ns-box mb-4 px-3 py-2 bg-[var(--accent-bg)] text-xs ns-text-2 flex flex-wrap gap-x-5 gap-y-1">
+          <span className="font-bold ns-text">Your park</span>
           <span>{home.park || home.stadium}</span>
-          {homePark && <span className="text-slate-400">used by {homePark.occupants_text}</span>}
+          {homePark && <span className="ns-text-2">used by {homePark.occupants_text}</span>}
           <span>HR <b className={factorClass(home.hr)}>{f3(home.hr)}</b> (vRHB {f3(home.hr_rhb)} · vLHB {f3(home.hr_lhb)})</span>
           <span>Avg <b className={factorClass(home.avg)}>{f3(home.avg)}</b></span>
           <span>2B {f3(home.doubles)} · 3B {f3(home.triples)}</span>
-          {homePark && <span className="text-slate-500">{homePark.copies} of {MAX_TEAMS_PER_PARK} slots used</span>}
+          {homePark && <span className="ns-muted">{homePark.copies} of {MAX_TEAMS_PER_PARK} slots used</span>}
         </div>
       )}
 
       {hasList && (
-        <div className="px-4 pb-2">
-          <h2 className="text-sm font-bold text-slate-200 mb-1">Parks <span className="font-normal text-slate-500 text-xs">— the league&apos;s list and who is in each (factors are per club, in the table below)</span></h2>
-          <div className="table-container compact-table" style={{ maxHeight: 300 }}>
+        <div className="ns-box mb-4">
+          <h2 className="ns-strip">Parks <span className="ns-count">— the league&apos;s list and who is in each (factors are per club, in the table below)</span></h2>
+          <div className="compact-table overflow-auto" style={{ maxHeight: 300 }}>
             <table className="data-table">
               <Head cols={PARK_COLS} sort={pSort} clickSort={pClick} />
               <tbody>
                 {sortedParks.map(p => (
-                  <tr key={p.Name} className={homePark && p.Name === homePark.Name ? 'bg-blue-900/20' : ''}>
-                    <td className={`whitespace-nowrap ${homePark && p.Name === homePark.Name ? 'text-blue-300 font-semibold' : 'text-white'}`}>{p.Name}</td>
-                    <td>{p.copies}</td>
-                    <td className={p.open > 0 ? 'text-green-400 font-semibold' : 'text-slate-600'}>{p.open > 0 ? `${p.open} open` : 'full'}</td>
-                    <td className="text-slate-400 text-xs">{p.occupants_text || <span className="text-slate-600">empty</span>}</td>
+                  <tr key={p.Name} className={homePark && p.Name === homePark.Name ? 'selected' : ''}>
+                    <td className={`whitespace-nowrap ${homePark && p.Name === homePark.Name ? 'font-semibold' : ''} col-name`}>{p.Name}</td>
+                    <td className="num">{p.copies}</td>
+                    <td className={`num ${p.open > 0 ? 'ns-good font-semibold' : 'ns-dim'}`}>{p.open > 0 ? `${p.open} open` : 'full'}</td>
+                    <td className="ns-text-2 text-xs">{p.occupants_text || <span className="ns-dim">empty</span>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -143,27 +147,27 @@ export default function ParksPage({ parks, parkList, league }) {
         </div>
       )}
 
-      <div className="flex-1 px-4 pb-3">
-        <h2 className="text-sm font-bold text-slate-200 mb-1">Clubs <span className="font-normal text-slate-500 text-xs">— each club&apos;s own factors (its version of the park)</span></h2>
-        <div className="table-container compact-table" style={{ maxHeight: hasList ? 'calc(100vh - 560px)' : 'calc(100vh - 170px)', minHeight: 200 }}>
+      <div className="ns-box flex-1">
+        <h2 className="ns-strip">Clubs <span className="ns-count">— each club&apos;s own factors (its version of the park)</span></h2>
+        <div className="compact-table overflow-auto" style={{ maxHeight: hasList ? 'calc(100vh - 560px)' : 'calc(100vh - 170px)', minHeight: 200 }}>
           <table className="data-table">
             <Head cols={CLUB_COLS} sort={cSort} clickSort={cClick} />
             <tbody>
               {sortedClubs.map(p => (
-                <tr key={p.Name} className={p.is_home ? 'bg-blue-900/20' : ''}>
-                  <td className={`whitespace-nowrap ${p.is_home ? 'text-blue-300 font-semibold' : 'text-white'}`}>{p.Name}</td>
-                  <td className="whitespace-nowrap text-slate-300">{p.park || p.stadium}</td>
-                  <td className={factorClass(p.hr)}>{f3(p.hr)}</td>
-                  <td className={factorClass(p.hr_rhb)}>{f3(p.hr_rhb)}</td>
-                  <td className={factorClass(p.hr_lhb)}>{f3(p.hr_lhb)}</td>
-                  <td className={factorClass(p.avg)}>{f3(p.avg)}</td>
-                  <td className={factorClass(p.avg_rhb)}>{f3(p.avg_rhb)}</td>
-                  <td className={factorClass(p.avg_lhb)}>{f3(p.avg_lhb)}</td>
-                  <td className={factorClass(p.doubles)}>{f3(p.doubles)}</td>
-                  <td className={factorClass(p.triples)}>{f3(p.triples)}</td>
-                  <td className="text-slate-400">{Number.isFinite(p.capacity) ? p.capacity.toLocaleString() : ''}</td>
-                  <td className="text-slate-400 whitespace-nowrap">{p.type}</td>
-                  <td className="text-slate-400">{p.surface}</td>
+                <tr key={p.Name} className={p.is_home ? 'selected' : ''}>
+                  <td className={`whitespace-nowrap ${p.is_home ? 'font-semibold' : ''} col-name`}>{p.Name}</td>
+                  <td className="whitespace-nowrap ns-text-2">{p.park || p.stadium}</td>
+                  <td className={`num ${factorClass(p.hr)}`}>{f3(p.hr)}</td>
+                  <td className={`num ${factorClass(p.hr_rhb)}`}>{f3(p.hr_rhb)}</td>
+                  <td className={`num ${factorClass(p.hr_lhb)}`}>{f3(p.hr_lhb)}</td>
+                  <td className={`num ${factorClass(p.avg)}`}>{f3(p.avg)}</td>
+                  <td className={`num ${factorClass(p.avg_rhb)}`}>{f3(p.avg_rhb)}</td>
+                  <td className={`num ${factorClass(p.avg_lhb)}`}>{f3(p.avg_lhb)}</td>
+                  <td className={`num ${factorClass(p.doubles)}`}>{f3(p.doubles)}</td>
+                  <td className={`num ${factorClass(p.triples)}`}>{f3(p.triples)}</td>
+                  <td className="ns-text-2 num">{Number.isFinite(p.capacity) ? p.capacity.toLocaleString() : ''}</td>
+                  <td className="ns-text-2 whitespace-nowrap">{p.type}</td>
+                  <td className="ns-text-2">{p.surface}</td>
                 </tr>
               ))}
             </tbody>

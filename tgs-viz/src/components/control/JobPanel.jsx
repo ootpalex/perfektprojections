@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CircleStop, Skull, X, Hand, Wrench, ExternalLink, ChevronDown, ChevronRight, SquareTerminal } from 'lucide-react';
 import {
   useJobStream, useJobInfo, useCatalog, useServerLost, answer, stop, startJob, findTask, isFinalStatus, isActiveStatus,
 } from '../../lib/controlApi';
@@ -19,13 +18,13 @@ export function statusWord(status) {
 }
 
 const DOT = {
-  running: 'bg-blue-400 animate-pulse', starting: 'bg-blue-400 animate-pulse', waiting: 'bg-amber-400 animate-pulse',
-  queued: 'bg-slate-500', done: 'bg-green-400', ok: 'bg-green-400', partial: 'bg-amber-400', ignored_fail: 'bg-amber-400',
-  failed: 'bg-red-400', killed: 'bg-red-400', invalid: 'bg-red-400', refused: 'bg-red-400', did_not_start: 'bg-red-400',
-  lost: 'bg-red-400', stopped: 'bg-orange-400', skipped: 'bg-slate-700', pending: 'bg-slate-600',
+  running: 'bg-[var(--text)] animate-pulse', starting: 'bg-[var(--text)] animate-pulse', waiting: 'bg-[var(--warn)] animate-pulse',
+  queued: 'bg-[var(--text-3)]', done: 'bg-[var(--good)]', ok: 'bg-[var(--good)]', partial: 'bg-[var(--warn)]', ignored_fail: 'bg-[var(--warn)]',
+  failed: 'bg-[var(--bad)]', killed: 'bg-[var(--bad)]', invalid: 'bg-[var(--bad)]', refused: 'bg-[var(--bad)]', did_not_start: 'bg-[var(--bad)]',
+  lost: 'bg-[var(--bad)]', stopped: 'bg-[var(--warn)]', skipped: 'bg-[var(--text-disabled)]', pending: 'bg-[var(--text-disabled)]',
 };
 export function StatusDot({ status }) {
-  return <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${DOT[status] || 'bg-slate-600'}`} title={statusWord(status)} />;
+  return <span className={`inline-block w-2 h-2 shrink-0 ${DOT[status] || 'bg-[var(--text-disabled)]'}`} title={statusWord(status)} />;
 }
 
 const STEP_WORDS = {
@@ -68,7 +67,7 @@ const KILL_TEXT = 'Kill now ends the current step at once. A few steps write the
   + 'leave one half-written file (its .bak copy stays). If the step drives OOTP, the app releases the keys and the mouse, '
   + 'but OOTP keeps simming: stop it inside OOTP.';
 
-const btn = 'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg disabled:opacity-40';
+const btn = 'ns-btn ns-btn-sm';
 
 /**
  * One job: status, elapsed time, current step, steps, live log, the open
@@ -151,58 +150,58 @@ export default function JobPanel({ jobId, compact = false, onDismiss }) {
   };
 
   return (
-    <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3" data-job={jobId} data-status={status}>
+    <div className="ns-box ns-box-body space-y-3" data-job={jobId} data-status={status}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <StatusDot status={status} />
-            <h3 className="text-sm font-bold text-white truncate">{title}</h3>
-            <span className="text-xs text-slate-400" data-role="status-word">{statusWord(status)}</span>
+            <h3 className="text-sm font-bold ns-text truncate">{title}</h3>
+            <span className="text-xs ns-text-2" data-role="status-word">{statusWord(status)}</span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">
+          <p className="text-[11px] ns-muted mt-0.5">
             {when ? `${askedOnly ? 'Asked at' : 'Started'} ${formatWhen(when)}` : ''}{elapsed ? ` · ${elapsed}` : ''}
             {stepLine ? ` · Step ${stepLine}${cycle}` : ''}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {compact && (
-            <Link to={`/control/jobs/${encodeURIComponent(jobId)}`} className="text-slate-500 hover:text-slate-200" title="Open this job on its own page">
-              <ExternalLink size={14} />
+            <Link to={`/control/jobs/${encodeURIComponent(jobId)}`} className="ns-link" title="Open this job on its own page">
+              Open
             </Link>
           )}
           {onDismiss && final && (
-            <button onClick={onDismiss} className="text-slate-500 hover:text-slate-200" title="Hide this panel" aria-label="Hide this panel">
-              <X size={16} />
+            <button onClick={onDismiss} className="ns-icon-btn" title="Hide this panel" aria-label="Hide this panel">
+              ×
             </button>
           )}
         </div>
       </div>
 
       {lost && active && (
-        <p className="text-xs text-amber-300 bg-amber-950/40 border border-amber-800/60 rounded-lg px-3 py-2" role="status">
+        <p className="ns-alert-warn text-xs px-3 py-2" role="status">
           Lost contact with the app server. The task keeps running. Start Launch TGS again to follow it.
         </p>
       )}
 
       {countdown && (
-        <p className="text-2xl font-black text-amber-300 flex items-center gap-2" role="status">
-          <Hand size={24} /> {countdown}
+        <p className="text-2xl font-black ns-warn flex items-center gap-2" role="status">
+          {countdown}
         </p>
       )}
 
       {status === 'queued' && (
-        <div className="flex items-center justify-between gap-3 text-sm text-slate-300 bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2">
+        <div className="flex items-center justify-between gap-3 ns-box text-sm ns-text-2 px-3 py-2">
           <span>{st.waiting_for?.title ? `Waiting for ${st.waiting_for.title} to finish.` : 'Waiting for another task to finish.'}</span>
-          <button onClick={() => doStop('after_step')} disabled={!!pending} className={`${btn} bg-slate-700 text-slate-100 hover:bg-slate-600`}>
+          <button onClick={() => doStop('after_step')} disabled={!!pending} className={btn}>
             Cancel
           </button>
         </div>
       )}
       {status === 'running' && st.waiting_for?.title && (
-        <p className="text-xs text-slate-400">Waiting for {st.waiting_for.title} to finish before the next step.</p>
+        <p className="text-xs ns-text-2">Waiting for {st.waiting_for.title} to finish before the next step.</p>
       )}
 
-      {consoleJob && active && <p className="text-xs text-slate-400 flex items-center gap-1.5"><SquareTerminal size={14} /> Running in a console window.</p>}
+      {consoleJob && active && <p className="text-xs ns-text-2 flex items-center gap-1.5">Running in a console window.</p>}
 
       {prompt && <PromptCard prompt={prompt} onAnswer={(v) => answer(jobId, prompt.prompt_id, v)} />}
 
@@ -210,52 +209,52 @@ export default function JobPanel({ jobId, compact = false, onDismiss }) {
         <div className="flex flex-wrap items-center gap-2">
           {modes.includes('after_cycle') && (
             <button onClick={() => doStop('after_cycle')} disabled={!!pending || !!stopAsked}
-              className={`${btn} bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700`}>
-              <CircleStop size={12} /> Stop after this cycle
+              className={btn}>
+              Stop after this cycle
             </button>
           )}
           {modes.includes('after_step') && (
             <button onClick={() => doStop('after_step')} disabled={!!pending || !!stopAsked}
-              className={`${btn} bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700`}>
-              <CircleStop size={12} /> Stop after this step
+              className={btn}>
+              Stop after this step
             </button>
           )}
           {modes.includes('kill') && (
             <button onClick={() => setConfirmKill(true)} disabled={pending === 'kill'}
-              className={`${btn} bg-red-900/60 text-red-200 hover:bg-red-800 border border-red-800`}>
-              <Skull size={12} /> Kill now
+              className={`${btn} ns-bad`}>
+              Kill now
             </button>
           )}
-          {(info?.stale || st.stale) && <span className="text-xs text-amber-400">This task is not responding.</span>}
+          {(info?.stale || st.stale) && <span className="text-xs ns-warn">This task is not responding.</span>}
           {(stopAsked || pending) && (
-            <span className="text-xs text-slate-400">Stop asked: {STOP_TEXT[(stopAsked && (stopAsked.mode || stopAsked)) || pending] || 'yes'}.</span>
+            <span className="text-xs ns-text-2">Stop asked: {STOP_TEXT[(stopAsked && (stopAsked.mode || stopAsked)) || pending] || 'yes'}.</span>
           )}
         </div>
       )}
-      {actionError && <p className="text-xs text-red-400">{actionError}</p>}
+      {actionError && <p className="text-xs ns-bad">{actionError}</p>}
 
       {final && (
         <div className="space-y-2">
-          {st.message && <p className={`text-sm ${status === 'invalid' || status === 'failed' ? 'text-red-300' : 'text-slate-300'}`}>{st.message}</p>}
+          {st.message && <p className={`text-sm ${status === 'invalid' || status === 'failed' ? 'ns-bad' : 'ns-text-2'}`}>{st.message}</p>}
           {fixTask && (
-            <button onClick={() => setFormTask(fixTask)} className={`${btn} bg-blue-600 text-white hover:bg-blue-500`}>
-              <Wrench size={12} /> {fixTask.title}
+            <button onClick={() => setFormTask(fixTask)} className={`${btn} ns-btn-primary`}>
+              {fixTask.title}
             </button>
           )}
           {summary.length > 0 && (
-            <div className="text-xs text-slate-300 bg-slate-800/40 border border-slate-800 rounded-lg px-3 py-2 space-y-0.5">
+            <div className="ns-box text-xs ns-text-2 px-3 py-2 space-y-0.5">
               {summary.map((l, i) => <p key={i} className="whitespace-pre-wrap">{l}</p>)}
             </div>
           )}
           {!summary.length && fails.length > 0 && (
-            <p className="text-xs text-amber-300">Steps that did not update: {fails.join(', ')}</p>
+            <p className="text-xs ns-warn">Steps that did not update: {fails.join(', ')}</p>
           )}
           {newLeagueLeftover && (
             <div className="flex items-center gap-2">
-              <button onClick={cleanup} className={`${btn} bg-slate-800 text-slate-100 hover:bg-slate-700 border border-slate-700`}>
-                <Wrench size={12} /> Clean up unfinished league
+              <button onClick={cleanup} className={btn}>
+                Clean up unfinished league
               </button>
-              {cleanupMsg && <span className="text-xs text-slate-400">{cleanupMsg}</span>}
+              {cleanupMsg && <span className="text-xs ns-text-2">{cleanupMsg}</span>}
             </div>
           )}
         </div>
@@ -263,17 +262,17 @@ export default function JobPanel({ jobId, compact = false, onDismiss }) {
 
       {steps.length > 0 && (
         <div>
-          <button onClick={() => setStepsOpen(o => !o)} className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
-            {stepsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Steps ({steps.length})
+          <button onClick={() => setStepsOpen(o => !o)} className="ns-subhead flex items-center gap-1" aria-expanded={stepsOpen}>
+            <span aria-hidden="true">{stepsOpen ? '▾' : '▸'}</span> Steps ({steps.length})
           </button>
           {stepsOpen && (
             <ol className="mt-1.5 space-y-1">
               {steps.map((s, i) => (
                 <li key={`${s.index ?? i}-${s.id}`} className="flex items-center gap-2 text-xs" data-step={s.id} data-step-status={s.status}>
                   <StatusDot status={s.status} />
-                  <span className={s.status === 'running' ? 'text-white font-semibold' : 'text-slate-300'}>{s.title || s.id}</span>
-                  <span className="text-slate-500">{STEP_WORDS[s.status] || s.status}</span>
-                  {Number.isFinite(s.exit) && s.exit !== 0 && <span className="text-slate-600">exit {s.exit}</span>}
+                  <span className={s.status === 'running' ? 'ns-text font-semibold' : 'ns-text-2'}>{s.title || s.id}</span>
+                  <span className="ns-muted">{STEP_WORDS[s.status] || s.status}</span>
+                  {Number.isFinite(s.exit) && s.exit !== 0 && <span className="ns-muted">exit {s.exit}</span>}
                 </li>
               ))}
             </ol>
@@ -284,7 +283,7 @@ export default function JobPanel({ jobId, compact = false, onDismiss }) {
       {messages.length > 0 && (
         <ul className="text-xs space-y-0.5">
           {messages.slice(-5).map((m, i) => (
-            <li key={i} className={m.level === 'warn' ? 'text-amber-300' : 'text-slate-400'}>{m.text}</li>
+            <li key={i} className={m.level === 'warn' ? 'ns-warn' : 'ns-text-2'}>{m.text}</li>
           ))}
         </ul>
       )}
@@ -294,7 +293,7 @@ export default function JobPanel({ jobId, compact = false, onDismiss }) {
         <JobLog lines={stream?.lines} partial={stream?.partial?.text} dropped={stream?.dropped || 0}
           version={stream?.version} tall={!compact} empty={active ? 'Waiting for output...' : 'No output.'} />
       )}
-      {stream?.error && <p className="text-xs text-amber-400">{stream.error}</p>}
+      {stream?.error && <p className="text-xs ns-warn">{stream.error}</p>}
 
       {confirmKill && (
         <ConfirmDialog title="Kill this task now?" text={KILL_TEXT} confirmLabel="Kill now" danger
