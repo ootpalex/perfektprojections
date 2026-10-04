@@ -368,6 +368,20 @@ def main():
         print(f"No cached StatsPlus pull at {cache} — run a StatsPlus refresh first.")
         return
     pull = json.load(open(cache, encoding="utf-8"))
+    # StatsPlus /draftpool/ lists only the players still available, so a player drafted before
+    # this run is not in the pool. Put each picked player back into the class from the ratings
+    # pull, so the full class (the Mock Draft's from-the-beginning view) keeps him, stamped with
+    # his real pick; the live board still drops him below.
+    in_pull = {str(r.get("ID")) for r in pull}
+    back = sorted(pid for pid in dids if pid not in by_id and pid in in_pull)
+    for pid in back:
+        by_id[pid] = {}
+    if back:
+        print(f"  {len(back)} drafted players no longer in the pool: added back from the ratings pull "
+              f"(full class only)")
+    lost = sorted(pid for pid in dids if pid not in by_id)
+    if lost:
+        print(f"  WARNING: {len(lost)} drafted players are in neither the pool nor the ratings pull: {', '.join(lost)}")
     draft = [r for r in pull if str(r.get("ID")) in by_id]
     print(f"matched {len(draft)} of them in the StatsPlus ratings pull")
 
