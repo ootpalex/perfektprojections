@@ -1019,6 +1019,36 @@ const LOESS_MIN_PTS = 8;
  * dispersion of real signings — or null when the sample can't support it
  * (caller falls back to the global line).
  */
+// The k-th smallest |x - x0| over the sample (k from 1). Selection, not a
+// full sort: localFit runs about a dozen times per player on every list, and
+// sorting the whole sample each time was most of the market pass. Same value
+// as sorting and taking index k-1; a NaN distance takes the sort path, so
+// that case also matches the sort exactly.
+function kthDistance(sample, x0, k) {
+  const n = sample.length;
+  const d = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const v = Math.abs(sample[i].x - x0);
+    if (v !== v) return sample.map(p => Math.abs(p.x - x0)).sort((a, b) => a - b)[k - 1];
+    d[i] = v;
+  }
+  let lo = 0, hi = n - 1;
+  const want = k - 1;
+  while (lo < hi) {
+    const pivot = d[(lo + hi) >> 1];
+    let i = lo, j = hi;
+    while (i <= j) {
+      while (d[i] < pivot) i++;
+      while (d[j] > pivot) j--;
+      if (i <= j) { const t = d[i]; d[i] = d[j]; d[j] = t; i++; j--; }
+    }
+    if (want <= j) hi = j;
+    else if (want >= i) lo = i;
+    else break;
+  }
+  return d[want];
+}
+
 export function localFit(sample, x0raw) {
   const n = sample ? sample.length : 0;
   if (n < LOESS_MIN_PTS) return null;
@@ -1040,8 +1070,7 @@ export function localFit(sample, x0raw) {
   if (x0raw > maxX) return null;
   const x0 = Math.max(minX, x0raw);
   const k = Math.min(n, Math.max(LOESS_MIN_PTS, Math.ceil(LOESS_SPAN * n)));
-  const dists = sample.map(p => Math.abs(p.x - x0)).sort((a, b) => a - b);
-  const h = Math.max(dists[k - 1], 1e-6) * 1.0001; // include the k-th point
+  const h = Math.max(kthDistance(sample, x0, k), 1e-6) * 1.0001; // include the k-th point
   let sw = 0, swx = 0, swy = 0, swxx = 0, swxy = 0;
   const pts = [];
   for (const p of sample) {

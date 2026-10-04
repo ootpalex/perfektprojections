@@ -10,7 +10,7 @@ import { DEFAULT_FEATURES, FALLBACK_LEAGUES, normalizeLeagues, isTrendsOnly } fr
 import { loadRatingTrends } from '../lib/ratingTrends';
 import { applyDevSignals, fetchDevSignals } from '../lib/devSignals';
 import { applyDevMl, fetchDevMl, devMlStaleReason } from '../lib/devMl';
-import { loadAgeCurve, MEASURED_CURVE_LEAGUE } from '../lib/ageCurve';
+import { loadAgeCurve, peekAgeCurve, MEASURED_CURVE_LEAGUE } from '../lib/ageCurve';
 import { useDataVersion, useAnyDataVersion, registerInvalidator, changedFilesSince, currentTick } from '../lib/dataVersion';
 import { keysToFetch, mergeRaw } from '../lib/softMerge';
 
@@ -163,9 +163,11 @@ async function fetchPlayerList(url, league) {
   // Stamp the app's league id (M5): the raw 'League' field is StatsPlus's
   // NUMERIC OOTP id (e.g. 112), useless for keying leagueCalib — the
   // per-league replacement offsets in futureValue/draftFV read _appLeague.
-  const rows = json
-    .filter(p => p.Name && String(p.Name).trim() !== '' && String(p.Name).trim() !== '-')
-    .map(p => ({ ...p, _appLeague: league || 'TGS' }));
+  // The parsed rows are this call's own objects, so the stamp goes on them
+  // directly: copying ~7,000 rows of ~300 fields cost about 0.4 s per list.
+  const stamp = league || 'TGS';
+  const rows = json.filter(p => p.Name && String(p.Name).trim() !== '' && String(p.Name).trim() !== '-');
+  for (const p of rows) p._appLeague = stamp;
   return { status: 'loaded', rows };
 }
 
@@ -229,6 +231,43 @@ function buildFromRaw(raw, listKeys, league) {
   return results;
 }
 
+/**
+ * Every raw input of one view: the player lists and the object files, all
+ * fetched at once (the object files used to wait for the lists, which put
+ * the 10 MB dev_signals.json behind the 50 MB hitters.json). progress(key,
+ * status) reports each list.
+ */
+async function loadRaw(listKeys, dataFiles, league, base, progress) {
+  const raw = {};
+  const objects = Promise.all([
+    fetchObjectFile(`${base}/metadata.json`),
+    fetchObjectFile(`${base}/market_fit.json`),
+    fetchDevSignals(base),
+    fetchDevMl(base),
+  ]);
+
+  // The files load in parallel; each keeps its own progress line.
+  await Promise.all(listKeys.map(async (key) => {
+    try {
+      progress(key, 'loading');
+      const res = await fetchPlayerList(dataFiles[key], league);
+      raw[key] = res.rows;
+      progress(key, res.status);
+    } catch (e) {
+      console.warn(`Failed to load ${key}:`, e);
+      progress(key, 'error');
+      raw[key] = [];
+    }
+  }));
+
+  const [metadata, marketBank, devSignals, devMl] = await objects;
+  raw.metadata = metadata.value;
+  raw.marketBank = marketBank.value;
+  raw.devSignals = devSignals;
+  raw.devMl = devMl;
+  return raw;
+}
+
 const REFRESH_IDLE = { refreshing: false, refreshedAt: null, refreshFailed: false };
 const RETRY_MS = 5000;
 
@@ -254,7 +293,7 @@ export function usePlayerData(league, parkMode = 'neutral', wantPlayers = true) 
   const version = useDataVersion(league, 'players');
   // The last good load: which view it was for, its raw inputs, and the store
   // step it reflects. Failed keys wait for the next refresh or the retry.
-  const ref = useRef({ ident: null, raw: null, tick: 0, failedKeys: [], retryTimer: null, retried: false });
+  const ref = useRef({ ident: null, raw: null, tick: 0, failedKeys: [], retryTimer: null, retried: false, pending: null });
 
   useEffect(() => () => clearTimeout(ref.current.retryTimer), []);
 
@@ -326,55 +365,51 @@ export function usePlayerData(league, parkMode = 'neutral', wantPlayers = true) 
     }
 
     // ---- hard path: a new league, park basis or player switch -----------
-    clearTimeout(r.retryTimer);
-    r.ident = null;
-    r.raw = null;
-    r.failedKeys = [];
-    r.retried = false;
     const tickAtStart = currentTick();
+    const loadKey = `${ident}|${tickAtStart}`;
+    // The same load already in flight (React's development double effect runs
+    // this twice in a row): wait for it instead of fetching and parsing every
+    // file a second time. Its state reset has already been applied.
+    let pending = r.pending && r.pending.key === loadKey ? r.pending : null;
 
-    // Reset state when league changes
-    setLoading(true);
-    setError(null);
-    setLoadProgress({});
-    setRefresh(REFRESH_IDLE);
-    setData(emptyData());
+    if (!pending) {
+      clearTimeout(r.retryTimer);
+      r.ident = null;
+      r.raw = null;
+      r.failedKeys = [];
+      r.retried = false;
 
-    if (!wantPlayers) {
-      r.ident = ident;
-      setLoading(false);
-      return () => { cancelled = true; };
+      // Reset state when league changes
+      setLoading(true);
+      setError(null);
+      setLoadProgress({});
+      setRefresh(REFRESH_IDLE);
+      setData(emptyData());
+
+      if (!wantPlayers) {
+        r.pending = null;
+        r.ident = ident;
+        setLoading(false);
+        return () => { cancelled = true; };
+      }
+
+      pending = { key: loadKey, promise: null };
+      r.pending = pending;
+      const entry = pending;
+      // Progress lines belong to the load on screen, not to one effect run.
+      const progress = (key, status) => {
+        if (r.pending === entry) setLoadProgress(prev => ({ ...prev, [key]: status }));
+      };
+      // Every player list uses the measured curve: start it now, so the lists
+      // are enriched once with it rather than once without and again with it.
+      loadAgeCurve(MEASURED_CURVE_LEAGUE);
+      entry.promise = loadRaw(listKeys, dataFiles, league, base, progress);
     }
 
-    async function loadAll() {
-      const raw = {};
-
-      // The files load in parallel; each keeps its own progress line.
-      await Promise.all(listKeys.map(async (key) => {
-        try {
-          setLoadProgress(prev => ({ ...prev, [key]: 'loading' }));
-          const res = await fetchPlayerList(dataFiles[key], league);
-          raw[key] = res.rows;
-          if (!cancelled) setLoadProgress(prev => ({ ...prev, [key]: res.status }));
-        } catch (e) {
-          console.warn(`Failed to load ${key}:`, e);
-          if (!cancelled) setLoadProgress(prev => ({ ...prev, [key]: 'error' }));
-          raw[key] = [];
-        }
-      }));
-
-      const [metadata, marketBank, devSignals, devMl] = await Promise.all([
-        fetchObjectFile(`${base}/metadata.json`),
-        fetchObjectFile(`${base}/market_fit.json`),
-        fetchDevSignals(base),
-        fetchDevMl(base),
-      ]);
-      raw.metadata = metadata.value;
-      raw.marketBank = marketBank.value;
-      raw.devSignals = devSignals;
-      raw.devMl = devMl;
-
+    const entry = pending;
+    entry.promise.then((raw) => {
       if (!cancelled) {
+        r.pending = null;
         const results = buildFromRaw(raw, listKeys, league);
         r.ident = ident;
         r.raw = raw;
@@ -382,10 +417,9 @@ export function usePlayerData(league, parkMode = 'neutral', wantPlayers = true) 
         setData(results);
         setLoading(false);
       }
-    }
-
-    loadAll().catch(e => {
+    }).catch(e => {
       if (!cancelled) {
+        if (r.pending === entry) r.pending = null;
         setError(e.message);
         setLoading(false);
       }
@@ -659,7 +693,7 @@ const LEAGUE_MIN_SALARY = 750000;
 // It loads again when DEV's curve or the league's own curve changes (live
 // refresh); a reload that finds no file keeps the curve it had.
 function useMeasuredCurve(league) {
-  const [curve, setCurve] = useState(null);
+  const [curve, setCurve] = useState(() => peekAgeCurve(MEASURED_CURVE_LEAGUE) ?? null);
   const version = useDataVersion(league || null, 'age_curve');
   useEffect(() => {
     let on = true;
