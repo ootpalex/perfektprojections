@@ -181,19 +181,20 @@ export default function MockDraftPage({ hitters, pitchers, fullHitters, fullPitc
   }, [slotted, useFull, gradeSort]);
 
   const fvColor = (fv) => {
-    if (fv >= 70) return '#8b5cf6';
-    if (fv >= 60) return '#06b6d4';
-    if (fv >= 55) return '#22c55e';
-    if (fv >= 50) return '#eab308';
-    if (fv >= 45) return '#f97316';
-    return '#94a3b8';
+    if (fv >= 70) return 'var(--g80)';
+    if (fv >= 60) return 'var(--g70)';
+    if (fv >= 55) return 'var(--g55)';
+    if (fv >= 50) return 'var(--text-2)';
+    if (fv >= 45) return 'var(--g30)';
+    return 'var(--text-2)';
   };
 
   return (
-    <div className="h-full flex flex-col overflow-auto">
-      <div className="px-4 pt-3 pb-1 flex items-baseline gap-3 flex-wrap">
-        <h1 className="text-xl font-bold text-white">Mock Draft</h1>
-        <p className="text-xs text-slate-500">
+    <div className="ns-page overflow-auto [&>*]:shrink-0">
+      <header className="ns-page-head">
+        <div>
+        <h1>Mock Draft</h1>
+        <p className="ns-page-sub">
           {useFull
             ? 'the whole class from the beginning, in Draft FV order — "Actually" is where each drafted player really went'
             : 'players still on the board, in Draft FV order — re-ranks as picks come in'}
@@ -201,12 +202,13 @@ export default function MockDraftPage({ hitters, pitchers, fullHitters, fullPitc
           {undrafted > 0 && ` · ${undrafted} undrafted`}
           {!hasFull && ' · full-class file not built yet — run a board update for the from-the-beginning view'}
         </p>
-      </div>
+        </div>
+      </header>
 
       {/* Controls */}
-      <div className="flex flex-wrap items-center gap-3 px-4 pb-3">
+      <div className="flex flex-wrap items-center gap-3 pb-3">
         <select value={viewRound} onChange={e => setViewRound(e.target.value)}
-          className="py-1.5 px-2 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200">
+          className="ns-select">
           <option value="all">All rounds</option>
           {Array.from({ length: roundCount }, (_, i) => (
             <option key={i + 1} value={i + 1}>Round {i + 1}</option>
@@ -217,48 +219,48 @@ export default function MockDraftPage({ hitters, pitchers, fullHitters, fullPitc
         <input
           type="text" placeholder="Find a player…" value={search}
           onChange={e => setSearch(e.target.value)}
-          className="py-1.5 px-3 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200 w-48"
+          className="ns-input w-48"
         />
 
         {!hasReal && <div className="flex items-center gap-2">
-          <label className="text-xs text-slate-500">Picks/round:</label>
+          <label className="ns-label">Picks/round:</label>
           <input type="number" min="2" max="40" value={picksPerRound}
             onChange={e => setPicksPerRound(Math.max(2, parseInt(e.target.value) || 28))}
-            className="w-16 py-1 px-2 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200" />
+            className="ns-input w-16" />
         </div>}
 
         {!hasReal && <div className="flex items-center gap-2">
-          <label className="text-xs text-slate-500">Rounds:</label>
+          <label className="ns-label">Rounds:</label>
           <input type="number" min="1" max="60" value={rounds}
             onChange={e => setRounds(Math.max(1, parseInt(e.target.value) || 35))}
-            className="w-16 py-1 px-2 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200" />
+            className="ns-input w-16" />
         </div>}
 
         {hasFull && (
-          <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
+          <label className="flex items-center gap-1.5 text-xs ns-text-2 cursor-pointer">
             <input type="checkbox" checked={fromBeginning} onChange={e => setFromBeginning(e.target.checked)}
-              className="rounded border-slate-600" />
+              className="border-[var(--line-2)]" />
             From the beginning
           </label>
         )}
 
-        <span className="ml-auto text-xs text-slate-500">{visible.length} shown</span>
+        <span className="ml-auto text-xs ns-muted">{visible.length} shown</span>
       </div>
 
       {/* Team draft grades */}
       {useFull && teamGrades.length > 0 && (
-        <div className="px-4 pb-2">
-          <div className="bg-slate-900 border border-slate-800 rounded-lg">
-            <div className="flex items-center gap-3 px-3 py-1.5 text-xs">
-              <button onClick={() => setShowGrades(s => !s)} className="font-bold text-slate-200 flex items-center gap-1.5">
-                <span className="text-slate-500">{showGrades ? '▾' : '▸'}</span> Team draft grades
+        <div className="pb-2">
+          <div className="ns-box">
+            <div className="ns-strip flex items-center gap-3 text-xs">
+              <button type="button" onClick={() => setShowGrades(s => !s)} aria-expanded={showGrades} className="font-bold ns-text flex items-center gap-1.5">
+                <span className="ns-muted">{showGrades ? '▾' : '▸'}</span> Team draft grades
               </button>
-              <span className="text-slate-500">by our board · value = Draft FV taken minus the Draft FV our board had at that pick, summed · + = out-drafted the board</span>
+              <span className="ns-muted">by our board · value = Draft FV taken minus the Draft FV our board had at that pick, summed · + = out-drafted the board</span>
 
-              <label className="ml-auto flex items-center gap-1.5 text-slate-400">
+              <label className="ml-auto flex items-center gap-1.5 ns-text-2">
                 Rank by
                 <select value={gradeSort} onChange={e => setGradeSort(e.target.value)}
-                  className="py-0.5 px-1.5 bg-slate-800 border border-slate-600 rounded text-xs text-slate-200">
+                  className="ns-select">
                   <option value="fv">Total Draft FV</option>
                   <option value="avg">Avg Draft FV</option>
                   <option value="value">Value (FV pts)</option>
@@ -283,18 +285,18 @@ export default function MockDraftPage({ hitters, pitchers, fullHitters, fullPitc
                   <tbody>
                     {teamGrades.map((t, i) => (
                       <tr key={t.team}>
-                        <td className="text-slate-500 font-mono">{i + 1}</td>
-                        <td className="text-white font-medium">{t.team}</td>
+                        <td className="ns-muted">{i + 1}</td>
+                        <td className="ns-text font-medium">{t.team}</td>
                         <td>{t.picks}</td>
                         <td className="font-bold">{t.fv.toFixed(0)}</td>
-                        <td className="text-slate-400">{t.mock.toFixed(0)}</td>
+                        <td className="ns-text-2">{t.mock.toFixed(0)}</td>
                         <td>{t.avg.toFixed(1)}</td>
-                        <td className={t.value >= 0 ? 'text-green-400' : 'text-orange-400'}>{t.value > 0 ? '+' : ''}{t.value.toFixed(1)}</td>
-                        <td className="text-slate-300 whitespace-nowrap">
-                          {t.steal && <>{t.steal.name} <span className="text-slate-500">(our {t.steal.slot} · went #{t.steal.actual} · {t.steal.diff > 0 ? '+' : ''}{t.steal.diff})</span></>}
+                        <td className={t.value >= 0 ? 'ns-good' : 'ns-warn'}>{t.value > 0 ? '+' : ''}{t.value.toFixed(1)}</td>
+                        <td className="ns-text whitespace-nowrap">
+                          {t.steal && <>{t.steal.name} <span className="ns-muted">(our {t.steal.slot} · went #{t.steal.actual} · {t.steal.diff > 0 ? '+' : ''}{t.steal.diff})</span></>}
                         </td>
-                        <td className="text-slate-300 whitespace-nowrap">
-                          {t.reach && <>{t.reach.name} <span className="text-slate-500">(our {t.reach.slot} · went #{t.reach.actual} · {t.reach.diff > 0 ? '+' : ''}{t.reach.diff})</span></>}
+                        <td className="ns-text whitespace-nowrap">
+                          {t.reach && <>{t.reach.name} <span className="ns-muted">(our {t.reach.slot} · went #{t.reach.actual} · {t.reach.diff > 0 ? '+' : ''}{t.reach.diff})</span></>}
                         </td>
                       </tr>
                     ))}
@@ -307,7 +309,7 @@ export default function MockDraftPage({ hitters, pitchers, fullHitters, fullPitc
       )}
 
       {/* Board */}
-      <div className="flex-1 px-4 pb-3">
+      <div className="flex-1 pb-3">
         <div className="table-container compact-table" style={{ maxHeight: 'calc(100vh - 130px)' }}>
           <table className="data-table">
             <thead>
@@ -334,23 +336,21 @@ export default function MockDraftPage({ hitters, pitchers, fullHitters, fullPitc
             <tbody>
               {visible.map((player) => (
                 <tr key={player.ID || `${player.Name}-${player._overall}`}
-                  className={`cursor-pointer hover:bg-slate-800 ${player._wrecked ? 'opacity-40' : ''} ${player._pick === 1 && viewRound === 'all' ? 'border-t-2 border-slate-600' : ''}`}
+                  className={`cursor-pointer hover:bg-[var(--panel-2)] ${player._wrecked ? 'opacity-40' : ''} ${player._pick === 1 && viewRound === 'all' ? 'border-t-2 border-[var(--line-2)]' : ''}`}
                   onClick={() => select(player, player._type === 'H' ? 'hitter' : 'pitcher')}>
-                  <td className="font-mono font-bold text-slate-200">{player._slot}</td>
-                  {hasReal && <td className="text-xs text-slate-400 whitespace-nowrap">{player._mockTeam || ''}</td>}
+                  <td className="font-bold ns-text">{player._slot}</td>
+                  {hasReal && <td className="text-xs ns-text-2 whitespace-nowrap">{player._mockTeam || ''}</td>}
                   <td>
-                    <span className={`px-1 rounded text-xs font-bold ${
-                      player._type === 'H' ? 'bg-blue-900/50 text-blue-400' : 'bg-amber-900/50 text-amber-400'
-                    }`}>
+                    <span className="ns-chip" data-pos={player._type === 'H' ? 'DH' : 'SP'}>
                       {player._type}
                     </span>
                   </td>
-                  <td className="font-medium text-white">{player.Name}</td>
+                  <td className="font-medium ns-text">{player.Name}</td>
                   <td>{player.POS}</td>
                   <td>{Math.round(parseFloat(player.Age) || 0)}</td>
                   <td>
-                    <span className="px-1.5 rounded font-bold text-xs"
-                      style={{ color: fvColor(player._draftFV), background: `${fvColor(player._draftFV)}15` }}>
+                    <span className="px-1.5 font-bold text-xs"
+                      style={{ color: fvColor(player._draftFV), background: `color-mix(in oklab, ${fvColor(player._draftFV)} 10%, var(--panel))` }}>
                       {formatCellValue(player._draftRawFV, '_draftRawFV')}
                     </span>
                   </td>
@@ -360,15 +360,15 @@ export default function MockDraftPage({ hitters, pitchers, fullHitters, fullPitc
                   <td className={getCellColorClass(player._potentialWAA, '_potentialWAA')}>
                     {formatCellValue(player._potentialWAA, '_potentialWAA')}
                   </td>
-                  <td className="text-xs text-slate-400">{player.DEM}</td>
+                  <td className="text-xs ns-text-2">{player.DEM}</td>
                   {useFull && (
                     <td className="text-xs whitespace-nowrap">
                       {player.DraftedOverall ? (
-                        <span className="text-amber-400" title={`Round ${player.DraftedRound}, pick ${player.DraftedPick}`}>
+                        <span className="ns-warn" title={`Round ${player.DraftedRound}, pick ${player.DraftedPick}`}>
                           #{player.DraftedOverall} · {player.DraftedTeam}
                         </span>
                       ) : (
-                        <span className="text-slate-600">on the board</span>
+                        <span className="ns-muted">on the board</span>
                       )}
                     </td>
                   )}

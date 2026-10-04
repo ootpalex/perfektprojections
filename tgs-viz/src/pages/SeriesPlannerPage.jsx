@@ -7,7 +7,6 @@ import {
 } from '../lib/rosterOptimizer';
 import { getCellColorClass } from '../lib/columns';
 import { factorClass, f3 } from './ParksPage';
-import { Swords, Trophy, Cross, Users, Target, Lock, AlertTriangle, Loader2 } from 'lucide-react';
 
 // The series on the user's desk when this page shipped (2026-09, BLM: Tampa Bay
 // against Pittsburgh). It only fills the opponent box on a first visit; the
@@ -18,16 +17,16 @@ const BEST_OF = [3, 5, 7];
 const presetsFor = (bestOf) => Object.keys(PATTERN_PRESETS).filter(id => PATTERN_PRESETS[id].bestOf === bestOf);
 const storeKey = (league) => `tgs-series-${league || 'default'}`;
 const pctText = (c) => `${Number((c * 100).toFixed(2))}%`;
-const seg = (active, tone = 'bg-blue-600') =>
-  `px-3 py-1 text-xs font-medium rounded-md transition-colors ${active ? `${tone} text-white` : 'text-slate-400 hover:text-slate-200'}`;
-const selectClass = 'py-1.5 px-3 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200';
+const selectClass = 'ns-select';
+const MINE = 'text-[var(--chart-series-1)]';
+const THEIRS = 'text-[var(--chart-series-4)]';
 
 function readSaved(league) {
   try { return JSON.parse(localStorage.getItem(storeKey(league)) || 'null') || {}; } catch { return {}; }
 }
 
 function Label({ children }) {
-  return <span className="text-[10px] text-slate-500 uppercase tracking-widest">{children}</span>;
+  return <span className="ns-label">{children}</span>;
 }
 
 function benchRole(h) {
@@ -44,12 +43,11 @@ function LineupCard({ title, tone, lineup, otherLineup, otherLabel }) {
   const otherSpot = new Map((otherLineup?.order || []).map(e => [String(e.player.ID), e.position]));
   const split = lineup.split;
   return (
-    <div className="bg-slate-800/30 rounded-lg border border-slate-700/50">
-      <div className="p-3 border-b border-slate-700/50 flex items-center gap-2">
-        <Lock className={tone} size={16} />
-        <h2 className="text-sm font-bold text-white">{title}</h2>
-        <span className="text-xs text-slate-500">locked for every game</span>
-        <span className="ml-auto text-xs text-slate-500">
+    <div className="ns-box">
+      <div className="ns-strip flex items-center gap-2">
+        <h2 className={tone}>{title}</h2>
+        <span className="text-xs ns-muted">locked for every game</span>
+        <span className="ml-auto text-xs ns-muted">
           Lineup WAA <span className={`${tone} font-semibold`}>{lineup.totalWAA.toFixed(2)}</span>
         </span>
       </div>
@@ -64,20 +62,19 @@ function LineupCard({ title, tone, lineup, otherLineup, otherLabel }) {
         <tbody>
           {lineup.order.map(e => (
             <tr key={e.slot}>
-              <td className="font-bold text-blue-400">{e.slot}</td>
-              <td className="font-bold text-amber-400">{e.position}</td>
-              <td className="font-medium text-white">{e.player.Name}</td>
-              <td className="text-slate-400">{e.player.B}</td>
+              <td className="font-bold ns-muted">{e.slot}</td>
+              <td className="font-bold ns-text-2">{e.position}</td>
+              <td className="font-medium ns-text">{e.player.Name}</td>
+              <td className="ns-text-2">{e.player.B}</td>
               <td className={getCellColorClass(e.woba, 'wOBA wtd')}>{e.woba ? e.woba.toFixed(3) : '-'}</td>
               <td className={getCellColorClass(e.waa, `Max WAA ${split}`)}>{e.waa.toFixed(2)}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      <div className="px-3 pt-2 pb-1 flex items-center gap-2 border-t border-slate-700/50">
-        <Users className="text-green-400" size={14} />
-        <span className="text-xs font-semibold text-slate-300">Bench</span>
-        <span className="text-[11px] text-slate-500">the 13 minus this nine</span>
+      <div className="px-3 pt-2 pb-1 flex items-center gap-2 border-t border-[var(--line)]">
+        <span className="ns-subhead">Bench</span>
+        <span className="text-[11px] ns-muted">the 13 minus this nine</span>
       </div>
       <table className="data-table">
         <tbody>
@@ -86,13 +83,13 @@ function LineupCard({ title, tone, lineup, otherLineup, otherLabel }) {
             const other = otherSpot.has(String(h.ID)) ? `starts ${otherLabel} at ${otherSpot.get(String(h.ID))}` : `bench ${otherLabel} too`;
             return (
               <tr key={h.ID}>
-                <td className="font-bold text-green-400">{benchRole(h)}</td>
-                <td className="font-medium text-white">{h.Name}</td>
-                <td className="text-slate-400">{h.B}</td>
-                <td className="text-xs text-slate-500">{other}{covers ? ` · covers ${covers}` : ''}</td>
+                <td className="font-bold ns-text-2">{benchRole(h)}</td>
+                <td className="font-medium ns-text">{h.Name}</td>
+                <td className="ns-text-2">{h.B}</td>
+                <td className="text-xs ns-muted">{other}{covers ? ` · covers ${covers}` : ''}</td>
               </tr>
             );
-          }) : <tr><td className="text-xs text-slate-500 italic">No bench players</td></tr>}
+          }) : <tr><td className="text-xs ns-muted italic">No bench players</td></tr>}
         </tbody>
       </table>
     </div>
@@ -206,40 +203,39 @@ export default function SeriesPlannerPage({ hitters, pitchers, parks, metadata, 
   );
 
   const header = (
-    <div className="p-4">
-      <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-        <Swords className="text-amber-400" size={24} />
-        Series Planner
-      </h1>
-      <p className="text-sm text-slate-400 mt-1">
-        One lineup vs RHP and one vs LHP for the whole series &bull; each park counts by its games &bull;
-        hitter values are the engine&apos;s, in each club&apos;s park at full weight &bull; always built from the Neutral files
-      </p>
-    </div>
+    <header className="ns-page-head">
+      <div>
+        <h1>Series Planner</h1>
+        <p className="ns-page-sub">
+          One lineup vs RHP and one vs LHP for the whole series &bull; each park counts by its games &bull;
+          hitter values are the engine&apos;s, in each club&apos;s park at full weight &bull; always built from the Neutral files
+        </p>
+      </div>
+    </header>
   );
 
   if (status === 'loading') {
     return (
-      <div className="h-full overflow-auto">{header}
-        <div className="px-4 text-sm text-slate-400 flex items-center gap-2"><Loader2 size={16} className="animate-spin text-blue-400" /> Loading park values for {league}...</div>
+      <div className="ns-page overflow-auto [&>*]:shrink-0">{header}
+        <div className="text-sm ns-text-2 flex items-center gap-2">Loading park values for {league}...</div>
       </div>
     );
   }
   if (status === 'missing') {
     return (
-      <div className="h-full overflow-auto">{header}
-        <div className="mx-4 px-3 py-3 rounded-lg bg-amber-900/20 border border-amber-700/40 text-sm text-slate-300">
+      <div className="ns-page overflow-auto [&>*]:shrink-0">{header}
+        <div className="ns-alert-warn px-3 py-3 text-sm">
           The park values file for {league} is missing. Run a ratings pull for {league}: the pull builds it.
           You can also build it alone with{' '}
-          <span className="font-mono text-slate-100">python tgs-viz/ingest/park_values.py --league {league} --write</span>.
+          <span className="ns-text">python tgs-viz/ingest/park_values.py --league {league} --write</span>.
         </div>
       </div>
     );
   }
   if (status === 'error') {
     return (
-      <div className="h-full overflow-auto">{header}
-        <div className="mx-4 px-3 py-3 rounded-lg bg-red-900/20 border border-red-700/40 text-sm text-red-300">{error || 'The series data did not load.'}</div>
+      <div className="ns-page overflow-auto [&>*]:shrink-0">{header}
+        <div className="ns-alert-bad px-3 py-3 text-sm">{error || 'The series data did not load.'}</div>
       </div>
     );
   }
@@ -248,11 +244,11 @@ export default function SeriesPlannerPage({ hitters, pitchers, parks, metadata, 
   const games = leagueGames(league);
 
   return (
-    <div className="h-full overflow-auto">
+    <div className="ns-page overflow-auto [&>*]:shrink-0">
       {header}
 
       {/* Controls */}
-      <div className="flex flex-wrap items-end gap-x-4 gap-y-3 px-4 pb-3">
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-3 pb-3">
         <div className="flex flex-col gap-1"><Label>My team</Label>
           <select value={myTeam} onChange={e => setTeam(e.target.value)} className={selectClass}>
             {clubs.map(c => <option key={c} value={c}>{c}</option>)}
@@ -264,30 +260,30 @@ export default function SeriesPlannerPage({ hitters, pitchers, parks, metadata, 
           </select>
         </div>
         <div className="flex flex-col gap-1"><Label>Best of</Label>
-          <div className="flex gap-1 bg-slate-900 rounded-lg p-0.5">
-            {BEST_OF.map(n => <button key={n} onClick={() => pickBestOf(n)} className={seg(bestOf === n)}>{n}</button>)}
+          <div className="flex gap-1">
+            {BEST_OF.map(n => <button key={n} onClick={() => pickBestOf(n)} aria-pressed={bestOf === n} className="ns-btn ns-btn-sm">{n}</button>)}
           </div>
         </div>
         <div className="flex flex-col gap-1"><Label>Home pattern</Label>
-          <div className="flex gap-1 bg-slate-900 rounded-lg p-0.5">
+          <div className="flex gap-1">
             {[...presetsFor(bestOf), 'custom'].map(id => (
-              <button key={id} onClick={() => pickPreset(id)} className={seg(preset === id)}>{id === 'custom' ? 'Custom' : id}</button>
+              <button key={id} onClick={() => pickPreset(id)} aria-pressed={preset === id} className="ns-btn ns-btn-sm">{id === 'custom' ? 'Custom' : id}</button>
             ))}
           </div>
         </div>
         {preset !== 'custom' && (
           <div className="flex flex-col gap-1"><Label>Hosts game 1</Label>
-            <div className="flex gap-1 bg-slate-900 rounded-lg p-0.5">
-              <button onClick={() => setFirstHost('opp')} className={seg(firstHost === 'opp')}>{opp}</button>
-              <button onClick={() => setFirstHost('me')} className={seg(firstHost === 'me')}>{myTeam}</button>
+            <div className="flex gap-1">
+              <button onClick={() => setFirstHost('opp')} aria-pressed={firstHost === 'opp'} className="ns-btn ns-btn-sm">{opp}</button>
+              <button onClick={() => setFirstHost('me')} aria-pressed={firstHost === 'me'} className="ns-btn ns-btn-sm">{myTeam}</button>
             </div>
           </div>
         )}
         <div className="flex flex-col gap-1"><Label>Park weights</Label>
-          <div className="flex gap-1 bg-slate-900 rounded-lg p-0.5">
-            <button onClick={() => setWeightMode('expected')} className={seg(weightMode === 'expected')}
+          <div className="flex gap-1">
+            <button onClick={() => setWeightMode('expected')} aria-pressed={weightMode === 'expected'} className="ns-btn ns-btn-sm"
               title="Each game counts by the chance it is played, with every game an even coin flip.">Chance played</button>
-            <button onClick={() => setWeightMode('scheduled')} className={seg(weightMode === 'scheduled')}
+            <button onClick={() => setWeightMode('scheduled')} aria-pressed={weightMode === 'scheduled'} className="ns-btn ns-btn-sm"
               title="Every scheduled game counts 1, as if the series goes the distance.">Full schedule</button>
           </div>
         </div>
@@ -302,63 +298,61 @@ export default function SeriesPlannerPage({ hitters, pitchers, parks, metadata, 
           title={posRatingsAvailable
             ? 'Win now: a player can only start at a position where his OOTP position rating has reached his potential there. DH is always allowed.'
             : 'No position ratings in this league\'s files.'}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
-            !posRatingsAvailable ? 'bg-slate-800/50 border-slate-700 text-slate-600 cursor-not-allowed'
-              : winNowOn ? 'bg-amber-600 border-amber-500 text-white'
-              : 'bg-slate-800 border-slate-600 text-slate-300 hover:text-white hover:border-amber-500/60'}`}>
-          <Trophy size={14} className={winNowOn ? 'text-white' : 'text-amber-400'} /> Win now
+          type="button"
+          aria-pressed={winNowOn}
+          className="ns-btn">
+          Win now
         </button>
         <button
           onClick={() => injuryDataAvailable && setExcludeInjured(v => !v)}
           disabled={!injuryDataAvailable}
           title={injuryDataAvailable ? 'Pick the 13 from healthy players only (not on the DL).' : 'No injury data in this league\'s files.'}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
-            !injuryDataAvailable ? 'bg-slate-800/50 border-slate-700 text-slate-600 cursor-not-allowed'
-              : injuredOn ? 'bg-rose-600 border-rose-500 text-white'
-              : 'bg-slate-800 border-slate-600 text-slate-300 hover:text-white hover:border-rose-500/60'}`}>
-          <Cross size={14} className={injuredOn ? 'text-white' : 'text-rose-400'} fill={injuredOn ? 'currentColor' : 'none'} /> Exclude injured (DL)
+          type="button"
+          aria-pressed={injuredOn}
+          className="ns-btn">
+          Exclude injured (DL)
         </button>
       </div>
 
       {/* Game strip */}
-      <div className="px-4 pb-3">
+      <div className="pb-3">
         <div className="flex flex-wrap items-stretch gap-2">
           {(plan?.games || pattern.map((host, i) => ({ game: i + 1, host, chance: null }))).map((g, i) => {
             const mine = g.host === myTeam;
             const body = (
               <>
-                <div className="text-[10px] uppercase tracking-widest text-slate-500">Game {g.game}</div>
-                <div className={`text-xs font-semibold ${mine ? 'text-blue-300' : 'text-amber-300'}`}>@ {g.host}</div>
+                <div className="text-[11px] ns-muted">Game {g.game}</div>
+                <div className={`text-xs font-semibold ${mine ? MINE : THEIRS}`}>@ {g.host}</div>
                 {g.chance !== null && (
-                  <div className="text-[11px] text-slate-400">{g.chance >= 1 ? 'always played' : `played ${pctText(g.chance)}`}</div>
+                  <div className="text-[11px] ns-text-2">{g.chance >= 1 ? 'always played' : `played ${pctText(g.chance)}`}</div>
                 )}
               </>
             );
-            const cls = `text-left rounded-lg border px-2.5 py-1.5 ${mine ? 'bg-blue-900/20 border-blue-800/50' : 'bg-amber-900/10 border-amber-800/40'}`;
+            const cls = `text-left border px-2.5 py-1.5 bg-[var(--panel)] ${mine ? 'border-[var(--chart-series-1)]' : 'border-[var(--chart-series-4)]'}`;
             return preset === 'custom'
-              ? <button key={i} onClick={() => flipGame(i)} title="Click to change the host of this game" className={`${cls} hover:border-slate-400 cursor-pointer`}>{body}</button>
+              ? <button key={i} onClick={() => flipGame(i)} title="Click to change the host of this game" className={`${cls} hover:bg-[var(--panel-3)] cursor-pointer`}>{body}</button>
               : <div key={i} className={cls}>{body}</div>;
           })}
         </div>
-        {preset === 'custom' && <p className="text-[11px] text-slate-500 mt-1">Click a game to change its host.</p>}
+        {preset === 'custom' && <p className="text-[11px] ns-muted mt-1">Click a game to change its host.</p>}
         {plan && (
-          <p className="text-xs text-slate-400 mt-2">
+          <p className="text-xs ns-text-2 mt-2">
             {weightMode === 'expected' ? 'Expected games' : 'Scheduled games'}:{' '}
             {plan.weights.map((w, i) => (
-              <span key={w.club}>{i > 0 && ' / '}<b className="text-slate-200">{w.games.toFixed(2)}</b> {w.club}</span>
+              <span key={w.club}>{i > 0 && ' / '}<b className="ns-text">{w.games.toFixed(2)}</b> {w.club}</span>
             ))}
-            {weightMode === 'expected' && <span className="text-slate-500"> &middot; every game an even coin flip, the series stops when one club has {(bestOf + 1) / 2} wins</span>}
+            {weightMode === 'expected' && <span className="ns-muted"> &middot; every game an even coin flip, the series stops when one club has {(bestOf + 1) / 2} wins</span>}
           </p>
         )}
-        <p className="text-xs text-slate-400 mt-1">
-          <span className="text-slate-500">{opp} MLB starters:</span>{' '}
-          {oppStarters.total === 0 ? <span className="text-slate-500 italic">none listed at POS SP</span> : (
+        <p className="text-xs ns-text-2 mt-1">
+          <span className="ns-muted">{opp} MLB starters:</span>{' '}
+          {oppStarters.total === 0 ? <span className="ns-muted italic">none listed at POS SP</span> : (
             <>
               {[['R', 'RHP'], ['L', 'LHP']].map(([hand, label]) => (
                 <span key={hand} className="mr-3">
-                  <b className={hand === 'R' ? 'text-cyan-400' : 'text-emerald-400'}>{(oppStarters.byHand[hand] || []).length} {label}</b>
+                  <b className={hand === 'R' ? 'text-[var(--chart-series-1)]' : 'text-[var(--chart-series-2)]'}>{(oppStarters.byHand[hand] || []).length} {label}</b>
                   {(oppStarters.byHand[hand] || []).length > 0 && (
-                    <span className="text-slate-300"> {(oppStarters.byHand[hand]).map(p => p.Name + (isInjured(p) ? ' (DL)' : '')).join(', ')}</span>
+                    <span className="ns-text"> {(oppStarters.byHand[hand]).map(p => p.Name + (isInjured(p) ? ' (DL)' : '')).join(', ')}</span>
                   )}
                 </span>
               ))}
@@ -369,11 +363,11 @@ export default function SeriesPlannerPage({ hitters, pitchers, parks, metadata, 
 
       {/* Warnings */}
       {result?.error && (
-        <div className="mx-4 mb-3 px-3 py-2 rounded-lg bg-red-900/20 border border-red-700/40 text-sm text-red-300">{result.error}</div>
+        <div className="ns-alert-bad mb-3 px-3 py-2 text-sm">{result.error}</div>
       )}
       {plan && (plan.missing.length > 0 || plan.stale.length > 0 || factorsMoved.length > 0) && (
-        <div className="mx-4 mb-3 px-3 py-2 rounded-lg bg-amber-900/20 border border-amber-700/40 text-xs text-amber-200 space-y-1">
-          <div className="flex items-center gap-1.5 font-semibold"><AlertTriangle size={13} /> The park values file does not cover everything. Run a ratings pull for {league}.</div>
+        <div className="ns-alert-warn mb-3 px-3 py-2 text-xs space-y-1">
+          <div className="flex items-center gap-1.5 font-semibold">The park values file does not cover everything. Run a ratings pull for {league}.</div>
           {plan.missing.length > 0 && (
             <div>Not in the file, kept on neutral values: {plan.missing.map(h => h.Name).join(', ')}.</div>
           )}
@@ -381,7 +375,7 @@ export default function SeriesPlannerPage({ hitters, pitchers, parks, metadata, 
             <div>Projection changed after the file was built, kept on neutral values: {plan.stale.map(h => h.Name).join(', ')}.</div>
           )}
           {factorsMoved.length > 0 && (
-            <div>Park factors changed after the file was built: {factorsMoved.join(', ')}. Run <span className="font-mono">python tgs-viz/ingest/park_values.py --league {league} --write</span>.</div>
+            <div>Park factors changed after the file was built: {factorsMoved.join(', ')}. Run <span>python tgs-viz/ingest/park_values.py --league {league} --write</span>.</div>
           )}
         </div>
       )}
@@ -389,27 +383,26 @@ export default function SeriesPlannerPage({ hitters, pitchers, parks, metadata, 
       {plan && (
         <>
           {/* Locked lineups */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 px-4 pb-4">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 pb-4">
             {[['vs RHP', plan.locked.vR], ['vs LHP', plan.locked.vL]].map(([lab, lu]) => {
               const filled = new Set((lu.order || []).map(e => e.position));
               const empty = ['C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH'].filter(x => !filled.has(x));
               return empty.length ? (
-                <div key={lab} className="col-span-full bg-rose-900/30 border border-rose-700/50 rounded-lg px-3 py-2 text-sm text-rose-200">
+                <div key={lab} className="col-span-full ns-alert-bad px-3 py-2 text-sm">
                   No one can start at {empty.join(', ')} {lab}{winNow ? ' with Win now on: nobody on this roster has reached his potential there. Turn Win now off, or widen the Level.' : '.'}
                 </div>
               ) : null;
             })}
-            <LineupCard title="Lineup vs RHP" tone="text-cyan-400" lineup={plan.locked.vR} otherLineup={plan.locked.vL} otherLabel="vs LHP" />
-            <LineupCard title="Lineup vs LHP" tone="text-emerald-400" lineup={plan.locked.vL} otherLineup={plan.locked.vR} otherLabel="vs RHP" />
+            <LineupCard title="Lineup vs RHP" tone="text-[var(--chart-series-1)]" lineup={plan.locked.vR} otherLineup={plan.locked.vL} otherLabel="vs LHP" />
+            <LineupCard title="Lineup vs LHP" tone="text-[var(--chart-series-2)]" lineup={plan.locked.vL} otherLineup={plan.locked.vR} otherLabel="vs RHP" />
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 px-4 pb-6">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 pb-6">
             {/* What locking costs */}
-            <div className="bg-slate-800/30 rounded-lg border border-slate-700/50">
-              <div className="p-3 border-b border-slate-700/50 flex items-center gap-2">
-                <Target className="text-blue-400" size={16} />
-                <h2 className="text-sm font-bold text-white">What locking costs</h2>
-                <span className="text-xs text-slate-500">against each park&apos;s own best nine from the same 13</span>
+            <div className="ns-box">
+              <div className="ns-strip flex items-center gap-2">
+                <h2>What locking costs</h2>
+                <span className="text-xs ns-muted">against each park&apos;s own best nine from the same 13</span>
               </div>
               <table className="data-table">
                 <thead>
@@ -425,19 +418,19 @@ export default function SeriesPlannerPage({ hitters, pitchers, parks, metadata, 
                     const r = pk[sp];
                     return (
                       <tr key={`${pk.club}-${sp}`}>
-                        <td className={pk.club === myTeam ? 'text-blue-300 font-semibold' : 'text-amber-300 font-semibold'}>{pk.club}</td>
-                        <td className={sp === 'vR' ? 'text-cyan-400' : 'text-emerald-400'}>{label}</td>
+                        <td className={`${pk.club === myTeam ? MINE : THEIRS} font-semibold`}>{pk.club}</td>
+                        <td className={sp === 'vR' ? 'text-[var(--chart-series-1)]' : 'text-[var(--chart-series-2)]'}>{label}</td>
                         <td>{r.lockedValue.toFixed(2)}</td>
                         <td>{r.bestValue.toFixed(2)}</td>
-                        <td className={r.cost >= 0.005 ? 'text-orange-400 font-semibold' : 'text-slate-500'}>{r.cost.toFixed(2)}</td>
-                        <td className="text-xs text-slate-300" style={{ whiteSpace: 'normal' }}>
-                          {r.swaps.length === 0 ? <span className="text-slate-500">same nine, same positions</span> : r.swaps.map((s, i) => (
+                        <td className={r.cost >= 0.005 ? 'ns-warn font-semibold' : 'ns-muted'}>{r.cost.toFixed(2)}</td>
+                        <td className="text-xs ns-text" style={{ whiteSpace: 'normal' }}>
+                          {r.swaps.length === 0 ? <span className="ns-muted">same nine, same positions</span> : r.swaps.map((s, i) => (
                             <div key={i}>
-                              <span className="font-bold text-amber-400">{s.position}</span>{' '}
-                              <span className="text-white">{s.parkPlayer.Name}</span>
-                              {s.parkWAA !== null && <span className="text-slate-400"> ({s.parkWAA.toFixed(2)})</span>}
+                              <span className="font-bold ns-text-2">{s.position}</span>{' '}
+                              <span className="ns-text">{s.parkPlayer.Name}</span>
+                              {s.parkWAA !== null && <span className="ns-text-2"> ({s.parkWAA.toFixed(2)})</span>}
                               {s.lockedPlayer && (
-                                <> instead of {s.lockedPlayer.Name}{s.lockedWAA !== null && <span className="text-slate-400"> ({s.lockedWAA.toFixed(2)})</span>}</>
+                                <> instead of {s.lockedPlayer.Name}{s.lockedWAA !== null && <span className="ns-text-2"> ({s.lockedWAA.toFixed(2)})</span>}</>
                               )}
                             </div>
                           ))}
@@ -447,17 +440,17 @@ export default function SeriesPlannerPage({ hitters, pitchers, parks, metadata, 
                   }))}
                 </tbody>
               </table>
-              <p className="text-xs text-slate-500 px-3 py-2">
+              <p className="text-xs ns-muted px-3 py-2">
                 WAA is on a full-season scale: a cost of 0.30 means the park&apos;s own nine would be worth 0.30 more wins
                 than the locked nine over {games} games played in that park against that hand.
               </p>
             </div>
 
             {/* Park factors */}
-            <div className="bg-slate-800/30 rounded-lg border border-slate-700/50 self-start">
-              <div className="p-3 border-b border-slate-700/50 flex items-center gap-2">
-                <h2 className="text-sm font-bold text-white">The two parks</h2>
-                <span className="text-xs text-slate-500">1.00 = neutral &middot; splits are the batter&apos;s side &middot; the factors the values were built from</span>
+            <div className="ns-box self-start">
+              <div className="ns-strip flex items-center gap-2">
+                <h2>The two parks</h2>
+                <span className="text-xs ns-muted">1.00 = neutral &middot; splits are the batter&apos;s side &middot; the factors the values were built from</span>
               </div>
               <table className="data-table">
                 <thead>
@@ -466,8 +459,8 @@ export default function SeriesPlannerPage({ hitters, pitchers, parks, metadata, 
                 <tbody>
                   {factorRows.map(p => (
                     <tr key={p.club}>
-                      <td className={p.club === myTeam ? 'text-blue-300 font-semibold' : 'text-amber-300 font-semibold'}>{p.club}</td>
-                      <td className="text-slate-300">{p.park}</td>
+                      <td className={`${p.club === myTeam ? MINE : THEIRS} font-semibold`}>{p.club}</td>
+                      <td className="ns-text">{p.park}</td>
                       <td className={factorClass(p.hr_rhb)}>{f3(p.hr_rhb)}</td>
                       <td className={factorClass(p.hr_lhb)}>{f3(p.hr_lhb)}</td>
                       <td className={factorClass(p.avg_rhb)}>{f3(p.avg_rhb)}</td>
@@ -478,7 +471,7 @@ export default function SeriesPlannerPage({ hitters, pitchers, parks, metadata, 
                   ))}
                 </tbody>
               </table>
-              <p className="text-xs text-slate-500 px-3 py-2">
+              <p className="text-xs ns-muted px-3 py-2">
                 Park values built {String(parkValues.generated || '').replace('T', ' ')} &middot; {plan.poolSize} {level} hitters in the pool
                 {winNowOn ? ' · Win now on' : ''}{injuredOn ? ' · injured excluded' : ''}
               </p>

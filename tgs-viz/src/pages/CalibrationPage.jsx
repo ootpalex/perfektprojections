@@ -64,23 +64,23 @@ function Block({ b, showSheet }) {
   }, [b, hasSheet]);
 
   return (
-    <div className="bg-slate-800/50 rounded-lg p-4">
-      <div className="flex items-baseline justify-between flex-wrap gap-2 mb-1">
-        <h3 className="text-sm font-bold text-white">
+    <div className="ns-card">
+      <div className="ns-strip flex items-baseline justify-between flex-wrap gap-2">
+        <h3>
           {b.label}
-          {b.role && <span className="ml-2 text-xs font-semibold text-blue-400">{b.role}</span>}
+          {b.role && <span className={`ml-2 text-xs ns-pos ns-pos-${b.role.toLowerCase()}`}>{b.role}</span>}
         </h3>
-        <span className="text-[11px] text-slate-500">by {b.rating} · {b.unit}</span>
+        <span className="text-[11px] ns-muted">by {b.rating} · {b.unit}</span>
       </div>
       {err && (
         <div className="text-[11px] mb-2">
-          <span className="text-slate-500">average miss: </span>
-          <span className="text-purple-300 font-mono">{(err.model * 100).toFixed(2)} pts model</span>
+          <span className="ns-muted">average miss: </span>
+          <span style={{ color: 'var(--chart-series-5)' }}>{(err.model * 100).toFixed(2)} pts model</span>
           {hasSheet && (
             <>
-              <span className="text-slate-600"> vs </span>
-              <span className="text-amber-300 font-mono">{(err.sheet * 100).toFixed(2)} pts sheet only</span>
-              <span className={err.model <= err.sheet ? 'text-green-400 ml-2' : 'text-red-400 ml-2'}>
+              <span className="ns-muted"> vs </span>
+              <span style={{ color: 'var(--chart-series-4)' }}>{(err.sheet * 100).toFixed(2)} pts sheet only</span>
+              <span className={err.model <= err.sheet ? 'ns-good ml-2' : 'ns-bad ml-2'}>
                 {err.model <= err.sheet ? '✓ model closer' : '! sheet closer'}
               </span>
             </>
@@ -88,64 +88,64 @@ function Block({ b, showSheet }) {
         </div>
       )}
       {departs && (
-        <div className={departs.all ? 'text-[11px] mb-2 text-amber-300/80' : 'text-[11px] mb-2 text-slate-500'}>
+        <div className={departs.all ? 'text-[11px] mb-2 ns-warn' : 'text-[11px] mb-2 ns-muted'}>
           {departs.text}
         </div>
       )}
 
       <ResponsiveContainer width="100%" height={190}>
         <ComposedChart data={data} margin={{ top: 5, right: 8, bottom: 4, left: -18 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis dataKey="r" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-          <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} width={46}
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+          <XAxis dataKey="r" tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} />
+          <YAxis tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} width={46}
                  tickFormatter={(v) => v.toFixed(0) + '%'} />
           <Tooltip
-            contentStyle={{ background: '#1e293b', border: '1px solid #475569', borderRadius: 8 }}
-            labelStyle={{ color: '#e2e8f0' }}
+            contentStyle={{ background: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: 3 }}
+            labelStyle={{ color: 'var(--chart-tooltip-text)' }}
             labelFormatter={(v) => 'rating ' + v}
             formatter={(v, k) => [v === null || v === undefined ? '—' : v.toFixed(2) + '%', k]}
           />
           <Legend wrapperStyle={{ fontSize: 11 }} />
           {hasSheet && (
-            <Line type="monotone" dataKey="Sheet only" stroke="#fbbf24" strokeWidth={1.5}
+            <Line type="monotone" dataKey="Sheet only" stroke="var(--chart-series-4)" strokeWidth={1.5}
                   strokeDasharray="4 3" dot={false} connectNulls />
           )}
-          <Line type="monotone" dataKey="Model" stroke="#a78bfa" strokeWidth={2}
+          <Line type="monotone" dataKey="Model" stroke="var(--chart-series-5)" strokeWidth={2}
                 dot={{ r: 2 }} connectNulls />
-          <Scatter dataKey="Actual" fill="#4ade80" shape="circle" />
+          <Scatter dataKey="Actual" fill="var(--chart-series-2)" shape="circle" />
         </ComposedChart>
       </ResponsiveContainer>
 
       <div className="overflow-x-auto mt-2">
         <table className="w-full text-[11px]">
           <thead>
-            <tr className="text-slate-500 uppercase tracking-wide">
+            <tr className="ns-muted">
               <th className="text-left font-semibold py-1">Rating</th>
               <th className="text-right font-semibold">Players</th>
               <th className="text-right font-semibold">Sample</th>
-              <th className="text-right font-semibold text-green-400">Actual</th>
-              <th className="text-right font-semibold text-purple-300">Model</th>
-              {hasSheet && <th className="text-right font-semibold text-amber-300">Sheet only</th>}
+              <th className="text-right font-semibold" style={{ color: 'var(--chart-series-2)' }}>Actual</th>
+              <th className="text-right font-semibold" style={{ color: 'var(--chart-series-5)' }}>Model</th>
+              {hasSheet && <th className="text-right font-semibold" style={{ color: 'var(--chart-series-4)' }}>Sheet only</th>}
               <th className="text-right font-semibold">Miss</th>
             </tr>
           </thead>
-          <tbody className="font-mono">
+          <tbody className="">
             {b.rows.map((x) => {
               const ok = x.emp !== null && x.emp !== undefined
                 && x.model !== null && x.model !== undefined;
               const miss = ok ? (x.model - x.emp) * 100 : null;
               return (
-                <tr key={x.r} className="border-t border-slate-700/40">
-                  <td className="py-[3px] text-slate-300">{x.r}</td>
-                  <td className="text-right text-slate-500">{x.n === null || x.n === undefined ? '—' : x.n}</td>
-                  <td className="text-right text-slate-500">{num(x.w)}</td>
-                  <td className="text-right text-green-400">{pct(x.emp)}</td>
-                  <td className="text-right text-purple-300">{pct(x.model)}</td>
-                  {hasSheet && <td className="text-right text-amber-300">{pct(x.sheet)}</td>}
+                <tr key={x.r} className="border-t border-[var(--line)]">
+                  <td className="py-[3px] ns-text">{x.r}</td>
+                  <td className="text-right ns-muted">{x.n === null || x.n === undefined ? '—' : x.n}</td>
+                  <td className="text-right ns-muted">{num(x.w)}</td>
+                  <td className="text-right" style={{ color: 'var(--chart-series-2)' }}>{pct(x.emp)}</td>
+                  <td className="text-right" style={{ color: 'var(--chart-series-5)' }}>{pct(x.model)}</td>
+                  {hasSheet && <td className="text-right" style={{ color: 'var(--chart-series-4)' }}>{pct(x.sheet)}</td>}
                   <td className={
-                    miss === null ? 'text-right text-slate-600'
-                      : Math.abs(miss) < 0.5 ? 'text-right text-slate-400'
-                      : Math.abs(miss) < 1.5 ? 'text-right text-yellow-400' : 'text-right text-red-400'}>
+                    miss === null ? 'text-right ns-muted'
+                      : Math.abs(miss) < 0.5 ? 'text-right ns-text-2'
+                      : Math.abs(miss) < 1.5 ? 'text-right ns-warn' : 'text-right ns-bad'}>
                     {miss === null ? '—' : (miss > 0 ? '+' : '') + miss.toFixed(2)}
                   </td>
                 </tr>
@@ -183,15 +183,15 @@ export default function CalibrationPage({ league }) {
   }, [league, version]);
 
   if (cal === undefined) {
-    return <div className="p-6 text-slate-400">Loading calibration…</div>;
+    return <div className="p-6 ns-text-2">Loading calibration…</div>;
   }
   if (cal === null) {
     return (
-      <div className="p-6 text-slate-400 max-w-2xl">
-        <h1 className="text-2xl font-bold text-white mb-2">Model vs Actual</h1>
+      <div className="p-6 ns-text-2 max-w-2xl">
+        <h1 className="text-2xl font-extrabold ns-text mb-2">Model vs Actual</h1>
         <p className="text-sm">
           No calibration file for {league}. Run{' '}
-          <code className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-300">
+          <code className="bg-[var(--bg)] border border-[var(--line)] px-1.5 py-0.5 ns-text">
             python tgs-viz/engine/export_calibration.py --league {league} --write
           </code>{' '}
           — a recalibration does it automatically.
@@ -209,34 +209,33 @@ export default function CalibrationPage({ league }) {
   const blocks = cal[tab] || [];
 
   return (
-    <div className="h-full overflow-auto">
-      <div className="p-4 pb-2">
-        <h1 className="text-2xl font-bold text-white">Model vs Actual</h1>
-        <p className="text-sm text-slate-400 mt-1 max-w-3xl">
-          At each rating, what the sims actually produced (<span className="text-green-400">green dots</span>)
-          against what the projections say (<span className="text-purple-300">purple</span>)
-          {tab !== 'ladder' && <> and what the sheet&apos;s own fit alone would say (<span className="text-amber-300">amber</span>)</>}.
+    <div className="ns-page overflow-auto [&>*]:shrink-0">
+      <header className="ns-page-head">
+        <div>
+        <h1>Model vs Actual</h1>
+        <p className="ns-page-sub max-w-3xl">
+          At each rating, what the sims actually produced (<span style={{ color: 'var(--chart-series-2)' }}>green dots</span>)
+          against what the projections say (<span style={{ color: 'var(--chart-series-5)' }}>purple</span>)
+          {tab !== 'ladder' && <> and what the sheet&apos;s own fit alone would say (<span style={{ color: 'var(--chart-series-4)' }}>amber</span>)</>}.
           {tab === 'hitters' && ' The two are the SAME except in the tail regions the sims proved the straight line was missing.'}
           {tab === 'pitchers' && ' Each block shown runs on its fitted S-curve. In BLM, a block that did not beat the two lines on the live season stays on them, moved to the league\'s level, and is not shown.'}
           {tab === 'ladder'
             ? ' Measured on the LIVE season, out of sample — the honest test.'
             : ' Measured on the calibration archive.'}
         </p>
-        <p className="text-[11px] text-slate-600 mt-1">{cal.league} · built {cal.built_at}</p>
-
-        <div className="flex gap-1 mt-3">
-          {tabs.map(([k, lab]) => (
-            <button key={k} onClick={() => setTab(k)}
-              className={tab === k
-                ? 'px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white'
-                : 'px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 text-slate-400 hover:text-slate-200'}>
-              {lab}
-            </button>
-          ))}
+        <p className="text-[11px] ns-muted mt-1">{cal.league} · built {cal.built_at}</p>
         </div>
+      </header>
+
+      <div className="flex gap-1 mb-4">
+        {tabs.map(([k, lab]) => (
+          <button key={k} type="button" onClick={() => setTab(k)} aria-pressed={tab === k} className="ns-btn ns-btn-sm">
+            {lab}
+          </button>
+        ))}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 p-4 pt-2">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {blocks.map((b, i) => (
           <Block key={(b.role || '') + (b.block || b.label) + i} b={b} showSheet={tab !== 'ladder'} />
         ))}
