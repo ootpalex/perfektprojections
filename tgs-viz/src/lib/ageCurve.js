@@ -9,6 +9,9 @@
  */
 
 const cache = new Map();
+// The settled curve of each cache entry, so a component that mounts after the
+// load finished starts with it instead of rendering once without it.
+const settled = new Map();
 
 // The curve every league uses comes from the DEV league (user, 2026-09-23:
 // "get the measured curve updated to what our dev tests show, on all the
@@ -44,12 +47,22 @@ export function loadAgeCurve(league) {
     return curve;
   })();
   cache.set(league, p);
+  p.then(c => { if (cache.get(league) === p) settled.set(league, c); });
   return p;
+}
+
+/**
+ * The curve a finished load gave, without waiting: the curve, null (the load
+ * finished and found no file), or undefined (not loaded yet, or invalidated).
+ */
+export function peekAgeCurve(league) {
+  return settled.get(league);
 }
 
 /** Forget every cached curve, so the next load fetches again (live refresh). */
 export function invalidateAgeCurves() {
   cache.clear();
+  settled.clear();
 }
 
 // ---------------------------------------------------------------------------
