@@ -438,6 +438,8 @@ export default function App() {
                 pitchers={data.pitchers_draft.length ? data.pitchers_draft : data.pitchers}
                 allHitters={data.hitters}
                 allPitchers={data.pitchers}
+                picks={data.draft_picks}
+                league={currentLeague}
               />
             } />
             <Route path="/mock-draft" element={

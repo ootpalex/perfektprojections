@@ -2,17 +2,76 @@ import React, { useState, useMemo } from 'react';
 import { usePlayersWithFV, usePlayersWithDraftFV, usePlayersWithG5FV, usePlayersWithHybridFV } from '../hooks/usePlayerData';
 import PlayerDetail from '../components/PlayerDetail';
 import { useSelectedById } from '../hooks/useSelectedById';
-import { formatCellValue, getCellColorClass } from '../lib/columns';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ScatterChart, Scatter, ZAxis } from 'recharts';
-import { TrendingUp, Users, Zap, Download } from 'lucide-react';
+import { formatCellValue, getCellColorClass, posClass } from '../lib/columns';
+import { useAppConfig } from '../lib/controlApi';
+import {
+  MARK_MINE, MARK_TAKEN, loadMarks, saveMarks, toggleMark, livePickIndex,
+  draftStatus, pickLabel, hiddenAsTaken, summarizeMarks,
+} from '../lib/draftMarks';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ScatterChart, Scatter, ZAxis } from 'recharts';
 
-export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitchers }) {
+// localStorage, or null where it is blocked (draftMarks reads null as no marks).
+const store = () => { try { return window.localStorage; } catch { return null; } };
+
+// FV ladder (20-80): same band edges as before the restyle, only the classes changed.
+const fvClass = (fv) => {
+  if (fv >= 70) return 'ns-g80';
+  if (fv >= 60) return 'ns-g70';
+  if (fv >= 55) return 'ns-g55';
+  if (fv >= 50) return 'ns-text-2';
+  if (fv >= 45) return 'ns-g30';
+  return 'ns-muted';
+};
+
+const PRONE_CLASS = {
+  'Iron Man': 'ns-prone-iron-man', Durable: 'ns-prone-durable', Normal: 'ns-prone-normal',
+  Fragile: 'ns-prone-fragile', Wrecked: 'ns-prone-wrecked',
+};
+
+const TOOLTIP_STYLE = { background: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: 'var(--radius)' };
+
+// The status cell: a live pick (from the pull), or my manual mark.
+function PickCell({ status }) {
+  if (!status) return <span className="ns-dim">—</span>;
+  if (status.source === 'live') {
+    return (
+      <span className={status.mine ? 'ns-good font-semibold' : 'ns-muted'}
+        title={`Drafted ${pickLabel(status.pick) || ''} by ${status.pick.team || 'unknown'} (from the last pull)`}>
+        {pickLabel(status.pick) || 'drafted'} {status.mine ? 'mine' : ''}
+      </span>
+    );
+  }
+  return status.mine
+    ? <span className="ns-good font-semibold" title="You marked him as your pick">mine</span>
+    : <span className="ns-muted" title="You marked him as taken by another club">taken</span>;
+}
+
+export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitchers, picks = [], league }) {
   const [viewMode, setViewMode] = useState('combined'); // combined, hitters, pitchers
   const [sortBy, setSortBy] = useState('_draftRawFV'); // default to Draft FV Raw
   const [maxAge, setMaxAge] = useState(30);
   const [minFV, setMinFV] = useState(20);
   const [hideWrecked, setHideWrecked] = useState(true);
   const [hideImpossible, setHideImpossible] = useState(true);
+  const [hideTaken, setHideTaken] = useState(true);
+
+  // Draft tracking: my manual marks (per league, in localStorage) merged with the
+  // live picks from the pull. A league switch reloads that league's marks.
+  const myOrg = useAppConfig()?.leagues?.[league]?.my_org || null;
+  const [marks, setMarks] = useState(() => loadMarks(store(), league));
+  const [marksLeague, setMarksLeague] = useState(league);
+  if (marksLeague !== league) {
+    setMarksLeague(league);
+    setMarks(loadMarks(store(), league));
+  }
+  const updateMarks = (fn) => setMarks((prev) => {
+    const next = fn(prev);
+    saveMarks(store(), league, next);
+    return next;
+  });
+  const liveIndex = useMemo(() => livePickIndex(picks), [picks]);
+  const statusOf = (p) => draftStatus(p.ID, marks, liveIndex, myOrg);
+  const markSummary = useMemo(() => summarizeMarks(marks, liveIndex, myOrg), [marks, liveIndex, myOrg]);
 
   // Chain: raw data → FV → Draft FV → G5 → Hybrid
   const hittersWithFV = usePlayersWithFV(hitters);
@@ -47,6 +106,7 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
       if (hideWrecked && p._wrecked) return false;
       if (hideImpossible && p.DEM === 'Impossible' && (p._draftFV || 0) < 60) return false;
       if (p._draftCeiling === null) return false; // no projection data at all
+      if (hideTaken && hiddenAsTaken(draftStatus(p.ID, marks, liveIndex, myOrg))) return false;
       return true;
     });
 
@@ -61,7 +121,23 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
     });
 
     return players.slice(0, 200);
-  }, [hittersWithHybrid, pitchersWithHybrid, viewMode, sortBy, maxAge, minFV, hideWrecked, hideImpossible]);
+  }, [hittersWithHybrid, pitchersWithHybrid, viewMode, sortBy, maxAge, minFV, hideWrecked, hideImpossible, hideTaken, marks, liveIndex, myOrg]);
+
+  // My picks: live picks by my org (pick order), then manual 'mine' marks the pull has not caught up on.
+  const myPicks = useMemo(() => {
+    const byId = new Map([...(hitters || []), ...(pitchers || [])].map(p => [String(p.ID), p]));
+    const out = [];
+    for (const [id, pk] of liveIndex) {
+      if (myOrg && pk.team === myOrg) out.push({ id, name: pk.name || byId.get(id)?.Name || `#${id}`, pos: byId.get(id)?.POS, label: pickLabel(pk), live: true, overall: pk.overall });
+    }
+    out.sort((a, b) => (a.overall || 0) - (b.overall || 0));
+    for (const [id, m] of Object.entries(marks)) {
+      if (m !== MARK_MINE || liveIndex.has(id)) continue;
+      const p = byId.get(id);
+      out.push({ id, name: p?.Name || `#${id}`, pos: p?.POS, label: null, live: false });
+    }
+    return out;
+  }, [hitters, pitchers, liveIndex, marks, myOrg]);
 
   // Age distribution chart
   const ageDistribution = useMemo(() => {
@@ -86,20 +162,6 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
     }));
   }, [draftBoard]);
 
-  const fvColor = (fv) => {
-    if (fv >= 70) return '#8b5cf6';
-    if (fv >= 60) return '#06b6d4';
-    if (fv >= 55) return '#22c55e';
-    if (fv >= 50) return '#eab308';
-    if (fv >= 45) return '#f97316';
-    return '#94a3b8';
-  };
-
-  const durColor = (prone) => {
-    const map = { 'Wrecked': '#f87171', 'Fragile': '#fb923c', 'Normal': '#cbd5e1', 'Durable': '#4ade80', 'Iron Man': '#22d3ee' };
-    return map[prone] || '#cbd5e1';
-  };
-
   const exportDraftList = () => {
     const csv = draftBoard.map(p => p.ID || '').join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -111,130 +173,188 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
     URL.revokeObjectURL(url);
   };
 
+  // Drop manual marks the live picks now cover (the pull caught up).
+  const clearRedundant = () => updateMarks((prev) => {
+    const next = { ...prev };
+    for (const id of Object.keys(next)) if (liveIndex.has(id)) delete next[id];
+    return next;
+  });
+  const clearAll = () => {
+    const n = Object.keys(marks).length;
+    if (n && window.confirm(`Clear all ${n} draft marks for ${league}? Live picks from the pull are not affected.`)) updateMarks(() => ({}));
+  };
+
+  const markBtn = (p, kind, label, title) => {
+    const on = marks[String(p.ID)] === kind;
+    return (
+      <button type="button" className="ns-btn ns-btn-sm px-1.5 py-0" aria-pressed={on} title={title}
+        onClick={(ev) => { ev.stopPropagation(); updateMarks((prev) => toggleMark(prev, p.ID, kind)); }}>
+        {label}
+      </button>
+    );
+  };
+
   return (
-    <div className="h-full flex flex-col overflow-auto">
-      <div className="p-4">
-        <h1 className="text-2xl font-bold text-white">Draft Board</h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Draft FV: age percentile 30% + ceiling 60% + projected peak 10%, all in WAA | Fragile, work ethic and intelligence adjust it
-          <span className="block text-xs text-slate-500 mt-0.5">
-            Value columns display WAA (vs average). <b>Ceiling</b> = best case, no haircut. <b>Proj Peak</b> = where we project him to top out (Proj Potential): from the ML model when the row has it (his WAA today + the ML median gain, washouts counted), else his WAA today + the DEV cell gain or the measured curve. Ceiling is the payoff, Age Pctl is the probability.
-          </span>
-        </p>
-      </div>
-
-      {/* Controls */}
-      <div className="flex flex-wrap items-center gap-3 px-4 pb-3">
-        <div className="flex gap-1 bg-slate-800 rounded-lg p-0.5">
-          {['combined', 'hitters', 'pitchers'].map(mode => (
-            <button key={mode} onClick={() => setViewMode(mode)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                viewMode === mode ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
-              }`}>
-              {mode.charAt(0).toUpperCase() + mode.slice(1)}
-            </button>
-          ))}
+    <div className="ns-page overflow-auto">
+      <header className="ns-page-head">
+        <div>
+          <h1>Draft Board</h1>
+          <p className="ns-page-sub">
+            Draft FV: age percentile 30% + ceiling 60% + projected peak 10%, all in WAA · Fragile, work ethic and intelligence adjust it
+          </p>
+          <p className="text-[11px] ns-muted mt-0.5 max-w-5xl">
+            Value columns display WAA (vs average). <b className="ns-text-2">Ceiling</b> = best case, no haircut. <b className="ns-text-2">Proj Peak</b> = where we project him to top out (Proj Potential): from the ML model when the row has it (his WAA today + the ML median gain, washouts counted), else his WAA today + the DEV cell gain or the measured curve. Ceiling is the payoff, Age Pctl is the probability.
+          </p>
         </div>
-
-        <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-          className="py-1.5 px-2 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200">
-          <option value="_draftRawFV">Sort by Draft FV</option>
-          <option value="_draftCeilingWAA">Sort by Ceiling (WAA)</option>
-          <option value="_agePercentile">Sort by Age Percentile</option>
-          <option value="_futureValue">Sort by Future Value</option>
-          <option value="_fvScale">Sort by FV (20-80)</option>
-          <option value="_g5FV">Sort by G5 FV (Peak)</option>
-          <option value="_hybridFV">Sort by Hybrid FV</option>
-          <option value="_potentialWAA">Sort by Proj Peak (WAA)</option>
-          <option value="_peakWAA">Sort by Peak WAA</option>
-        </select>
-
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-slate-500">Max Age:</label>
-          <input type="range" min="16" max="35" value={maxAge} onChange={e => setMaxAge(parseInt(e.target.value))}
-            className="w-24" />
-          <span className="text-sm text-slate-300 w-6">{maxAge}</span>
+        <div className="ns-head-actions">
+          <button type="button" onClick={exportDraftList} className="ns-btn ns-btn-primary ns-btn-sm"
+            title="Export draft list as CSV (with player IDs for StatsPlus)">
+            Export CSV
+          </button>
         </div>
+      </header>
 
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-slate-500">Min FV:</label>
-          <input type="range" min="20" max="70" step="5" value={minFV} onChange={e => setMinFV(parseInt(e.target.value))}
-            className="w-24" />
-          <span className="text-sm text-slate-300 w-6">{minFV}</span>
-        </div>
-
-        <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
-          <input type="checkbox" checked={hideWrecked} onChange={e => setHideWrecked(e.target.checked)}
-            className="rounded border-slate-600" />
-          Hide Wrecked
-        </label>
-
-        <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
-          <input type="checkbox" checked={hideImpossible} onChange={e => setHideImpossible(e.target.checked)}
-            className="rounded border-slate-600" />
-          Hide Impossible (&lt;60)
-        </label>
-
-        <span className="ml-auto text-xs text-slate-500">{draftBoard.length} prospects</span>
-
-        <button onClick={exportDraftList}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white text-xs font-medium rounded-lg transition-colors"
-          title="Export draft list as CSV (with player IDs for StatsPlus)">
-          <Download size={14} />
-          Export CSV
-        </button>
-      </div>
-
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 px-4 pb-4">
-        <div className="bg-slate-800/50 rounded-lg p-3">
-          <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">Draft FV vs Age</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <ScatterChart margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="age" type="number" domain={['dataMin - 1', 'dataMax + 1']}
-                tick={{ fill: '#94a3b8', fontSize: 11 }} name="Age" />
-              <YAxis dataKey="fv" tick={{ fill: '#94a3b8', fontSize: 11 }} name="Draft FV (Raw)" />
-              <ZAxis range={[30, 30]} />
-              <Tooltip
-                contentStyle={{ background: '#1e293b', border: '1px solid #475569', borderRadius: 8 }}
-                labelStyle={{ color: '#e2e8f0' }}
-                formatter={(value, name) => [typeof value === 'number' ? value.toFixed(1) : value, name]}
-                labelFormatter={(label) => `Age: ${label}`}
-              />
-              <Scatter data={scatterData.filter(d => d.type === 'H')} fill="#3b82f6" name="Hitters" />
-              <Scatter data={scatterData.filter(d => d.type === 'P')} fill="#f59e0b" name="Pitchers" />
-            </ScatterChart>
-          </ResponsiveContainer>
-          <div className="flex justify-center gap-4 text-xs mt-1">
-            <span className="text-blue-400">Hitters</span>
-            <span className="text-amber-400">Pitchers</span>
+      {/* Draft tracking + charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+        <div className="ns-card">
+          <h3 className="ns-strip">
+            <span>My picks <span className="ns-count">({markSummary.mine})</span></span>
+            <span className="ns-strip-right">{markSummary.taken} taken by others</span>
+          </h3>
+          {!myOrg && (
+            <p className="text-[11px] ns-warn mb-1">No org set for {league}: live picks cannot be told apart as yours. Set "My org" in Setup.</p>
+          )}
+          {myPicks.length === 0 ? (
+            <p className="text-[12.5px] ns-muted">None yet. Mark a player with <b className="ns-text-2">Mine</b> as you draft him; the next pull replaces the mark with the real pick.</p>
+          ) : (
+            <ul className="text-[12.5px] space-y-0.5 max-h-[150px] overflow-auto">
+              {myPicks.map(p => (
+                <li key={p.id} className="flex items-center gap-2">
+                  <span className="w-10 tabular-nums ns-muted">{p.label || 'mark'}</span>
+                  <span className="ns-text font-semibold truncate">{p.name}</span>
+                  {p.pos && <span className={posClass(p.pos) || 'ns-text-2'}>{p.pos}</span>}
+                  {!p.live && (
+                    <button type="button" className="ns-link ml-auto text-[11px]" title="Remove this mark"
+                      onClick={() => updateMarks((prev) => toggleMark(prev, p.id, MARK_MINE))}>unmark</button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-2 pt-1.5 ns-rule-t text-[11px] ns-muted flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>{markSummary.live} live picks in the pull · {markSummary.manual} manual marks</span>
+            {markSummary.redundant > 0 && (
+              <button type="button" className="ns-link text-[11px]" onClick={clearRedundant}
+                title="These marks are now covered by the live picks">
+                clear {markSummary.redundant} the pull caught up on
+              </button>
+            )}
+            {Object.keys(marks).length > 0 && (
+              <button type="button" className="ns-link text-[11px]" onClick={clearAll}>clear all marks</button>
+            )}
           </div>
         </div>
 
-        <div className="bg-slate-800/50 rounded-lg p-3">
-          <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">Age Distribution</h3>
-          <ResponsiveContainer width="100%" height={200}>
+        <div className="ns-card">
+          <h3 className="ns-strip">Draft FV vs Age</h3>
+          <ResponsiveContainer width="100%" height={170}>
+            <ScatterChart margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+              <XAxis dataKey="age" type="number" domain={['dataMin - 1', 'dataMax + 1']}
+                tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} name="Age" />
+              <YAxis dataKey="fv" tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} name="Draft FV (Raw)" />
+              <ZAxis range={[30, 30]} />
+              <Tooltip
+                contentStyle={TOOLTIP_STYLE}
+                labelStyle={{ color: 'var(--chart-tooltip-text)' }}
+                formatter={(value, name) => [typeof value === 'number' ? value.toFixed(1) : value, name]}
+                labelFormatter={(label) => `Age: ${label}`}
+              />
+              <Scatter data={scatterData.filter(d => d.type === 'H')} fill="var(--chart-series-1)" name="Hitters" />
+              <Scatter data={scatterData.filter(d => d.type === 'P')} fill="var(--chart-series-2)" name="Pitchers" />
+            </ScatterChart>
+          </ResponsiveContainer>
+          <div className="flex justify-center gap-4 text-[11px] mt-1">
+            <span className="ns-series-1">Hitters</span>
+            <span className="text-[var(--chart-series-2)]">Pitchers</span>
+          </div>
+        </div>
+
+        <div className="ns-card">
+          <h3 className="ns-strip">Age Distribution</h3>
+          <ResponsiveContainer width="100%" height={190}>
             <BarChart data={ageDistribution}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="age" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} />
-              <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #475569', borderRadius: 8 }} />
-              <Bar dataKey="hitters" stackId="a" fill="#3b82f6" name="Hitters" />
-              <Bar dataKey="pitchers" stackId="a" fill="#f59e0b" name="Pitchers" radius={[4, 4, 0, 0]} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+              <XAxis dataKey="age" tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} />
+              <YAxis tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} />
+              <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: 'var(--chart-tooltip-text)' }} />
+              <Bar dataKey="hitters" stackId="a" fill="var(--chart-series-1)" name="Hitters" />
+              <Bar dataKey="pitchers" stackId="a" fill="var(--chart-series-2)" name="Pitchers" />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
 
       {/* Draft Board Table */}
-      <div className="flex-1 px-4 pb-4">
-        <div className="table-container" style={{ maxHeight: 'calc(100vh - 520px)' }}>
+      <section className="ns-box flex flex-col min-h-[360px]">
+        <div className="ns-strip">
+          <h2>Board <span className="ns-count">({draftBoard.length} prospects)</span></h2>
+          <span className="ns-strip-right">top 200 shown</span>
+        </div>
+        <div className="ns-toolbar">
+          {['combined', 'hitters', 'pitchers'].map(mode => (
+            <button key={mode} type="button" onClick={() => setViewMode(mode)}
+              className="ns-btn ns-btn-sm" aria-pressed={viewMode === mode}>
+              {mode.charAt(0).toUpperCase() + mode.slice(1)}
+            </button>
+          ))}
+
+          <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="ns-select">
+            <option value="_draftRawFV">Sort by Draft FV</option>
+            <option value="_draftCeilingWAA">Sort by Ceiling (WAA)</option>
+            <option value="_agePercentile">Sort by Age Percentile</option>
+            <option value="_futureValue">Sort by Future Value</option>
+            <option value="_fvScale">Sort by FV (20-80)</option>
+            <option value="_g5FV">Sort by G5 FV (Peak)</option>
+            <option value="_hybridFV">Sort by Hybrid FV</option>
+            <option value="_potentialWAA">Sort by Proj Peak (WAA)</option>
+            <option value="_peakWAA">Sort by Peak WAA</option>
+          </select>
+
+          <div className="flex items-center gap-2">
+            <label className="ns-label" htmlFor="db-max-age">Max Age</label>
+            <input id="db-max-age" type="range" min="16" max="35" value={maxAge} onChange={e => setMaxAge(parseInt(e.target.value))}
+              className="w-24 accent-[var(--accent)]" />
+            <span className="text-[12.5px] ns-text w-6 tabular-nums">{maxAge}</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="ns-label" htmlFor="db-min-fv">Min FV</label>
+            <input id="db-min-fv" type="range" min="20" max="70" step="5" value={minFV} onChange={e => setMinFV(parseInt(e.target.value))}
+              className="w-24 accent-[var(--accent)]" />
+            <span className="text-[12.5px] ns-text w-6 tabular-nums">{minFV}</span>
+          </div>
+
+          <button type="button" className="ns-btn ns-btn-sm" aria-pressed={hideWrecked} onClick={() => setHideWrecked(!hideWrecked)}>
+            Hide Wrecked
+          </button>
+          <button type="button" className="ns-btn ns-btn-sm" aria-pressed={hideImpossible} onClick={() => setHideImpossible(!hideImpossible)}>
+            Hide Impossible (&lt;60)
+          </button>
+          <button type="button" className="ns-btn ns-btn-sm" aria-pressed={hideTaken} onClick={() => setHideTaken(!hideTaken)}
+            title="Hide players drafted by another club: the live picks from the pull, and your Taken marks. Your own picks stay.">
+            Hide taken
+          </button>
+        </div>
+
+        <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 260px)' }}>
           <table className="data-table">
             <thead>
               <tr>
                 <th className="w-16">ID</th>
                 <th className="w-10">#</th>
+                <th title="Mark a pick between pulls: Mine = you drafted him, Taken = another club did">Mark</th>
+                <th title="Live pick from the pull (round.pick), or your manual mark">Pick</th>
                 <th>Type</th>
                 <th>Name</th>
                 <th>POS</th>
@@ -245,97 +365,99 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
                 <th title="Best-case peak, WAA (vs average): the sheet's own MAX WAA P / WAP. No risk haircut. The PAYOFF half of Draft FV.">Ceiling</th>
                 <th>Durability</th>
                 <th>INT</th>
-                <th className="border-l border-slate-700">FV</th>
+                <th className="col-group-start">FV</th>
                 <th>Future$</th>
                 <th>G5 FV</th>
                 <th>G5 Peak</th>
                 <th>Dev%</th>
-                <th className="border-l border-slate-700">Hybrid</th>
+                <th className="col-group-start">Hybrid</th>
                 <th title="Proj Potential, WAA: where we project him to top out. From the ML model when the row has it (his WAA today + the ML median gain, washouts counted), else his WAA today + the DEV cell gain or the measured curve.">Proj Peak</th>
               </tr>
             </thead>
             <tbody>
-              {draftBoard.map((player, idx) => (
-                <tr key={player.ID || player.Name || idx}
-                  className={`cursor-pointer hover:bg-slate-800 ${player._wrecked ? 'opacity-40 line-through' : ''}`}
-                  onClick={() => select(player, player._type === 'H' ? 'hitter' : 'pitcher')}>
-                  <td className="text-slate-600 font-mono text-xs">{player.ID}</td>
-                  <td className="text-slate-500 font-mono">{idx + 1}</td>
-                  <td>
-                    <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${
-                      player._type === 'H' ? 'bg-blue-900/50 text-blue-400' : 'bg-amber-900/50 text-amber-400'
-                    }`}>
-                      {player._type}
-                    </span>
-                  </td>
-                  <td className="font-medium text-white">
-                    {player.Name}
-                    {(player['Bat Peak'] != null || player['Arm Peak'] != null) && (
-                      <span className="ml-1.5 px-1 rounded text-xs font-bold bg-purple-900/50 text-purple-300"
-                        title={`Genuine two-way threat — ${player['Bat Peak'] != null ? 'bat' : 'arm'} also peaks at +${player['Bat Peak'] ?? player['Arm Peak']} WAA`}>
-                        2W
+              {draftBoard.map((player, idx) => {
+                const status = statusOf(player);
+                const rowCls = [
+                  'cursor-pointer',
+                  status?.mine ? 'selected' : '',
+                  status && !status.mine ? 'opacity-50' : '',
+                  player._wrecked ? 'opacity-40 line-through' : '',
+                ].filter(Boolean).join(' ');
+                return (
+                  <tr key={player.ID || player.Name || idx}
+                    className={rowCls}
+                    onClick={() => select(player, player._type === 'H' ? 'hitter' : 'pitcher')}>
+                    <td className="ns-muted text-xs">{player.ID}</td>
+                    <td className="ns-muted">{idx + 1}</td>
+                    <td className="whitespace-nowrap">
+                      <span className="inline-flex gap-1">
+                        {markBtn(player, MARK_MINE, 'Mine', 'I drafted him (click again to clear)')}
+                        {markBtn(player, MARK_TAKEN, 'Taken', 'Another club drafted him (click again to clear)')}
                       </span>
-                    )}
-                  </td>
-                  <td>{player.POS}</td>
-                  <td className="text-slate-400">{player.ORG}</td>
-                  <td>{Math.round(parseFloat(player.Age) || 0)}</td>
-                  <td>
-                    <span className="px-2 py-0.5 rounded font-bold text-sm"
-                      style={{ color: fvColor(player._draftFV), background: `${fvColor(player._draftFV)}15` }}>
+                    </td>
+                    <td><PickCell status={status} /></td>
+                    <td>
+                      <span className={`ns-chip ${player._type === 'H' ? 'ns-series-1' : 'text-[var(--chart-series-2)]'}`}>
+                        {player._type}
+                      </span>
+                    </td>
+                    <td className="col-name">
+                      {player.Name}
+                      {(player['Bat Peak'] != null || player['Arm Peak'] != null) && (
+                        <span className="ml-1.5 ns-chip ns-g80"
+                          title={`Genuine two-way threat — ${player['Bat Peak'] != null ? 'bat' : 'arm'} also peaks at +${player['Bat Peak'] ?? player['Arm Peak']} WAA`}>
+                          2W
+                        </span>
+                      )}
+                    </td>
+                    <td className={posClass(player.POS) || 'ns-text-2'}>{player.POS}</td>
+                    <td className="ns-text-2">{player.ORG}</td>
+                    <td>{Math.round(parseFloat(player.Age) || 0)}</td>
+                    <td className={`text-[13px] ${fvClass(player._draftFV)}`}>
                       {formatCellValue(player._draftRawFV, '_draftRawFV')}
-                    </span>
-                  </td>
-                  <td className={getCellColorClass(player._agePercentile, '_agePercentile')}>
-                    {formatCellValue(player._agePercentile, '_agePercentile')}
-                  </td>
-                  <td className={getCellColorClass(player._draftCeilingWAA, '_draftCeilingWAA')}
-                    title="Draft FV scores this same number">
-                    {formatCellValue(player._draftCeilingWAA, '_draftCeilingWAA')}
-                  </td>
-                  <td style={{ color: durColor(player._durability) }} className="text-xs">
-                    {player._durability}
-                    {player._weBoost && <span className="ml-1 text-green-400" title="High work ethic (+1.5% Draft FV)">+WE</span>}
-                  </td>
-                  <td className={getCellColorClass(player._highINT, '_highINT')}>
-                    {formatCellValue(player._highINT, '_highINT')}
-                  </td>
-                  <td className="border-l border-slate-700">
-                    <span className="px-1.5 py-0.5 rounded text-xs"
-                      style={{ color: fvColor(player._fvScale), background: `${fvColor(player._fvScale)}10` }}>
+                    </td>
+                    <td className={getCellColorClass(player._agePercentile, '_agePercentile')}>
+                      {formatCellValue(player._agePercentile, '_agePercentile')}
+                    </td>
+                    <td className={getCellColorClass(player._draftCeilingWAA, '_draftCeilingWAA')}
+                      title="Draft FV scores this same number">
+                      {formatCellValue(player._draftCeilingWAA, '_draftCeilingWAA')}
+                    </td>
+                    <td className={`text-xs ${PRONE_CLASS[player._durability] || 'ns-text'}`}>
+                      {player._durability}
+                      {player._weBoost && <span className="ml-1 ns-good" title="High work ethic (+1.5% Draft FV)">+WE</span>}
+                    </td>
+                    <td className={getCellColorClass(player._highINT, '_highINT')}>
+                      {formatCellValue(player._highINT, '_highINT')}
+                    </td>
+                    <td className={`col-group-start text-xs ${fvClass(player._fvScale)}`}>
                       {player._fvScale}
-                    </span>
-                  </td>
-                  <td className={getCellColorClass(player._futureValue, '_futureValue')}>
-                    {formatCellValue(player._futureValue, '_futureValue')}
-                  </td>
-                  <td>
-                    <span className="px-1.5 py-0.5 rounded text-xs"
-                      style={{ color: fvColor(player._g5FV), background: `${fvColor(player._g5FV)}10` }}>
+                    </td>
+                    <td className={getCellColorClass(player._futureValue, '_futureValue')}>
+                      {formatCellValue(player._futureValue, '_futureValue')}
+                    </td>
+                    <td className={`text-xs ${fvClass(player._g5FV)}`}>
                       {player._g5FV}
-                    </span>
-                  </td>
-                  <td className={getCellColorClass(player._g5Raw, '_g5Raw')}>
-                    {formatCellValue(player._g5Raw, '_g5Raw')}
-                  </td>
-                  <td className={getCellColorClass(player._g5DevPct, '_g5DevPct')}>
-                    {formatCellValue(player._g5DevPct, '_g5DevPct')}
-                  </td>
-                  <td className="border-l border-slate-700">
-                    <span className="px-2 py-0.5 rounded font-bold text-sm"
-                      style={{ color: fvColor(player._hybridFV), background: `${fvColor(player._hybridFV)}15` }}>
+                    </td>
+                    <td className={getCellColorClass(player._g5Raw, '_g5Raw')}>
+                      {formatCellValue(player._g5Raw, '_g5Raw')}
+                    </td>
+                    <td className={getCellColorClass(player._g5DevPct, '_g5DevPct')}>
+                      {formatCellValue(player._g5DevPct, '_g5DevPct')}
+                    </td>
+                    <td className={`col-group-start text-[13px] ${fvClass(player._hybridFV)}`}>
                       {player._hybridFV}
-                    </span>
-                  </td>
-                  <td className={getCellColorClass(player._potentialWAA, '_potentialWAA')}>
-                    {formatCellValue(player._potentialWAA, '_potentialWAA')}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className={getCellColorClass(player._potentialWAA, '_potentialWAA')}>
+                      {formatCellValue(player._potentialWAA, '_potentialWAA')}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
       {selectedPlayer && (
         <PlayerDetail
