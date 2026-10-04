@@ -19,6 +19,7 @@ import MakeItOddsPage from './pages/MakeItOddsPage';
 import ControlPage from './pages/ControlPage';
 import { useActiveJobs, useControlStatus, useAppConfig } from './lib/controlApi';
 import { loadRatingTrends } from './lib/ratingTrends';
+import { loadLeagueMetadata, pickGameDate } from './lib/gameDate';
 import { Loader2, AlertCircle } from 'lucide-react';
 
 // The dot next to Control: the most urgent active job. Warn = a job waits for
@@ -47,17 +48,20 @@ function RefreshLine({ refresh, liveRefresh }) {
   return null;
 }
 
-// The in-game date of the league's newest ratings pull (rating_trends.json, through
-// the shared cached loader), or null when the league has no trends file.
+// The league's in-game date: metadata.json game_date (written by the pull itself), else
+// the newest ratings pull in rating_trends.json (through the shared cached loader, only
+// when the league has trends), else null.
 function useGameDate(league, enabled, refreshedAt) {
   const [date, setDate] = useState(null);
   useEffect(() => {
     setDate(null);
-    if (!league || !enabled) return undefined;
+    if (!league) return undefined;
     let live = true;
-    loadRatingTrends(league).then((t) => {
-      const last = t && Array.isArray(t.pulls) ? t.pulls[t.pulls.length - 1] : null;
-      if (live) setDate(last && last.g ? last.g : null);
+    // metadata.json game_date first (what the pull wrote), else the newest trends pull.
+    loadLeagueMetadata(league).then(async (meta) => {
+      const first = pickGameDate(meta, null);
+      const d = first || pickGameDate(null, enabled ? await loadRatingTrends(league) : null);
+      if (live) setDate(d);
     });
     return () => { live = false; };
   }, [league, enabled, refreshedAt]);
