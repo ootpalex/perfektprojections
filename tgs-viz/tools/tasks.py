@@ -1765,6 +1765,15 @@ def t_update_statsplus(ST, lg):
         step("ml_score", f"{lid} ML scores", ml(ML_SCORE, "--league", lid, "--write"), "collect", f"{lid}-ml-score",
              app=True, env=c),
     ]
+    # A wizard-added league priced on another league's calibration (SSB on BLM) has no agecurve step, so
+    # its latest pull's engine-WAA cache (.waa_cache, the basis fingerprint) is built here; ml/dataset.py
+    # reads it. --cache-only runs the engine on the vintages and writes no age curve. TGS / BLM / RG keep
+    # the steps their bats pin.
+    if basis != lid and lid not in defaults_league_ids(ST):
+        i = next(k for k, x in enumerate(steps) if x["id"] == "ml_rows")
+        steps.insert(i, step("waa_cache", f"{lid} engine WAA cache",
+                             py(AGECURVE, "--league", lid, "--calib", basis, "--cache-only"), "collect",
+                             f"{lid}-waa-cache", env=c))
     # The models are the author's files (backtest/ml/install_models.py), not trained on the Mac. A
     # wizard-added league with no models installed for its basis skips the scoring step instead of
     # failing it. TGS / BLM / RG keep the step their bats pin (test_bat_equivalence).
