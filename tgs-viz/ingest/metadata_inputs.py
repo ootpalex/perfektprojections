@@ -45,6 +45,20 @@ so the two bat stages download it once. The stat feeds are saved per season in
 script sums is there and it has rows, and a saved feed that fails that check
 is downloaded again.
 
+Offline and CSV sources (a league with no "The Sheets" workbook, e.g. SSB):
+  --offline DATE   no StatsPlus request at all: DATE is the in-game date, the stat
+                   feeds come from the saved .cache/metadata_<slug>_<season>/, /teams
+                   from its saved reply of any age (names only) and other seasons'
+                   pitching only from saved feeds. A missing saved feed stops.
+  --paste-dir DIR  the SP / RP role paste from DIR/sp_data.csv and DIR/rp_data.csv
+                   (header in row 1: the files the dashboard keeps per season)
+                   instead of the workbook
+  --ratings-dir DIR  the ratings tabs from DIR (batter_ratings_vr/vl.csv,
+                   fielding_ratings.csv, pitcher_ratings_vr/vl.csv) instead of the
+                   pull: the ratings an OOTP export had at the time, as is. The
+                   fielding list keeps position players only, the pitcher lists
+                   keep the pitchers of your SP / RP paste.
+
 Engine boundary: a league with leagues.<LG>.engine_first_season in settings refuses
 a season before it (older seasons were played on another OOTP engine), before the
 /teams and stat-feed requests; with --year, before any request.
@@ -58,6 +72,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -285,6 +300,94 @@ def write_workbook_tab(xlsx, tab, path):
     return rows
 
 
+# ---------------------------------------------------------------- CSV sources (--paste-dir / --ratings-dir)
+
+def find_csv(directory, name):
+    """The file `name` in `directory`, matched ignoring case (sp_data.csv = SP_Data.csv), else None."""
+    want = name.lower()
+    for f in sorted(os.listdir(directory)) if os.path.isdir(directory) else []:
+        if f.lower() == want:
+            return os.path.join(directory, f)
+    return None
+
+
+def read_plain_csv(directory, name):
+    """A plain CSV with its header in row 1: (header, rows) as strings, rows that start
+    with a player id only (read_workbook_tab's shape). Stops when the file is missing."""
+    path = find_csv(directory, name)
+    if not path:
+        sys.exit(f"{name} is not in {directory}")
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        table = list(csv.reader(f))
+    header = [h.strip() for h in table[0]] if table else []
+    k = header.index("ID") if "ID" in header else 0
+    return header, [r[:len(header)] for r in table[1:] if len(r) > k and _is_player_id(r[k])]
+
+
+def write_plain_tab(path, header, rows, banner="Player List"):
+    """A role-paste tab as the workbook copy writes it: banner row, header row, the rows
+    (values as read; IP stays in OOTP's x.y notation)."""
+    write_csv(path, header, rows, banner)
+
+
+def _as_columns(header, rows, wanted, what):
+    """`rows` reordered to the `wanted` columns by name; stops naming a missing column."""
+    miss = [c for c in wanted if c not in header]
+    if miss:
+        sys.exit(f"{what}: no {', '.join(miss)} column (has {', '.join(header)})")
+    idx = [header.index(c) for c in wanted]
+    return [[r[i] if i < len(r) else "" for i in idx] for r in rows]
+
+
+def height_text(ht):
+    """OOTP's export shows 6' 5" as 6' 5' in some files; the calibrator reads 6' 5\" (inches
+    end at the double quote). Anything else is returned as it is."""
+    m = re.fullmatch(r"\s*(\d+)'\s*(\d+)['\"]\s*", ht or "")
+    return f"{m.group(1)}' {m.group(2)}\"" if m else ht
+
+
+def csv_batter_ratings(directory):
+    """(vR rows, vL rows) of Batter_Ratings from batter_ratings_vr.csv / _vl.csv: hitters with
+    PA against that side, most PA first (the two files differ only in that PA column)."""
+    out = []
+    for name in ("batter_ratings_vr.csv", "batter_ratings_vl.csv"):
+        header, rows = read_plain_csv(directory, name)
+        rows = _as_columns(header, rows, BAT_RAT_HDR, name)
+        rows = [r for r in rows if num(r[3]) > 0]
+        rows.sort(key=lambda r: -num(r[3]))
+        out.append(rows)
+    return out[0], out[1]
+
+
+def csv_fielding_ratings(directory):
+    """Fielding_Ratings rows from fielding_ratings.csv: position players only. The file also
+    lists the pitchers (POS 1, with their innings pitched), who would add pitching innings to
+    the fielding innings the calibrator divides by PA, so they are left out (as the
+    StatsPlus build leaves them out). Returns (rows, number of pitchers left out)."""
+    header, rows = read_plain_csv(directory, "fielding_ratings.csv")
+    rows = _as_columns(header, rows, FLD_RAT_HDR, "fielding_ratings.csv")
+    keep = [r for r in rows if r[1].strip() not in ("1", "P", "SP", "RP", "CL")]
+    for r in keep:
+        r[4] = height_text(r[4])
+    return keep, len(rows) - len(keep)
+
+
+def csv_pitcher_ratings(directory, ids):
+    """(vR rows, vL rows) of an SP / RP Ratings tab from pitcher_ratings_vr.csv / _vl.csv: the
+    pitchers whose id is in `ids` (your SP or RP paste) with BF against that side, most BF
+    first. Also returns the ids the files do not list."""
+    ids = {str(i) for i in ids}
+    out, seen = [], set()
+    for name in ("pitcher_ratings_vr.csv", "pitcher_ratings_vl.csv"):
+        header, rows = read_plain_csv(directory, name)
+        rows = _as_columns(header, rows, PIT_RAT_HDR, name)
+        rows = [r for r in rows if str(int(num(r[0]))) in ids and num(r[3]) > 0]
+        rows.sort(key=lambda r: -num(r[3]))
+        seen |= {str(int(num(r[0]))) for r in rows}
+        out.append(rows)
+    return out[0], out[1], sorted(ids - seen)
+
+
 # ---------------------------------------------------------------- fetch + cache
 
 EXIT_REFUSED = 3      # StatsPlus refused, or its reply was not the data
@@ -315,11 +418,12 @@ def _save_json(path, obj):
     os.replace(tmp, path)
 
 
-def fetch_season(base, season, cache_dir, refresh):
+def fetch_season(base, season, cache_dir, refresh, offline=False):
     """All stat feeds for the season, saved as the parsed rows per feed.
     A feed is saved only when feed_problem() finds nothing wrong, and a saved
     feed that fails the check is downloaded again. Raises StatsPlusRefused
-    when StatsPlus refuses or sends a feed that can not be used."""
+    when StatsPlus refuses or sends a feed that can not be used. offline: no
+    request; a feed that is not saved (or not usable) stops the run."""
     os.makedirs(cache_dir, exist_ok=True)
     feeds = {"bat1": (S.fetch_batting, 1), "bat2": (S.fetch_batting, 2), "bat3": (S.fetch_batting, 3),
              "pit1": (S.fetch_pitching, 1), "pit2": (S.fetch_pitching, 2), "pit3": (S.fetch_pitching, 3),
@@ -340,6 +444,9 @@ def fetch_season(base, season, cache_dir, refresh):
         if saved is not None:
             out[name] = saved
         else:
+            if offline:
+                sys.exit(f"--offline: the {season} {name} feed is not saved in {cache_dir} (or not usable); "
+                         f"build it once online first")
             rows = fn(base, year=season, split=split)
             why = feed_problem(name, rows)
             if why:
@@ -349,6 +456,13 @@ def fetch_season(base, season, cache_dir, refresh):
             out[name] = rows
         print(f"  {name}: {len(out[name])} rows{' (cached)' if saved is not None else ''}")
     return out
+
+
+def saved_teams(base, date):
+    """The /teams reply saved for in-game `date`, whatever its age (the team names are the only
+    thing --offline takes from it), or None when none is saved."""
+    url = f"{base}/teams/"
+    return S._cache_read(S._cache_path(base, url), url, date, float("inf"))
 
 
 def stop_refused(e, league):
@@ -611,11 +725,12 @@ def wrong_season_text(season, found, rec, others):
     return "\n".join(lines)
 
 
-def season_pitching(base, slug, year, refresh=False):
+def season_pitching(base, slug, year, refresh=False, offline=False):
     """{pid: totals} of one season's MLB pitching (the overall feed), from the
     saved feed .cache/metadata_<slug>_<year>/pit1.json, else from StatsPlus
     (saved there the way fetch_season saves it). None when it can not be read:
-    this only names the season of a wrong paste, so it never stops the run."""
+    this only names the season of a wrong paste, so it never stops the run.
+    offline: only the saved feed is read, StatsPlus is not asked."""
     cache_dir = os.path.join(HERE, ".cache", f"metadata_{slug}_{year}")
     p = os.path.join(cache_dir, "pit1.json")
     rows = None
@@ -627,6 +742,9 @@ def season_pitching(base, slug, year, refresh=False):
         if feed_problem("pit1", rows):
             rows = None
     if rows is None:
+        if offline:
+            print(f"  (the {year} pitching is not saved and --offline asks no one; {year} is not checked)")
+            return None
         try:
             rows = S.fetch_pitching(base, year=year, split=1)
         except Exception as e:          # noqa: BLE001  refused, network: that season is not checked
@@ -639,14 +757,15 @@ def season_pitching(base, slug, year, refresh=False):
     return aggregate(rows, lambda r: r["player_id"], PIT_SUM)
 
 
-def find_paste_season(base, slug, season, date, rec, sp, rp, refresh=False):
+def find_paste_season(base, slug, season, date, rec, sp, rp, refresh=False, offline=False):
     """(paste_season(), {year: reconcile result}). The other seasons are read
     only when the paste does not match `season`. sp / rp = (rows, header)."""
     if exact_share(rec) >= SEASON_MATCH:
         return season, {}
     others = {}
     for y in other_seasons(season, date):
-        totals = season_pitching(base, slug, y, refresh)
+        extra = {"offline": True} if offline else {}      # online calls keep the old signature
+        totals = season_pitching(base, slug, y, refresh, **extra)
         if totals is not None:
             others[y] = reconcile_roles({"P": totals}, sp[0], sp[1], rp[0], rp[1])
     return paste_season(season, rec, others), others
@@ -697,7 +816,7 @@ def season_end_pull(league, season):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     # TGS / BLM, plus any enabled StatsPlus league in settings (SSB): those have no "The Sheets" workbook,
-    # so their role tabs come from --workbook or a later --stage roles source.
+    # so their role tabs come from --paste-dir (or a --workbook given by hand).
     ap.add_argument("--league", required=True, choices=list(dict.fromkeys([*LEAGUE_DIRS, *ST.slug_map()])))
     ap.add_argument("--out", required=True, help="directory for the nine CSVs (+ manifest.json)")
     ap.add_argument("--stage", default="all", choices=["auto", "roles", "all"])
@@ -714,14 +833,25 @@ def main():
                          "totals (playoff games), pitchers left out of both tabs and IDs with no MLB "
                          "pitching. A paste of another season still stops.")
     ap.add_argument("--refresh", action="store_true", help="refetch the API feeds (ignore cache)")
+    ap.add_argument("--offline", metavar="DATE",
+                    help="ask StatsPlus nothing: DATE (YYYY-MM-DD) is the in-game date; the saved stat feeds, "
+                         "the saved /teams reply and the --pull file are used")
+    ap.add_argument("--paste-dir", help="read the SP / RP paste from DIR/sp_data.csv and rp_data.csv "
+                                        "(header in row 1) instead of the workbook")
+    ap.add_argument("--ratings-dir", help="build the ratings tabs from DIR's batter_ratings_vr/vl.csv, "
+                                          "fielding_ratings.csv and pitcher_ratings_vr/vl.csv instead of the pull")
     a = ap.parse_args()
+    if a.offline and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", a.offline):
+        ap.error("--offline takes the in-game date, YYYY-MM-DD")
+    if a.offline and a.refresh:
+        ap.error("--refresh downloads the feeds again; it can not go with --offline")
 
     if a.year:
         check_engine_boundary(a.league, a.year)     # before any request
     slug = a.slug or SLUGS.get(a.league) or ST.slug(a.league)
     base = S.normalize_base(slug)
     try:
-        date = S.fetch_date(base)
+        date = a.offline or S.fetch_date(base)
     except S.StatsPlusRefused as e:
         stop_refused(e, a.league)
     season = season_of(date, a.year, a.allow_partial)
@@ -740,8 +870,14 @@ def main():
     try:
         # /teams first, while the /date read above is still in memory. cache=True: the
         # second bat stage reuses this reply while the in-game date is unchanged.
-        team_rows = S.fetch_teams(base, cache=True)
-        feeds = fetch_season(base, season, cache_dir, a.refresh)
+        if a.offline:
+            team_rows = saved_teams(base, date)
+            if team_rows is None:
+                print(f"  (no saved /teams reply for {date}: ORG shows team ids)")
+                team_rows = []
+        else:
+            team_rows = S.fetch_teams(base, cache=True)
+        feeds = fetch_season(base, season, cache_dir, a.refresh, bool(a.offline))
     except S.StatsPlusRefused as e:
         stop_refused(e, a.league)
     teams = {}
@@ -756,6 +892,12 @@ def main():
     lids = sorted({r.get("league_id") for r in feeds["pit1"]})
     manifest.update({"league": a.league, "slug": slug, "season": season, "in_game_date": date,
                      "league_ids": lids, "pull": pull_path, "counts": manifest.get("counts", {})})
+    if a.offline:
+        manifest["offline"] = True
+    if a.paste_dir:
+        manifest["paste_dir"] = os.path.abspath(a.paste_dir)
+    if a.ratings_dir:
+        manifest["ratings_dir"] = os.path.abspath(a.ratings_dir)
 
     if a.stage in ("auto", "all"):
         write_csv(os.path.join(a.out, "Hitting_Data.csv"), HIT_HDR, st["hit"])
@@ -768,6 +910,11 @@ def main():
         if "Batter Ratings" in from_wb:
             write_workbook_tab(xlsx, "Batter Ratings", os.path.join(a.out, "Batter_Ratings.csv"))
             print("  Batter_Ratings: copied from the workbook")
+        elif a.ratings_dir:
+            vr, vl = csv_batter_ratings(a.ratings_dir)
+            write_side_by_side(os.path.join(a.out, "Batter_Ratings.csv"), BAT_RAT_HDR, vr, vl)
+            manifest["counts"].update({"Batter_Ratings_vR": len(vr), "Batter_Ratings_vL": len(vl)})
+            print(f"  Batter_Ratings vR {len(vr)} / vL {len(vl)} from {a.ratings_dir}")
         else:
             vr, vl, miss = build_batter_ratings(st, pull)
             write_side_by_side(os.path.join(a.out, "Batter_Ratings.csv"), BAT_RAT_HDR, vr, vl)
@@ -778,6 +925,12 @@ def main():
         if "Fielding Ratings" in from_wb:
             write_workbook_tab(xlsx, "Fielding Ratings", os.path.join(a.out, "Fielding_Ratings.csv"))
             print("  Fielding_Ratings: copied from the workbook")
+        elif a.ratings_dir:
+            fr, pitchers = csv_fielding_ratings(a.ratings_dir)
+            write_csv(os.path.join(a.out, "Fielding_Ratings.csv"), FLD_RAT_HDR, fr)
+            manifest["counts"].update({"Fielding_Ratings": len(fr), "pitchers_left_out": pitchers})
+            print(f"  Fielding_Ratings {len(fr)} position players from {a.ratings_dir} "
+                  f"({pitchers} pitchers left out)")
         else:
             fr, skipped = build_fielding_ratings(st, pull)
             write_csv(os.path.join(a.out, "Fielding_Ratings.csv"), FLD_RAT_HDR, fr)
@@ -792,10 +945,14 @@ def main():
             return
 
     # ---- roles stage: paste tabs + pitcher ratings lists
-    sp_hdr, sp_rows = read_workbook_tab(xlsx, "SP Data")
-    rp_hdr, rp_rows = read_workbook_tab(xlsx, "RP Data")
+    if a.paste_dir:
+        sp_hdr, sp_rows = read_plain_csv(a.paste_dir, "sp_data.csv")
+        rp_hdr, rp_rows = read_plain_csv(a.paste_dir, "rp_data.csv")
+    else:
+        sp_hdr, sp_rows = read_workbook_tab(xlsx, "SP Data")
+        rp_hdr, rp_rows = read_workbook_tab(xlsx, "RP Data")
     if not sp_rows or not rp_rows:
-        sys.exit("'SP Data' / 'RP Data' in the workbook are empty - paste them first")
+        sys.exit("'SP Data' / 'RP Data' are empty - paste them first")
     rec = reconcile_roles(st, sp_rows, sp_hdr, rp_rows, rp_hdr)
     print(f"  paste check vs API {season}: {rec['ok']} pitchers match exactly, "
           f"{len(rec['under'])} partial, {len(rec['absent'])} with MLB innings in neither tab")
@@ -810,7 +967,7 @@ def main():
     # counts playoff games), pitchers left out of both tabs and a few IDs with
     # no MLB pitching are the user's call: --accept-paste takes them as they are.
     found, others = find_paste_season(base, slug, season, date, rec, (sp_rows, sp_hdr), (rp_rows, rp_hdr),
-                                      a.refresh)
+                                      a.refresh, bool(a.offline))
     decision = paste_decision(season, found, rec, a.accept_paste)
     if decision == "wrong season":
         sys.exit(wrong_season_text(season, found, rec, others))
@@ -829,8 +986,12 @@ def main():
         sys.exit(f"  STOP for your OK: {len(rec['over'])} pitchers above their regular-season totals "
                  f"(playoff games in OOTP's role split), {len(rec['absent'])} with MLB innings in neither "
                  f"tab. Fix the paste, or rerun with --accept-paste to use it as it is.")
-    write_workbook_tab(xlsx, "SP Data", os.path.join(a.out, "SP_Data.csv"))
-    write_workbook_tab(xlsx, "RP Data", os.path.join(a.out, "RP_Data.csv"))
+    if a.paste_dir:
+        write_plain_tab(os.path.join(a.out, "SP_Data.csv"), sp_hdr, sp_rows)
+        write_plain_tab(os.path.join(a.out, "RP_Data.csv"), rp_hdr, rp_rows)
+    else:
+        write_workbook_tab(xlsx, "SP Data", os.path.join(a.out, "SP_Data.csv"))
+        write_workbook_tab(xlsx, "RP Data", os.path.join(a.out, "RP_Data.csv"))
     sp_ids = [str(int(num(r[sp_hdr.index("ID")]))) for r in sp_rows]
     rp_ids = [str(int(num(r[rp_hdr.index("ID")]))) for r in rp_rows]
     for tab, ids in (("SP Ratings", sp_ids), ("RP Ratings", rp_ids)):
@@ -839,11 +1000,14 @@ def main():
             write_workbook_tab(xlsx, tab, os.path.join(a.out, fn))
             print(f"  {fn}: copied from the workbook")
             continue
-        vr, vl, miss = build_pitcher_ratings(st, pull, ids)
+        if a.ratings_dir:
+            vr, vl, miss = csv_pitcher_ratings(a.ratings_dir, ids)
+        else:
+            vr, vl, miss = build_pitcher_ratings(st, pull, ids)
         write_side_by_side(os.path.join(a.out, fn), PIT_RAT_HDR, vr, vl)
         manifest["counts"].update({f"{tab.replace(' ', '_')}_vR": len(vr), f"{tab.replace(' ', '_')}_vL": len(vl)})
-        print(f"  {fn}: vR {len(vr)} / vL {len(vl)} from the pull for your {tab.split()[0]} list "
-              f"({len(ids)} pitchers; not in the pull: {len(miss)})")
+        print(f"  {fn}: vR {len(vr)} / vL {len(vl)} from {'the ratings dir' if a.ratings_dir else 'the pull'} for your {tab.split()[0]} list "
+              f"({len(ids)} pitchers; {'without BF in the files' if a.ratings_dir else 'not in the pull'}: {len(miss)})")
     manifest["counts"].update({"SP_Data": len(sp_rows), "RP_Data": len(rp_rows)})
     manifest["paste_check"] = {"exact": rec["ok"], "partial": len(rec["under"]), "absent": len(rec["absent"])}
     json.dump(manifest, open(mpath, "w", encoding="utf-8"), indent=1)
