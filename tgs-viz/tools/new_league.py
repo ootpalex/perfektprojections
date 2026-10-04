@@ -15,9 +15,11 @@ Subcommands (exit 0 ok, 2 invalid or failed; --json prints one JSON object):
   profile --spec F                            write the league into settings.local.json as pending
   register --spec F                           add the manifest entry, then clear pending
   register-manifest --league ID               manifest entry of a trends-only league (DEV type)
+  refresh-manifest --league ID                rebuild a wizard-added league's datasets/features
+                                              (the last step of its update task)
   rollback --spec F --precheck P              undo what a failed New League run created
   remove --league ID                          take a wizard-added league out of the app
---manifest <path> (tests only) points register, register-manifest, remove,
+--manifest <path> (tests only) points register, register-manifest, refresh-manifest, remove,
 rollback and check at a copy of public/data/leagues.json.
 
 The spec file holds the wizard's non-secret fields: {"type", "id", "name", ...}
@@ -709,6 +711,50 @@ def cmd_register_manifest(a):
     return 0
 
 
+def refresh_manifest(league_id, manifest=MANIFEST):
+    """Rebuild the datasets / features of a wizard-added league's manifest entry from its data
+    folder, at the end of its update task, so pages whose files appeared after the New League run
+    (SSB's draft boards after its first draft) show up without a hand edit. Every other key of
+    the entry (name, basis, source, slug, ...) stays as it is. Returns a short status string:
+    "refreshed", "unchanged", or one starting with "skipped" (a TGS / BLM / RG / DEV entry, which
+    its own tasks build; an id the manifest does not list, which only the wizard adds, so a removed
+    league is never put back; a league with no data folder)."""
+    import extract_data as X
+    try:
+        builtin = set((ST.defaults_raw().get("leagues") or {}).keys()) | RESERVED
+    except ST.SettingsError:
+        builtin = set(RESERVED)
+    if league_id in builtin:
+        return "skipped: its entry is built by its own tasks"
+    old = next((e for e in X.load_manifest_entries(manifest) if e.get("id") == league_id), None)
+    if old is None:
+        return "skipped: not in the app's league list (only the New League wizard adds a league)"
+    if not os.path.isdir(os.path.join(X.OUTPUT_BASE, league_id)):
+        return "skipped: no data folder"
+    fresh = X.build_manifest_entry(league_id, name=old.get("name") or league_id)
+    new = dict(old)
+    new["datasets"], new["features"] = fresh["datasets"], fresh["features"]
+    if new == old:
+        return "unchanged"
+    X.upsert_manifest(manifest, [new])
+    return "refreshed"
+
+
+def cmd_refresh_manifest(a):
+    import extract_data as X
+    lid = a.league.strip()
+    res = refresh_manifest(lid, a.manifest)
+    if res == "refreshed":
+        ent = next(e for e in X.load_manifest_entries(a.manifest) if e["id"] == lid)
+        on = ", ".join(k for k, v in (ent.get("features") or {}).items() if v) or "none"
+        print(f"  Refreshed {lid}'s entry in the app's league list (pages: {on}).")
+    elif res == "unchanged":
+        print(f"  {lid}'s entry in the app's league list is up to date.")
+    else:
+        print(f"  {lid}'s entry in the app's league list was not refreshed ({res[len('skipped: '):]}).")
+    return 0
+
+
 def cmd_register(a):
     import extract_data as X
     spec = _load_spec_or_fail(a.spec)
@@ -864,6 +910,8 @@ def main(argv=None):
     p.add_argument("--spec", required=True)
     p = add("register-manifest")
     p.add_argument("--league", required=True)
+    p = add("refresh-manifest")
+    p.add_argument("--league", required=True)
     p = add("rollback")
     p.add_argument("--spec", required=True)
     p.add_argument("--precheck", required=True)
@@ -873,6 +921,7 @@ def main(argv=None):
     a.manifest = os.path.abspath(a.manifest)
     cmds = {"options": cmd_options, "check": cmd_check, "token": cmd_token, "profile": cmd_profile,
             "register": cmd_register, "register-manifest": cmd_register_manifest,
+            "refresh-manifest": cmd_refresh_manifest,
             "rollback": cmd_rollback, "remove": cmd_remove}
     try:
         return cmds[a.cmd](a)

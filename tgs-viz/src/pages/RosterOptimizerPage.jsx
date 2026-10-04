@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { optimizeRoster, getMaxWAA, leagueWinOffset, isInjured, leagueHasInjuryData, leagueHasPositionRatings, playerKey, canPlaySS, canPlayOF, canPlayAllIF, canPlayCFAndCornerOF } from '../lib/rosterOptimizer';
 import { LEAGUE_TEAMS } from './TeamStandingsPage';
+import { resolveLeagueClubs } from '../lib/leagueClubs';
 import { formatCellValue, getCellColorClass } from '../lib/columns';
 import PlayerDetail from '../components/PlayerDetail';
 import { useSelectedById } from '../hooks/useSelectedById';
@@ -67,10 +68,10 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
   // League win baseline — mean optimized winBasis across the league's teams. Subtracting it
   // makes the optimizer's wins zero-sum and ALIGNED with the League Projections screen (which
   // normalizes the same way). Memoized on the data/league, not the per-team filters.
-  const knownTeams = useMemo(() => {
-    const m = LEAGUE_TEAMS[league];
-    return m ? new Set([...m.AL, ...m.NL]) : null;
-  }, [league]);
+  const knownTeams = useMemo(
+    () => resolveLeagueClubs(metadata, LEAGUE_TEAMS[league]).known,
+    [metadata, league]
+  );
   const leagueOffset = useMemo(
     () => leagueWinOffset(hitters, pitchers, knownTeams, league, vrShare),
     [hitters, pitchers, knownTeams, league, vrShare]

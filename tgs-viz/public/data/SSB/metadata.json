@@ -1,4 +1,162 @@
 {
   "league": "SSB",
-  "game_date": "2044-05-09"
+  "game_date": "2044-05-09",
+  "clubs": {
+    "teams": [
+      {
+        "id": "31",
+        "name": "Arizona Diamondbacks",
+        "sub_league": "National League"
+      },
+      {
+        "id": "32",
+        "name": "Atlanta Braves",
+        "sub_league": "National League"
+      },
+      {
+        "id": "33",
+        "name": "Baltimore Orioles",
+        "sub_league": "American League"
+      },
+      {
+        "id": "34",
+        "name": "Boston Red Sox",
+        "sub_league": "American League"
+      },
+      {
+        "id": "36",
+        "name": "Chicago Cubs",
+        "sub_league": "National League"
+      },
+      {
+        "id": "35",
+        "name": "Chicago White Sox",
+        "sub_league": "American League"
+      },
+      {
+        "id": "37",
+        "name": "Cincinnati Reds",
+        "sub_league": "National League"
+      },
+      {
+        "id": "38",
+        "name": "Cleveland Guardians",
+        "sub_league": "American League"
+      },
+      {
+        "id": "39",
+        "name": "Colorado Rockies",
+        "sub_league": "National League"
+      },
+      {
+        "id": "42",
+        "name": "Houston Astros",
+        "sub_league": "American League"
+      },
+      {
+        "id": "43",
+        "name": "Kansas City Royals",
+        "sub_league": "American League"
+      },
+      {
+        "id": "44",
+        "name": "Los Angeles Angels",
+        "sub_league": "American League"
+      },
+      {
+        "id": "45",
+        "name": "Los Angeles Dodgers",
+        "sub_league": "National League"
+      },
+      {
+        "id": "46",
+        "name": "Milwaukee Brewers",
+        "sub_league": "National League"
+      },
+      {
+        "id": "47",
+        "name": "Minnesota Twins",
+        "sub_league": "American League"
+      },
+      {
+        "id": "52",
+        "name": "Nashville Stars",
+        "sub_league": "National League"
+      },
+      {
+        "id": "49",
+        "name": "New York Mets",
+        "sub_league": "National League"
+      },
+      {
+        "id": "48",
+        "name": "New York Yankees",
+        "sub_league": "American League"
+      },
+      {
+        "id": "51",
+        "name": "Philadelphia Phillies",
+        "sub_league": "National League"
+      },
+      {
+        "id": "50",
+        "name": "Portland Loggers",
+        "sub_league": "American League"
+      },
+      {
+        "id": "53",
+        "name": "San Diego Padres",
+        "sub_league": "National League"
+      },
+      {
+        "id": "55",
+        "name": "San Francisco Giants",
+        "sub_league": "National League"
+      },
+      {
+        "id": "54",
+        "name": "Seattle Mariners",
+        "sub_league": "American League"
+      },
+      {
+        "id": "56",
+        "name": "St. Louis Cardinals",
+        "sub_league": "National League"
+      },
+      {
+        "id": "57",
+        "name": "Tampa Bay Rays",
+        "sub_league": "American League"
+      },
+      {
+        "id": "58",
+        "name": "Texas Rangers",
+        "sub_league": "American League"
+      },
+      {
+        "id": "59",
+        "name": "Toronto Blue Jays",
+        "sub_league": "American League"
+      },
+      {
+        "id": "60",
+        "name": "Washington Nationals",
+        "sub_league": "National League"
+      }
+    ],
+    "sub_leagues": [
+      {
+        "name": "American League",
+        "abbr": "AL"
+      },
+      {
+        "name": "National League",
+        "abbr": "NL"
+      }
+    ],
+    "league_id": "155",
+    "game_date": "2044-05-09",
+    "split_season": "2044",
+    "split_source": "OOTP 27 league_155_preseason_prediction_report.html (in-game 2044-04-04) from the SSB save; matches league_155_home.html (2042-11-17)"
+  }
 }

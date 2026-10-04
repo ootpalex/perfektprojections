@@ -229,6 +229,23 @@ class CatalogTest(unittest.TestCase):
         self.assertFalse(rg["enabled"])
         self.assertIsNone(rg["update_task"])
 
+    def test_wizard_update_refreshes_its_manifest_entry(self):
+        loc = os.path.join(self.tmp, "wiz.local.json")
+        with open(loc, "w") as f:
+            json.dump({"leagues": {"ZQ": {"type": "statsplus", "name": "Wizard", "slug": "zq", "basis": "BLM",
+                                          "ootp_version": "27"}}}, f)
+        cat, _ = self.list_json(env=dict(self.env, TGS_SETTINGS_LOCAL=loc))
+        tasks = {t["id"]: t for t in cat["tasks"]}
+        steps = [s["id"] for s in tasks["update.ZQ"]["steps"]]
+        self.assertIn("manifest", steps)
+        self.assertEqual(steps[-2:], ["manifest", "pull_report"])
+        man = next(s for s in tasks["update.ZQ"]["steps"] if s["id"] == "manifest")
+        self.assertIn("refresh-manifest", man["argv"])
+        self.assertTrue(man["writes_app_data"])
+        self.assertEqual(sorted(man["app_leagues"]), ["*", "ZQ"])
+        for lid in ("TGS", "BLM"):                       # the bat-pinned tasks keep their steps
+            self.assertNotIn("manifest", [s["id"] for s in tasks[f"update.{lid}"]["steps"]])
+
     def test_no_heavy_imports(self):
         code = (f"import sys; sys.path.insert(0, {TOOLS!r}); import run_task; run_task.catalog(False); "
                 "bad = [m for m in ('winsim', 'numpy', 'openpyxl', 'statsplus') if m in sys.modules]; "

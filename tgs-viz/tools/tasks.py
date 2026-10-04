@@ -1092,7 +1092,8 @@ def default_app_leagues(argv, trends_leagues):
         return ["*"]
     if base == "export_league.py":
         return [lg, "*"] if lg else ["*"]
-    if base == "new_league.py" and len(argv) > 2 and argv[2] in ("register", "register-manifest", "remove", "rollback"):
+    if base == "new_league.py" and len(argv) > 2 and argv[2] in ("register", "register-manifest", "refresh-manifest",
+                                                                 "remove", "rollback"):
         return [lg or "{id}", "*"]
     if base == "selftest_steps.py" and len(argv) > 3 and argv[2] in ("touch", "corrupt"):
         f = argv[3]
@@ -1762,8 +1763,15 @@ def t_update_statsplus(ST, lg):
              f"{lid}-ml-rows", env=c),
         step("ml_score", f"{lid} ML scores", ml(ML_SCORE, "--league", lid, "--write"), "collect", f"{lid}-ml-score",
              app=True, env=c),
-        step("pull_report", "Data date report", py(PULL_REPORT, "--leagues", lid), "report", env=c),
     ]
+    # A wizard-added league's manifest entry (its pages: draft, contracts, ...) was built once, at
+    # New League time. Rebuild its datasets/features from the files this run wrote, so a page whose
+    # files appeared later (SSB's draft boards) is offered without a hand edit. TGS / BLM keep the
+    # steps their bats pin (test_bat_equivalence).
+    if lid not in defaults_league_ids(ST):
+        steps.append(step("manifest", "Refresh the app's page list", py(NEW_LEAGUE, "refresh-manifest", "--league", lid),
+                          "collect", f"{lid}-manifest", app=True))
+    steps.append(step("pull_report", "Data date report", py(PULL_REPORT, "--leagues", lid), "report", env=c))
     headers(steps)
     name = lg.get("name") or lid
     return task(f"update.{lid}", f"Update {name}",

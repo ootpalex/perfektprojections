@@ -624,6 +624,18 @@ def main():
                 print(f"  game date {gd[:10]} -> metadata.json: {RC.write_game_date(out_dir, league, gd)}")
             except Exception as e:
                 print(f"  note: game date not written to metadata.json ({type(e).__name__})")
+            # The league's MLB clubs and their sub-leagues, for the standings / strength / org pages
+            # (ingest/club_list.py). Additive "clubs" key; the league page is read about once a season.
+            # Never fatal.
+            try:
+                import club_list as CL
+                try:
+                    gd = S.fetch_date(base)
+                except Exception:
+                    gd = None
+                CL.update_clubs(out_dir, league, rows, teams, base, gd)
+            except Exception as e:
+                print(f"  note: clubs not written to metadata.json ({type(e).__name__})")
         print("done." + ("" if overwrite else "  (side files — add --write to go live)"))
         return
 

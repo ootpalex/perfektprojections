@@ -6,6 +6,7 @@ import {
 import { devAlreadyThere, devShareBasisWords, devIsMl, devMlWords, devMlRangeNote, fmtWaa } from '../lib/devSignals';
 import { PositionalStrengthCard } from '../components/PositionalStrength';
 import { LEAGUE_TEAMS } from './TeamStandingsPage';
+import { resolveLeagueClubs } from '../lib/leagueClubs';
 import { usePlayerData, usePlayersWithFV } from '../hooks/usePlayerData';
 import { useAppConfig } from '../lib/controlApi';
 import { Building2, ArrowUpCircle, ArrowDownCircle, AlertTriangle, ChevronDown, Zap, Users } from 'lucide-react';
@@ -325,12 +326,12 @@ export default function OrganizationPage({ hitters: hittersIn = [], pitchers: pi
   );
 
   // Same club set the standings rank against, so "8th of 28" means the same
-  // thing on both screens. Unmapped leagues pass null and fall back to any org
-  // carrying a real roster.
-  const knownTeams = useMemo(() => {
-    const m = LEAGUE_TEAMS[league];
-    return m ? new Set([...m.AL, ...m.NL]) : null;
-  }, [league]);
+  // thing on both screens (the pull's metadata.clubs, else LEAGUE_TEAMS).
+  // Unmapped leagues pass null and fall back to any org carrying a real roster.
+  const knownTeams = useMemo(
+    () => resolveLeagueClubs(metadata, LEAGUE_TEAMS[league]).known,
+    [metadata, league]
+  );
 
   // Surplus who didn't make any roster — possible cuts, MOST cuttable first (lowest
   // youth-weighted keep value, so old no-ceiling fillers top the list and any young arm

@@ -317,6 +317,45 @@ class Flow(unittest.TestCase):
         self.assertIn("ZTL", ST.leagues())
         self.assertIn("fun save", ST.protected_saves())
 
+    def test_refresh_manifest(self):
+        # a wizard-added StatsPlus league registered before its first draft: no draft page yet
+        _mk(DATA, "ZRM", "hitters.json", text="[]")
+        _mk(DATA, "ZRM", "pitchers.json", text="[]")
+        X.upsert_manifest(MAN, [dict(X.build_manifest_entry("ZRM", name="Refresh test"),
+                                     basis="BLM", source="StatsPlus", slug="zrm", extra_key=7)])
+        before = [x for x in X.load_manifest_entries(MAN) if x["id"] == "ZRM"][0]
+        self.assertFalse(before["features"]["draft"])
+        code, out = nl("refresh-manifest", "--league", "ZRM", "--manifest", MAN)
+        self.assertEqual(code, 0, out)
+        self.assertIn("up to date", out)
+        # the draft files appear later; the update task's last step picks them up
+        _mk(DATA, "ZRM", "hitters_draft.json", text='[{"ID": 1, "Name": "A"}]')
+        _mk(DATA, "ZRM", "pitchers_draft.json", text='[{"ID": 2, "Name": "B"}]')
+        code, out = nl("refresh-manifest", "--league", "ZRM", "--manifest", MAN)
+        self.assertEqual(code, 0, out)
+        self.assertIn("Refreshed ZRM", out)
+        ent = [x for x in X.load_manifest_entries(MAN) if x["id"] == "ZRM"][0]
+        self.assertTrue(ent["features"]["draft"])
+        self.assertIn("hitters_draft", ent["datasets"])
+        for k, v in before.items():                                     # no key dropped, none renamed
+            self.assertIn(k, ent)
+            if k not in ("datasets", "features"):
+                self.assertEqual(ent[k], v, k)
+        others = {x["id"]: x for x in X.load_manifest_entries(MAN) if x["id"] != "ZRM"}
+        # TGS / BLM / RG / DEV are never touched, and an id the manifest lacks is never added
+        for lid in ("TGS", "BLM", "RG", "DEV"):
+            code, out = nl("refresh-manifest", "--league", lid, "--manifest", MAN)
+            self.assertEqual(code, 0, out)
+            self.assertIn("not refreshed", out)
+        _mk(DATA, "ZRN", "hitters.json", text="[]")
+        code, out = nl("refresh-manifest", "--league", "ZRN", "--manifest", MAN)
+        self.assertEqual(code, 0, out)
+        self.assertIn("not refreshed", out)
+        after = {x["id"]: x for x in X.load_manifest_entries(MAN) if x["id"] != "ZRM"}
+        self.assertEqual(after, others)
+        self.assertNotIn("ZRN", after)
+        X.remove_manifest_entry(MAN, "ZRM")
+
     def test_dev_register_manifest(self):
         obj = {"type": "dev", "id": "ZTD", "name": "Dev two", "ootp_version": "27", "ootp_save": "AllAI", "years": "3"}
         sp, _pre, _f = self._job(obj)
