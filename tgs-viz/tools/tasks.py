@@ -1778,7 +1778,7 @@ def t_update_statsplus(ST, lg):
     # wizard-added league with no models installed for its basis skips the scoring step instead of
     # failing it. TGS / BLM / RG keep the step their bats pin (test_bat_equivalence).
     if lid not in defaults_league_ids(ST):
-        ms = steps[-1]
+        ms = next(x for x in steps if x["id"] == "ml_score")
         ms["when"] = {"exists": ML_MODELS.format(basis=basis)}
         ms["skip_echo"] = [f" No {basis} models installed: skipping {lid} ML scores "
                            "(install the author's files with backtest/ml/install_models.py)."]
