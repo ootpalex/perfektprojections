@@ -612,6 +612,20 @@ def season_stats(league, year, now, log=print):
 
 
 # ---------------------------------------------------------------- the lens set
+
+def _calib_league(league):
+    """The league whose engine calibration prices this league's ratings: its own for TGS and BLM,
+    the manifest's "basis" for an exported league (SSB, RG). Without it SSB looked for a
+    "The Sheets SSB" workbook and the WAA lens dropped."""
+    try:
+        with open(os.path.join(VIZ, "public", "data", "leagues.json"), encoding="utf-8") as fh:
+            for lg in json.load(fh).get("leagues", []):
+                if lg.get("id") == league and lg.get("basis"):
+                    return lg["basis"]
+    except (OSError, ValueError, AttributeError):
+        pass
+    return league
+
 class Lenses:
     """Per-league lens state. age_curves calls start_pair() once per USED pull
     pair, then player_buckets() once per young player in that pair. A lens that
@@ -748,7 +762,8 @@ class Lenses:
                 sys.path.insert(0, ENGINE)
             import agecurve_fit
             self._waa_mod = agecurve_fit
-            self._waa_fp = agecurve_fit.calib_fingerprint(self.league)
+            self._waa_calib = _calib_league(self.league)   # an exported league prices on its basis
+            self._waa_fp = agecurve_fit.calib_fingerprint(self._waa_calib)
         A = self._waa_mod
         cache = os.path.join(os.path.dirname(path), ".waa_cache",
                              f"{os.path.basename(path)}.{self._waa_fp}.json")
@@ -761,7 +776,7 @@ class Lenses:
                     for r in json.load(fh):
                         static[str(r.get("ID"))] = {"B": r.get("B"), "T": r.get("T"), "HT": r.get("HT")}
             self._waa_static = static
-        waa = A.vintage_waa(self.league, path, self._waa_static or {}, self._waa_fp)
+        waa = A.vintage_waa(self.league, path, self._waa_static or {}, self._waa_fp, calib=self._waa_calib)
         groups = {}
         for pid, e in waa.items():
             if e[0] is None or not has_org(e[4]):

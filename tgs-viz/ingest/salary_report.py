@@ -76,6 +76,26 @@ ANNOTATIONS = (
     ("(O)", "opt_out"), ("(R)", "retained"),
 )
 ARB_TYPES = ("arb", "arb_uncertain")
+# A cell can carry several marks in one pair of brackets, comma-separated (live SSB pages: "(P,O)" a
+# player option that is also an opt-out, "(*auto)" a minor-league salary marked auto). Each known
+# token maps to a type; an unknown token is kept as written in "marks", never interpreted.
+MARK_TYPES = {"A*": "arb_uncertain", "A#": "arb_uncertain", "A": "arb", "*": "milb", "T": "team_option",
+              "P": "player_option", "V": "vesting_option", "O": "opt_out", "R": "retained"}
+# the cell's one "type" when it carries several marks: the contract term first
+TYPE_ORDER = ("team_option", "player_option", "vesting_option", "arb_uncertain", "arb", "milb",
+              "opt_out", "retained")
+_MULTI_RE = re.compile(r"^(.*?)\(([^()]+)\)$")
+
+
+def _mark_tokens(inner):
+    """'P,O' -> ['P', 'O']; '*auto' -> ['*', 'auto'] (a leading '*' is the minor-league mark)."""
+    out = []
+    for tok in (t.strip() for t in inner.split(",")):
+        if tok.startswith("*") and len(tok) > 1 and tok not in MARK_TYPES:
+            out += ["*", tok[1:]]
+        elif tok:
+            out.append(tok)
+    return out
 
 
 def parse_salary_text(s):
@@ -107,6 +127,15 @@ def parse_cell(raw_html):
         if text.endswith(suffix):
             return {"salary": parse_salary_text(text[: -len(suffix)]), "type": ctype,
                     "guaranteed": not italic, "ann": suffix[1:-1]}
+    m = _MULTI_RE.match(text)
+    if m:
+        toks = _mark_tokens(m.group(2))
+        marks = [MARK_TYPES.get(t, t) for t in toks]
+        known = [t for t in TYPE_ORDER if t in marks]
+        amount = parse_salary_text(m.group(1))
+        if known and amount is not None:
+            return {"salary": amount, "type": known[0], "guaranteed": not italic, "ann": m.group(2),
+                    "marks": marks}
     salary = parse_salary_text(text)
     if salary is None:
         return {"salary": None, "type": "unparsed", "guaranteed": not italic, "raw": text[:RAW_MAX]}
@@ -252,10 +281,10 @@ def entry_keys(entry, span):
         y, c = arb[0]
         keys["ArbProjection"] = {"yr": y, "salary": c["salary"], "uncertain": c["type"] == "arb_uncertain",
                                  "ann": c.get("ann"), "n": len(arb)}
-    outs = [y for y, c in cells.items() if c["type"] == "opt_out"]
+    outs = [y for y, c in cells.items() if c["type"] == "opt_out" or "opt_out" in (c.get("marks") or ())]
     if outs:
         keys["OptOutYrs"] = outs
-    kept = [y for y, c in cells.items() if c["type"] == "retained"]
+    kept = [y for y, c in cells.items() if c["type"] == "retained" or "retained" in (c.get("marks") or ())]
     if kept:
         keys["RetainedYrs"] = kept
     return keys

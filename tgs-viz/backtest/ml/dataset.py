@@ -824,7 +824,8 @@ def build_league(league, history=False):
                             for s, v in sides.items()}
     app = app_rows_full(league)
     levels, peaks, currents = DSIG.app_rows(league)
-    fp = C.calib_fingerprint(league)
+    # an exported league's .waa_cache is priced on its basis (growth_lenses / agecurve_fit calib=)
+    fp = C.calib_fingerprint(league if league in C.BASES else C.extra_leagues().get(league, league))
 
     raw_rows = None
     for p in json.loads(src[1] or "[]"):

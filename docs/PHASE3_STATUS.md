@@ -55,6 +55,28 @@ Phase 1–2 SSB rebuilds therefore made about 7–8 small StatsPlus reads (no ra
   (the echo texts of his TGS/BLM bat tasks stay — his Windows bat-equivalence test pins them).
 - **Live validation pull:** approved, after the user's other agent finishes.
 
+## Live validation pull (2026-10-04, approved)
+
+`update.SSB` from the console: pull 576, in-game **2044-05-09**, 14,003 ratings rows. Every new read
+worked on the first try:
+- **`/draftpool/`**: columns `ID`, `Player Name` (as assumed), 828 players; 12 live picks; SSB draft
+  boards 345 hitters / 483 pitchers. SSB's manifest entry rebuilt so the app shows them
+  (`features.draft` true). *Gap for later:* the update task does not refresh a league's manifest when
+  a new dataset first appears.
+- **`/contractextension`**: same columns as `/contract`, one row per player; 32 signed extensions.
+- **Salary-report pages**: 28/28 read through his client (28 fetched, 0 reused), 1,134 players;
+  `ArbProjection` on 849 (487 uncertain). The live pages showed cells with several marks — `(P,O)`
+  (a player option that is also an opt-out) and `(*auto)` (minor-league, marked auto) — which the
+  ported parser left `unparsed` (23 cells); the parser now reads comma-separated marks into
+  `marks` and every one of the 6,341 cells on the 28 pages parses. A trimmed real page is a test
+  fixture.
+- **`org.csv` merge**: 7,308 players matched; warned the export is 133 game days older than the pull.
+- **Found and fixed:** the rating-trends lens and the ML rows priced SSB's vintages with SSB's own
+  calibration ("The Sheets SSB" missing → WAA lens dropped; empty fingerprint → no WAA cache). Both
+  now use the league's basis (BLM); the WAA lens ships for SSB.
+- **Data-date report:** "SSB: OK - updated this run, in-game date 2044-05-09". Only the ML-score step
+  failed (no trained models on this machine), as expected.
+
 ## Needs the user
 
 1. **One live validation pull** (SSB): `/draftpool/` (shape, token, row count vs the 2044/2045

@@ -443,3 +443,36 @@ class SavedSummary(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LivePage(unittest.TestCase):
+    """A real SSB page (team 42, 2026-10-04), trimmed to six player rows: the shapes the synthetic
+    fixture could only guess, including cells with several marks ("(P,O)", "(*auto)")."""
+
+    def setUp(self):
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "salary_report",
+                         "team_42_live_trimmed.html")
+        with open(p, encoding="utf-8") as fh:
+            self.page = SR.parse_report_html(fh.read())
+
+    def test_span_and_players(self):
+        self.assertEqual(self.page["span"], [2044, 2053])
+        self.assertEqual(len(self.page["players"]), 6)
+
+    def test_multi_mark_cells(self):
+        y = self.page["players"]["54669"]["years"]
+        self.assertEqual((y[2045]["type"], y[2045]["marks"]), ("player_option", ["player_option", "opt_out"]))
+        self.assertEqual(SR.entry_keys(self.page["players"]["54669"], self.page["span"])["OptOutYrs"], [2045])
+        auto = self.page["players"]["68579"]["years"][2045]
+        self.assertEqual((auto["type"], auto["marks"]), ("milb", ["milb", "auto"]))
+        self.assertIsNotNone(auto["salary"])
+
+    def test_arbitration_projection(self):
+        keys = SR.entry_keys(self.page["players"]["60499"], self.page["span"])
+        self.assertEqual(keys["ArbProjection"]["yr"], 2046)
+        self.assertTrue(keys["ArbProjection"]["uncertain"])
+        self.assertEqual(keys["ArbProjection"]["n"], 4)
+
+    def test_no_unparsed_cells(self):
+        cells = [c for p in self.page["players"].values() for c in p["years"].values()]
+        self.assertFalse([c for c in cells if c["type"] == "unparsed"])
