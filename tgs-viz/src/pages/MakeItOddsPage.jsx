@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Info } from 'lucide-react';
 import { getCellColorClass } from '../lib/columns';
 import { registerInvalidator, useDataVersion } from '../lib/dataVersion';
 
@@ -104,10 +103,10 @@ function Chips({ options, value, onChange }) {
       {options.map(([k, label]) => (
         <button
           key={k}
+          type="button"
           onClick={() => onChange(k)}
-          className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
-            value === k ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-          }`}
+          aria-pressed={value === k}
+          className="ns-btn ns-btn-sm"
         >
           {label}
         </button>
@@ -120,34 +119,32 @@ function OddsTable({ attr, table, ages, bands, outcome, thinN, roleWord, outcome
   const label = ATTR_LABEL[attr] || attr;
   const rows = [...bands].sort((a, b) => b - a);
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-slate-800">
-        <h3 className="text-sm font-bold text-slate-200">{label}{label !== attr && <span className="text-slate-600 font-normal"> {attr}</span>}</h3>
-      </div>
+    <div className="ns-box overflow-hidden">
+      <h3 className="ns-strip">{label}{label !== attr && <span className="ns-count"> {attr}</span>}</h3>
       <div className="overflow-x-auto">
         <table className="text-xs whitespace-nowrap">
           <thead>
-            <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-800">
-              <th className="text-left px-3 py-1.5 sticky left-0 bg-slate-900 z-10">{label}</th>
+            <tr className="text-[11px] ns-muted border-b border-[var(--line)] font-narrow">
+              <th className="text-left px-3 py-1.5 sticky left-0 bg-[var(--panel)] z-10 font-narrow">{label}</th>
               {ages.map(a => <th key={a} className="px-1.5 py-1.5 text-right min-w-[3.5rem]">Age {a}</th>)}
             </tr>
           </thead>
           <tbody>
             {rows.map(band => (
-              <tr key={band} className="border-b border-slate-800/40 hover:bg-slate-800/30">
-                <td className="px-3 py-1 text-slate-300 font-mono sticky left-0 bg-slate-900 z-10">{band}</td>
+              <tr key={band} className="border-b border-[var(--line)] hover:bg-[var(--panel-3)]">
+                <td className="px-3 py-1 ns-text sticky left-0 bg-[var(--panel)] z-10">{band}</td>
                 {ages.map(a => {
                   const c = pick(table?.[String(band)]?.[String(a)], outcome);
                   if (!c) return <td key={a} className="px-1.5 py-1" title={`${label} ${band}, age ${a}: nobody`} />;
                   const thin = c.n < thinN;
-                  const color = thin ? 'text-slate-500' : getCellColorClass(c.share, COLOR_COLUMN[outcome]);
+                  const color = thin ? 'ns-muted' : getCellColorClass(c.share, COLOR_COLUMN[outcome]);
                   const title = `${label} ${band}, age ${a}: ${pct(c.share)} of ${fmtInt(c.n)} ${roleWord} ${outcomeWord}`
                     + (outcome !== 'regular' && c.all !== c.n ? ` (${fmtInt(c.all)} seen at this age, ${fmtInt(c.n)} with a finished career)` : '')
                     + (thin ? `. Thin: under ${thinN}.` : '');
                   return (
                     <td key={a} className="px-1.5 py-1 text-right align-top leading-tight" title={title}>
-                      <div className={`font-mono ${color}`}>{thin ? `(${pct(c.share)})` : pct(c.share)}</div>
-                      <div className="text-[10px] text-slate-600">n {fmtInt(c.n)}</div>
+                      <div className={`${color}`}>{thin ? `(${pct(c.share)})` : pct(c.share)}</div>
+                      <div className="text-[11px] ns-muted">n {fmtInt(c.n)}</div>
                     </td>
                   );
                 })}
@@ -200,18 +197,18 @@ export default function MakeItOddsPage() {
 
   if (odds === undefined) {
     return (
-      <div className="flex items-center justify-center h-full text-slate-400 gap-2">
-        <Loader2 size={18} className="animate-spin" /> Loading make-it odds...
+      <div className="flex items-center justify-center h-full ns-text-2 gap-2">
+        Loading make-it odds...
       </div>
     );
   }
   if (!odds) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-center max-w-md text-slate-400 text-sm space-y-2">
-          <p className="text-white font-bold">No make-it odds file yet</p>
+        <div className="text-center max-w-md ns-text-2 text-sm space-y-2">
+          <p className="ns-text font-bold">No make-it odds file yet</p>
           <p>The page reads /data/dev_rating_odds.json. Build it with:</p>
-          <code className="block text-xs text-blue-400 bg-slate-900 rounded p-2">
+          <code className="block text-xs ns-text-2 bg-[var(--bg)] border border-[var(--line)] p-2">
             python tgs-viz/backtest/dev_rating_odds.py --write
           </code>
         </div>
@@ -227,19 +224,21 @@ export default function MakeItOddsPage() {
   const seasons = Array.isArray(odds.seasons) ? odds.seasons : null;
 
   return (
-    <div className="h-full overflow-auto p-5 space-y-4">
-      <div>
-        <h1 className="text-xl font-black text-white">Make-it odds</h1>
-        <p className="text-xs text-slate-500 mt-0.5">
-          DEV-league data (all-AI OOTP, true ratings), the same for every league. Informational only: nothing here feeds a projection.
-        </p>
-      </div>
+    <div className="ns-page overflow-auto space-y-4 [&>*]:shrink-0">
+      <header className="ns-page-head">
+        <div>
+          <h1>Make-it odds</h1>
+          <p className="ns-page-sub">
+            DEV-league data (all-AI OOTP, true ratings), the same for every league. Informational only: nothing here feeds a projection.
+          </p>
+        </div>
+      </header>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-sm text-slate-300 space-y-2">
+      <div className="ns-box ns-box-body text-sm ns-text-2 space-y-2">
         <p>
           Each cell is the share of DEV players who had that one rating at that age and went on to reach the outcome.
           {example
-            ? <> Read it as: of DEV hitters who were 18 with a 25 BABIP, <span className="font-mono text-white">{pct(example.share)}</span> became MLB regulars (n {fmtInt(example.n)}).</>
+            ? <> Read it as: of DEV hitters who were 18 with a 25 BABIP, <span className="ns-text font-semibold">{pct(example.share)}</span> became MLB regulars (n {fmtInt(example.n)}).</>
             : <> Read it as: of DEV hitters who were 18 with a 25 BABIP, x% became MLB regulars.</>}
           {' '}The players are the {fmtInt(cohort.players || 0)} DEV players first seen at age 20 or younger
           ({fmtInt(cohort.hitters || 0)} hitters, {fmtInt(cohort.pitchers || 0)} pitchers){seasons ? `, seasons ${seasons[0]} to ${seasons[1]}` : ''},
@@ -250,34 +249,34 @@ export default function MakeItOddsPage() {
           {' '}Unlike these tables, the MLB %, Starter % and Star % on the player lists are conditional on the player's current WAA: the chance his peak reaches the bar from where he is now, so a player already there reads 100%.
         </p>
         <p>
-          <span className="font-semibold text-white">MLB regular</span> = a season with 300 or more MLB PA (hitters) or 150 or more MLB BF (pitchers), at any point up to the last season. Every observation counts, so players still young at the last seasons count as not yet regular.{' '}
-          <span className="font-semibold text-white">MLB level</span> = his best season by the engine WAA reached -1 (an MLB-level player: a 5th starter or bench bat), the chance he is ever anything in the majors.{' '}
-          <span className="font-semibold text-white">Starter</span> = that peak reached 0 (an average starter).{' '}
-          <span className="font-semibold text-white">Star</span> = that peak reached +1.5 WAA (a star). MLB level, Starter and Star count only players seen at 27 or older, so their n is smaller than the MLB-regular n.
+          <span className="font-semibold ns-text">MLB regular</span> = a season with 300 or more MLB PA (hitters) or 150 or more MLB BF (pitchers), at any point up to the last season. Every observation counts, so players still young at the last seasons count as not yet regular.{' '}
+          <span className="font-semibold ns-text">MLB level</span> = his best season by the engine WAA reached -1 (an MLB-level player: a 5th starter or bench bat), the chance he is ever anything in the majors.{' '}
+          <span className="font-semibold ns-text">Starter</span> = that peak reached 0 (an average starter).{' '}
+          <span className="font-semibold ns-text">Star</span> = that peak reached +1.5 WAA (a star). MLB level, Starter and Star count only players seen at 27 or older, so their n is smaller than the MLB-regular n.
         </p>
         <p>
-          <span className="font-semibold text-white">Current rating</span> = the rating at that age (vs-R and vs-L averaged, rounded to the nearest 5). <span className="font-semibold text-white">Potential rating</span> = the potential rating of that skill at that age. Overall and Potential grade are the grades OOTP shows and come on the current basis only.
+          <span className="font-semibold ns-text">Current rating</span> = the rating at that age (vs-R and vs-L averaged, rounded to the nearest 5). <span className="font-semibold ns-text">Potential rating</span> = the potential rating of that skill at that age. Overall and Potential grade are the grades OOTP shows and come on the current basis only.
           {' '}n is the number of player-ages in the cell. A cell with n under {thinN} shows grey in parentheses: too few to trust. A blank cell means nobody was there.
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-slate-400">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs ns-text-2">
         <div className="flex items-center gap-2">
-          <span className="uppercase tracking-wider text-[10px] text-slate-500">Role</span>
+          <span className="text-[11px] ns-muted">Role</span>
           <Chips options={ROLES} value={role} onChange={v => choose({ role: v })} />
         </div>
         <div className="flex items-center gap-2">
-          <span className="uppercase tracking-wider text-[10px] text-slate-500">Outcome</span>
+          <span className="text-[11px] ns-muted">Outcome</span>
           <Chips options={OUTCOMES} value={outcome} onChange={v => choose({ outcome: v })} />
         </div>
         <div className="flex items-center gap-2">
-          <span className="uppercase tracking-wider text-[10px] text-slate-500">Basis</span>
+          <span className="text-[11px] ns-muted">Basis</span>
           <Chips options={BASES} value={basis} onChange={v => choose({ basis: v })} />
         </div>
       </div>
 
       {attrs.length === 0 ? (
-        <p className="text-sm text-slate-500">No tables for this choice.</p>
+        <p className="text-sm ns-muted">No tables for this choice.</p>
       ) : attrs.map(attr => (
         <OddsTable
           key={`${role}-${basis}-${attr}`}
@@ -286,8 +285,8 @@ export default function MakeItOddsPage() {
         />
       ))}
 
-      <div className="flex items-start gap-2 text-[11px] text-slate-500">
-        <Info size={13} className="shrink-0 mt-0.5" />
+      <div className="flex items-start gap-2 text-[11px] ns-muted">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 mt-0.5" aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg>
         <p>
           Built by backtest/dev_rating_odds.py{odds.generated ? ` on ${String(odds.generated).slice(0, 10)}` : ''} from the same cohort and outcomes as the DEV cell method, the fallback behind MLB %, Starter % and Star %.
           {' '}HRR here is the HRR column of the app (the HRA rating in OOTP), not the Movement composite.

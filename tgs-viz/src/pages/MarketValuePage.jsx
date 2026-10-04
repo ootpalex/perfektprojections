@@ -4,7 +4,6 @@ import { analyzeMarket, calculatePlayerValue, resolveRate, getPlayerRole, format
 import { formatControl } from '../lib/serviceTime';
 import { usePlayersWithFV } from '../hooks/usePlayerData';
 import { useSelectedById } from '../hooks/useSelectedById';
-import { Search, ChevronDown, ChevronUp, DollarSign, TrendingUp, Info } from 'lucide-react';
 
 /**
  * Market Value Page — FA-market fit ($/WAR + floor) and contract valuation.
@@ -161,30 +160,29 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
   const fmtSlope = (v) => `${formatMoney(v)}/WAR`;
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="p-4 space-y-6">
+    <div className="ns-page overflow-y-auto [&>*]:shrink-0">
+      <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <DollarSign size={24} className="text-green-400" />
-            Market Value — FA Fit
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">
+        <header className="ns-page-head">
+          <div>
+          <h1>Market Value — FA Fit</h1>
+          <p className="ns-page-sub">
             AAV ~ WAR fitted on genuine open-market signings only: MLB, first year of the deal, and
             ≥6 service years <em>measured in days at the moment of signature</em> — which is what excludes
             pre-free-agency extensions. WAR = WAA + measured MARKET replacement offsets
             (what freely-available talent produces). The floor is pinned at the league minimum, and the
             curvature and the hitter/pitcher split each have to earn their place out of sample
             (see “How this fit was chosen”). Two economies:{' '}
-            <span className="text-slate-300">line value — replaceable tier</span> vs{' '}
-            <span className="text-amber-300">market price — scarcity tier</span> (tier-local fit of comparable-WAR signings).
+            <span className="ns-text">line value — replaceable tier</span> vs{' '}
+            <span className="text-[var(--chart-series-4)]">market price — scarcity tier</span> (tier-local fit of comparable-WAR signings).
             Everything re-fits automatically on every data refresh.
           </p>
-        </div>
+          </div>
+        </header>
 
         {/* Banked-fit notice — never price off a stale line silently */}
         {prov?.used === 'banked' && (
-          <div className="bg-amber-950/40 rounded-lg border border-amber-800/60 p-3 text-sm text-amber-200">
+          <div className="ns-alert-warn p-3 text-sm">
             <span className="font-semibold">Market fit: banked {prov.bankedAt}</span>
             {' '}(n={prov.bankedN}) — the live sample is only n={prov.liveN}, too small to
             re-price a win. Free agency resets every contract to year 1, which empties the
@@ -202,7 +200,7 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
               ? `pooled, n=${fit.pooled.n}`
                 + (prov?.used === 'banked' ? ` · BANKED ${prov.bankedAt}` : '')
               : 'no FA sample'}
-            color="text-green-400"
+            color="text-[var(--chart-series-2)]"
           />
           <StatCard
             label="Fitted Floor"
@@ -210,13 +208,13 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
             sub={fit?.pooled?.floorMode === 'pinned'
               ? `pinned at the measured league minimum${fit.minSalaryInfo ? ` (${Math.round(fit.minSalaryInfo.share * 100)}% of ${fit.minSalaryInfo.pool} pre-arb deals)` : ''}`
               : 'free intercept (pin lost the out-of-sample test)'}
-            color="text-cyan-400"
+            color="text-[var(--chart-series-1)]"
           />
           <StatCard
             label="Fit Quality"
             value={fit?.pooled ? `r² ${fit.pooled.r2.toFixed(2)}` : '-'}
             sub={fit?.pooled ? `resid SD ${formatMoney(fit.pooled.residSD)} · shape ${fit.pooled.shape}` : ''}
-            color="text-slate-300"
+            color="ns-text"
           />
           <StatCard
             label="Hitter Fit"
@@ -225,7 +223,7 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
               ? `floor ${formatMoney(fit.hitter.floor)} = league min · n=${fit.hitter.n}, r² ${fit.hitter.r2.toFixed(2)}`
                 + (fit.useRoleLine?.hitter ? '' : ' · prices on the POOLED line')
               : 'too few'}
-            color="text-blue-400"
+            color="text-[var(--chart-series-1)]"
           />
           <StatCard
             label="Pitcher Fit"
@@ -241,7 +239,7 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
               ? `floor ${formatMoney(fit.pitcher.floor)} = league min · n=${fit.pitcher.n}, r² ${fit.pitcher.r2.toFixed(2)}`
                 + (fit.useRoleLine?.pitcher ? '' : ' · prices on the POOLED line')
               : 'too few'}
-            color="text-yellow-300"
+            color="text-[var(--chart-series-6)]"
           />
           <StatCard
             label="P/H Slope Ratio"
@@ -249,56 +247,55 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
             sub={fit?.perRole
               ? `per-role line(s) earned out-of-sample (slope diff t=${fit.slopeDiffT?.toFixed(1)})`
               : `roles POOLED — the split did not pay for itself out of sample (t=${fit.slopeDiffT?.toFixed(1)})`}
-            color="text-purple-400"
+            color="text-[var(--chart-series-5)]"
           />
         </div>
 
         {/* Fit provenance — every gate the shipped line had to clear */}
         {fit?.notes?.length > 0 && (
-          <details className="bg-slate-900 rounded-lg border border-slate-800 p-4">
-            <summary className="text-sm font-semibold text-white cursor-pointer">
+          <details className="ns-card">
+            <summary className="ns-strip cursor-pointer">
               How this fit was chosen ({fit.sample.length} open-market signings
               {fit.serviceBasis ? ` · service basis: ${fit.serviceBasis}` : ''})
             </summary>
-            <ul className="mt-3 space-y-1 text-xs text-slate-400 list-disc list-inside">
+            <ul className="space-y-1 text-xs ns-text-2 list-disc list-inside">
               {fit.notes.map((n, i) => <li key={i}>{n}</li>)}
             </ul>
           </details>
         )}
 
         {/* Manual override */}
-        <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
+        <div className="ns-box ns-box-body">
           <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-400">$/WAR ($M):</span>
+              <span className="text-sm ns-text-2">$/WAR ($M):</span>
               <input
                 type="number"
                 step="0.1"
                 value={slopeOverride}
                 onChange={(e) => setSlopeOverride(e.target.value)}
                 placeholder={fit?.pooled ? (fit.pooled.slope / 1_000_000).toFixed(2) : '-'}
-                className="w-24 bg-slate-800 text-white text-sm rounded px-3 py-1.5 border border-slate-700 focus:border-blue-500 focus:outline-none placeholder-slate-500"
+                className="ns-input w-24"
               />
-              <span className="text-sm text-slate-400">Floor ($M):</span>
+              <span className="text-sm ns-text-2">Floor ($M):</span>
               <input
                 type="number"
                 step="0.1"
                 value={floorOverride}
                 onChange={(e) => setFloorOverride(e.target.value)}
                 placeholder={fit?.pooled ? (fit.pooled.floor / 1_000_000).toFixed(2) : '-'}
-                className="w-24 bg-slate-800 text-white text-sm rounded px-3 py-1.5 border border-slate-700 focus:border-blue-500 focus:outline-none placeholder-slate-500"
+                className="ns-input w-24"
               />
               {(slopeOverride || floorOverride) && (
                 <button
                   onClick={() => { setSlopeOverride(''); setFloorOverride(''); }}
-                  className="text-xs text-slate-500 hover:text-slate-300"
+                  className="ns-link"
                 >
                   Reset to fitted
                 </button>
               )}
             </div>
-            <div className="text-xs text-slate-500 flex items-center gap-1">
-              <Info size={12} />
+            <div className="text-xs ns-muted flex items-center gap-1">
               Override the fitted line to model scenarios. Blank = fitted values (auto-refit each data refresh).
             </div>
           </div>
@@ -307,45 +304,45 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
         {/* Two-column layout: Chart + Buckets */}
         <div className="grid grid-cols-2 gap-4">
           {/* Scatter: Salary vs WAR */}
-          <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
-            <h2 className="text-sm font-semibold text-white mb-3">Salary vs WAR (MLB contracts; FA signings = fit sample)</h2>
+          <div className="ns-card">
+            <h2 className="ns-strip">Salary vs WAR (MLB contracts; FA signings = fit sample)</h2>
             <ResponsiveContainer width="100%" height={320}>
               <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                 <XAxis
                   dataKey="war"
                   name="WAR"
                   type="number"
                   domain={['auto', 'auto']}
-                  tick={{ fill: '#94a3b8', fontSize: 11 }}
-                  label={{ value: 'WAR', position: 'insideBottom', offset: -10, fill: '#64748b', fontSize: 11 }}
+                  tick={{ fill: 'var(--chart-axis)', fontSize: 11 }}
+                  label={{ value: 'WAR', position: 'insideBottom', offset: -10, fill: 'var(--chart-axis)', fontSize: 11 }}
                 />
                 <YAxis
                   dataKey="price"
                   name="Salary"
                   type="number"
                   tickFormatter={(v) => formatMoney(v)}
-                  tick={{ fill: '#94a3b8', fontSize: 11 }}
-                  label={{ value: 'Salary', angle: -90, position: 'insideLeft', offset: 10, fill: '#64748b', fontSize: 11 }}
+                  tick={{ fill: 'var(--chart-axis)', fontSize: 11 }}
+                  label={{ value: 'Salary', angle: -90, position: 'insideLeft', offset: 10, fill: 'var(--chart-axis)', fontSize: 11 }}
                 />
                 <Tooltip content={<ScatterTooltip />} />
                 {fitCurve.length > 0 && (
                   <Scatter
                     data={fitCurve}
-                    line={{ stroke: '#22c55e', strokeDasharray: '5 5', strokeWidth: 1.5 }}
+                    line={{ stroke: 'var(--chart-series-2)', strokeDasharray: '5 5', strokeWidth: 1.5 }}
                     shape={() => null}
                     legendType="none"
                     isAnimationActive={false}
                     name="Fitted market"
                   />
                 )}
-                <Scatter data={scatterData.filter(d => d.isFA)} fill="#3b82f6" fillOpacity={0.85} r={4} name="FA signings (fit sample)" />
-                <Scatter data={scatterData.filter(d => !d.isFA && !d.isPreArb)} fill="#64748b" fillOpacity={0.45} r={3} name="Other contracts" />
-                <Scatter data={scatterData.filter(d => !d.isFA && d.isPreArb)} fill="#f59e0b" fillOpacity={0.35} r={2} name="Pre-arb" />
+                <Scatter data={scatterData.filter(d => d.isFA)} fill="var(--chart-series-1)" fillOpacity={0.85} r={4} name="FA signings (fit sample)" />
+                <Scatter data={scatterData.filter(d => !d.isFA && !d.isPreArb)} fill="var(--chart-axis)" fillOpacity={0.45} r={3} name="Other contracts" />
+                <Scatter data={scatterData.filter(d => !d.isFA && d.isPreArb)} fill="var(--chart-series-4)" fillOpacity={0.35} r={2} name="Pre-arb" />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
               </ScatterChart>
             </ResponsiveContainer>
-            <p className="text-xs text-slate-500 mt-2">
+            <p className="text-xs ns-muted mt-2">
               Green = the pooled fitted shape ({lineRate.shape === 'quad'
                 ? `curved: ${fmtSlope(lineRate.slope)} + ${formatMoney(lineRate.curv)}/WAR², clamped above ${lineRate.maxX?.toFixed(2)} WAR`
                 : `straight: ${fmtSlope(lineRate.slope)}`}, floor {formatMoney(lineRate.floor)}
@@ -359,26 +356,26 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
           </div>
 
           {/* WAR Bucket Analysis */}
-          <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
-            <h2 className="text-sm font-semibold text-white mb-3">Avg FA Salary by WAR Tier</h2>
+          <div className="ns-card">
+            <h2 className="ns-strip">Avg FA Salary by WAR Tier</h2>
             <ResponsiveContainer width="100%" height={320}>
               <BarChart data={market.buckets} margin={{ top: 10, right: 20, bottom: 20, left: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                <XAxis dataKey="label" tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} />
                 <YAxis
                   tickFormatter={(v) => formatMoney(v)}
-                  tick={{ fill: '#94a3b8', fontSize: 11 }}
-                  label={{ value: 'Avg FA salary', angle: -90, position: 'insideLeft', offset: 10, fill: '#64748b', fontSize: 11 }}
+                  tick={{ fill: 'var(--chart-axis)', fontSize: 11 }}
+                  label={{ value: 'Avg FA salary', angle: -90, position: 'insideLeft', offset: 10, fill: 'var(--chart-axis)', fontSize: 11 }}
                 />
                 <Tooltip content={<BucketTooltip />} />
-                <Bar dataKey="avgPrice" radius={[4, 4, 0, 0]}>
+                <Bar dataKey="avgPrice" radius={[3, 3, 0, 0]}>
                   {market.buckets.map((entry, i) => (
-                    <Cell key={i} fill={BUCKET_COLORS[i] || '#3b82f6'} fillOpacity={0.8} />
+                    <Cell key={i} fill={BUCKET_COLORS[i] || 'var(--chart-series-1)'} fillOpacity={0.8} />
                   ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-            <p className="text-xs text-slate-500 mt-2">
+            <p className="text-xs ns-muted mt-2">
               Average salary of FA-sample signings per WAR bucket — a model-free look at the same market the line is fitted on.
             </p>
 
@@ -386,7 +383,7 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
             <div className="mt-4">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-slate-500 border-b border-slate-800">
+                  <tr className="ns-muted border-b border-[var(--line)]">
                     <th className="text-left py-1">FA Tier</th>
                     <th className="text-right py-1">Players</th>
                     <th className="text-right py-1">WAR Range</th>
@@ -395,11 +392,11 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
                 </thead>
                 <tbody>
                   {market.tiers.map((tier, i) => (
-                    <tr key={i} className="border-b border-slate-800/50 text-slate-300">
+                    <tr key={i} className="border-b border-[var(--line)] ns-text">
                       <td className="py-1.5 font-medium">{tier.label}</td>
                       <td className="text-right">{tier.count}</td>
                       <td className="text-right">{tier.minWAR.toFixed(1)} - {tier.maxWAR.toFixed(1)}</td>
-                      <td className="text-right text-green-400">{formatMoney(tier.avgPrice)}</td>
+                      <td className="text-right text-[var(--chart-series-2)]">{formatMoney(tier.avgPrice)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -409,17 +406,16 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
         </div>
 
         {/* Player Valuation Table */}
-        <div className="bg-slate-900 rounded-lg border border-slate-800 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-              <TrendingUp size={16} className="text-green-400" />
+        <div className="ns-card">
+          <div className="ns-strip flex items-center justify-between">
+            <h2 className="flex items-center gap-2">
               Player Valuations
             </h2>
             <div className="flex items-center gap-2">
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value)}
-                className="bg-slate-800 text-white text-xs rounded px-2 py-1.5 border border-slate-700 focus:border-blue-500 focus:outline-none"
+                className="ns-select"
               >
                 <option value="ALL">All Players</option>
                 <option value="CONTRACT">Under Contract</option>
@@ -429,14 +425,14 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
                 <option value="PROSPECT">Prospects Only</option>
               </select>
 
-              <div className="relative">
-                <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" />
+              <div className="ns-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search name or org..."
-                  className="bg-slate-800 text-white text-xs rounded pl-7 pr-3 py-1.5 w-48 border border-slate-700 focus:border-blue-500 focus:outline-none placeholder-slate-500"
+                  className="ns-input w-48"
                 />
               </div>
             </div>
@@ -444,8 +440,8 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
 
           <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
             <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-slate-900 z-10">
-                <tr className="text-slate-500 border-b border-slate-700">
+              <thead className="sticky top-0 bg-[var(--panel)] z-10">
+                <tr className="ns-muted border-b border-[var(--line-2)]">
                   <Th col="Name" label="Name" current={sortKey} dir={sortDir} onClick={handleSort} />
                   <Th col="_playerType" label="Type" current={sortKey} dir={sortDir} onClick={handleSort} />
                   <Th col="POS" label="Pos" current={sortKey} dir={sortDir} onClick={handleSort} />
@@ -472,40 +468,40 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
                   <tr
                     key={p.ID || i}
                     onClick={() => (selectedPlayer?.ID === p.ID && selectedPlayer?._playerType === p._playerType ? clear() : select(p, kindOf(p)))}
-                    className={`border-b border-slate-800/50 hover:bg-slate-800/50 cursor-pointer transition-colors ${
-                      selectedPlayer?.ID === p.ID ? 'bg-blue-900/20' : ''
+                    className={`border-b border-[var(--line)] hover:bg-[var(--panel-3)] cursor-pointer transition-colors ${
+                      selectedPlayer?.ID === p.ID ? 'bg-[var(--accent-bg)]' : ''
                     }`}
                   >
-                    <td className="py-1.5 px-2 font-medium text-white whitespace-nowrap">{p.Name}</td>
-                    <td className="py-1.5 px-2 text-slate-400">{p._playerType}</td>
-                    <td className="py-1.5 px-2 text-slate-300">{p.POS}</td>
-                    <td className="py-1.5 px-2 text-slate-400 whitespace-nowrap max-w-[120px] truncate">{p.ORG || '-'}</td>
-                    <td className={`py-1.5 px-2 ${p.Lev === 'INT' ? 'text-yellow-400 font-semibold' : 'text-slate-400'}`}>{p.Lev || '-'}</td>
-                    <td className="py-1.5 px-2 text-slate-300">{p.Age}</td>
-                    <td className={`py-1.5 px-2 font-mono ${waaColor(p._war)}`}>{p._war.toFixed(1)}</td>
-                    <td className={`py-1.5 px-2 font-mono ${fvColor(p._fvScale)}`}>{p._fvScale || '-'}</td>
-                    <td className="py-1.5 px-2 text-green-400 font-mono">{p.Price > 0 ? formatMoney(p.Price) : '-'}</td>
-                    <td className="py-1.5 px-2 text-slate-300 font-mono">{formatMoney(p._annualValue)}</td>
-                    <td className={`py-1.5 px-2 font-mono ${surplusColor(p._surplus)}`}>{p.Price > 0 ? formatMoney(p._surplus) : '-'}</td>
-                    <td className={`py-1.5 px-2 ${p._mktTier === 'scarcity' ? 'text-amber-400 font-semibold' : 'text-slate-500'}`}>
+                    <td className="py-1.5 px-2 font-medium ns-text whitespace-nowrap">{p.Name}</td>
+                    <td className="py-1.5 px-2 ns-text-2">{p._playerType}</td>
+                    <td className="py-1.5 px-2 ns-text">{p.POS}</td>
+                    <td className="py-1.5 px-2 ns-text-2 whitespace-nowrap max-w-[120px] truncate">{p.ORG || '-'}</td>
+                    <td className={`py-1.5 px-2 ${p.Lev === 'INT' ? 'ns-warn font-semibold' : 'ns-text-2'}`}>{p.Lev || '-'}</td>
+                    <td className="py-1.5 px-2 ns-text">{p.Age}</td>
+                    <td className={`py-1.5 px-2 ${waaColor(p._war)}`}>{p._war.toFixed(1)}</td>
+                    <td className={`py-1.5 px-2 ${fvColor(p._fvScale)}`}>{p._fvScale || '-'}</td>
+                    <td className="py-1.5 px-2 text-[var(--chart-series-2)]">{p.Price > 0 ? formatMoney(p.Price) : '-'}</td>
+                    <td className="py-1.5 px-2 ns-text">{formatMoney(p._annualValue)}</td>
+                    <td className={`py-1.5 px-2 ${surplusColor(p._surplus)}`}>{p.Price > 0 ? formatMoney(p._surplus) : '-'}</td>
+                    <td className={`py-1.5 px-2 ${p._mktTier === 'scarcity' ? 'ns-warn font-semibold' : 'ns-muted'}`}>
                       {p._mktTier === 'scarcity' ? 'Scarcity' : 'Line'}
                     </td>
-                    <td className="py-1.5 px-2 text-amber-300 font-mono">{formatMoney(p._mktPrice)}</td>
-                    <td className={`py-1.5 px-2 font-mono ${surplusColor(p._mktSurplus)}`}>{p.Price > 0 ? formatMoney(p._mktSurplus) : '-'}</td>
-                    <td className="py-1.5 px-2 text-slate-400 font-mono">{p._ctrYears || '-'}</td>
-                    <td className={`py-1.5 px-2 font-mono font-semibold ${p._ctrSurplus === null ? 'text-slate-600' : surplusColor(p._ctrSurplus)}`}>
+                    <td className="py-1.5 px-2 text-[var(--chart-series-4)]">{formatMoney(p._mktPrice)}</td>
+                    <td className={`py-1.5 px-2 ${surplusColor(p._mktSurplus)}`}>{p.Price > 0 ? formatMoney(p._mktSurplus) : '-'}</td>
+                    <td className="py-1.5 px-2 ns-text-2">{p._ctrYears || '-'}</td>
+                    <td className={`py-1.5 px-2 font-semibold ${p._ctrSurplus === null ? 'ns-muted' : surplusColor(p._ctrSurplus)}`}>
                       {p._ctrSurplus === null ? '-' : formatMoney(p._ctrSurplus)}
                     </td>
-                    <td className="py-1.5 px-2 text-green-400 font-mono">{formatMoney(p._offerMid)}</td>
-                    <td className="py-1.5 px-2 text-slate-400 font-mono">{formatMoney(p._offerFloor)}</td>
-                    <td className="py-1.5 px-2 text-yellow-300 font-mono">{formatMoney(p._offerCeiling)}</td>
+                    <td className="py-1.5 px-2 text-[var(--chart-series-2)]">{formatMoney(p._offerMid)}</td>
+                    <td className="py-1.5 px-2 ns-text-2">{formatMoney(p._offerFloor)}</td>
+                    <td className="py-1.5 px-2 text-[var(--chart-series-6)]">{formatMoney(p._offerCeiling)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          <p className="text-xs text-slate-500 mt-2">
+          <p className="text-xs ns-muted mt-2">
             Showing {Math.min(filteredPlayers.length, 500)} of {filteredPlayers.length} players |
             Line Value/Surplus = the fitted line (replaceable-tier economy) |
             Mkt Price/Surplus = tier-local fit of comparable-WAR signings (what the market actually pays; departs the line in the scarcity tier) |
@@ -529,10 +525,10 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
 
 function StatCard({ label, value, sub, color }) {
   return (
-    <div className="bg-slate-900 rounded-lg border border-slate-800 p-3">
-      <p className="text-xs text-slate-500 uppercase tracking-wider">{label}</p>
+    <div className="ns-box p-3">
+      <p className="text-xs ns-muted">{label}</p>
       <p className={`text-xl font-bold mt-1 ${color}`}>{value}</p>
-      <p className="text-xs text-slate-600 mt-0.5">{sub}</p>
+      <p className="text-xs ns-muted mt-0.5">{sub}</p>
     </div>
   );
 }
@@ -540,13 +536,13 @@ function StatCard({ label, value, sub, color }) {
 function Th({ col, label, current, dir, onClick }) {
   return (
     <th
-      className="py-2 px-2 text-right cursor-pointer hover:text-slate-300 select-none whitespace-nowrap"
+      className="py-2 px-2 text-right cursor-pointer hover:text-[var(--text)] select-none whitespace-nowrap"
       onClick={() => onClick(col)}
     >
       <span className="inline-flex items-center gap-0.5">
         {label}
         {current === col && (
-          dir === 'desc' ? <ChevronDown size={10} /> : <ChevronUp size={10} />
+          <span className="text-[11px]" aria-hidden="true">{dir === 'desc' ? '▼' : '▲'}</span>
         )}
       </span>
     </th>
@@ -559,14 +555,14 @@ function ScatterTooltip({ active, payload }) {
   if (!d) return null;
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs shadow-lg">
-      <p className="font-semibold text-white">{d.name}</p>
-      <p className="text-slate-400">{d.pos} | Age {d.age}</p>
-      <p className="text-green-400">Salary: {formatMoney(d.price)}</p>
-      <p className="text-blue-400">WAR: {d.war.toFixed(1)}</p>
-      {d.isFA && <p className="text-cyan-400 mt-1">FA signing (in fit sample)</p>}
-      {!d.isFA && d.isPreArb && <p className="text-yellow-400 mt-1">Pre-arb (excluded from fit)</p>}
-      {!d.isFA && !d.isPreArb && <p className="text-slate-500 mt-1">Arb/extension (excluded from fit)</p>}
+    <div className="bg-[var(--panel-2)] border border-[var(--line-2)] p-2 text-xs">
+      <p className="font-semibold ns-text">{d.name}</p>
+      <p className="ns-text-2">{d.pos} | Age {d.age}</p>
+      <p className="text-[var(--chart-series-2)]">Salary: {formatMoney(d.price)}</p>
+      <p className="text-[var(--chart-series-1)]">WAR: {d.war.toFixed(1)}</p>
+      {d.isFA && <p className="text-[var(--chart-series-1)] mt-1">FA signing (in fit sample)</p>}
+      {!d.isFA && d.isPreArb && <p className="ns-warn mt-1">Pre-arb (excluded from fit)</p>}
+      {!d.isFA && !d.isPreArb && <p className="ns-muted mt-1">Arb/extension (excluded from fit)</p>}
     </div>
   );
 }
@@ -577,10 +573,10 @@ function BucketTooltip({ active, payload }) {
   if (!d) return null;
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs shadow-lg">
-      <p className="font-semibold text-white">{d.label} WAR</p>
-      <p className="text-slate-400">{d.faCount} FA signings ({d.count} MLB total)</p>
-      <p className="text-green-400">Avg FA Salary: {formatMoney(d.avgPrice)}</p>
+    <div className="bg-[var(--panel-2)] border border-[var(--line-2)] p-2 text-xs">
+      <p className="font-semibold ns-text">{d.label} WAR</p>
+      <p className="ns-text-2">{d.faCount} FA signings ({d.count} MLB total)</p>
+      <p className="text-[var(--chart-series-2)]">Avg FA Salary: {formatMoney(d.avgPrice)}</p>
     </div>
   );
 }
@@ -590,16 +586,16 @@ function PlayerValuationDetail({ player }) {
   const rate = val.rateUsed;
 
   return (
-    <div className="bg-slate-900 rounded-lg border border-blue-800/50 p-4">
+    <div className="ns-box p-4">
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h3 className="text-lg font-bold text-white">{player.Name}</h3>
-          <p className="text-sm text-slate-400">
+          <h3 className="text-lg font-bold ns-text">{player.Name}</h3>
+          <p className="text-sm ns-text-2">
             {player.POS} | {player.ORG || 'Free Agent'} | {player.Lev} | Age {player.Age} | {player._playerType}
           </p>
         </div>
         <div className="text-right">
-          <p className="text-xs text-slate-500">FV Scale</p>
+          <p className="text-xs ns-muted">FV Scale</p>
           <p className={`text-2xl font-bold ${fvColor(player._fvScale)}`}>{player._fvScale}</p>
         </div>
       </div>
@@ -610,30 +606,30 @@ function PlayerValuationDetail({ player }) {
         <MiniStat
           label="Control"
           value={formatControl(val.control)}
-          color={val.control.source === 'default' ? 'text-amber-400' : 'text-slate-300'}
+          color={val.control.source === 'default' ? 'ns-warn' : 'ns-text'}
         />
-        <MiniStat label="Current Salary" value={formatMoney(player.Price)} color="text-green-400" />
+        <MiniStat label="Current Salary" value={formatMoney(player.Price)} color="text-[var(--chart-series-2)]" />
         <MiniStat
           label={val.tier === 'scarcity' ? 'Line Value (understates tier)' : 'Line Value — replaceable tier'}
           value={formatMoney(val.annualValue)}
-          color="text-cyan-400"
+          color="text-[var(--chart-series-1)]"
         />
         <MiniStat
           label={val.tier === 'scarcity' ? 'Market Price — scarcity tier' : 'Market Price (≈ line)'}
           value={formatMoney(val.marketPrice)}
-          color="text-amber-300"
+          color="text-[var(--chart-series-4)]"
         />
         <MiniStat
           label={val.contract ? `Contract Surplus (${val.contract.yearsRemaining} yr)` : 'Yr Surplus (line)'}
           value={formatMoney(val.contract ? val.contract.surplus : val.surplus)}
-          color={(val.contract ? val.contract.surplus : val.surplus) >= 0 ? 'text-green-400' : 'text-red-400'}
+          color={(val.contract ? val.contract.surplus : val.surplus) >= 0 ? 'ns-good' : 'ns-bad'}
         />
-        <MiniStat label="Rate Used" value={rate.curv ? `${formatMoney(rate.slope)}/W + ${formatMoney(rate.curv)}/W² + ${formatMoney(rate.floor)}` : `${formatMoney(rate.slope)}/W + ${formatMoney(rate.floor)}`} color="text-slate-300" />
+        <MiniStat label="Rate Used" value={rate.curv ? `${formatMoney(rate.slope)}/W + ${formatMoney(rate.curv)}/W² + ${formatMoney(rate.floor)}` : `${formatMoney(rate.slope)}/W + ${formatMoney(rate.floor)}`} color="ns-text" />
       </div>
 
       {/* Scarcity-tier context (copy only — the numbers above are all fitted) */}
       {val.tier === 'scarcity' && (
-        <p className="text-xs text-amber-300/90 bg-amber-900/15 border border-amber-800/40 rounded px-3 py-2 mb-4">
+        <p className="ns-alert-warn text-xs px-3 py-2 mb-4">
           Scarcity tier: comparable-WAR players sign for more than the global line predicts
           (local price departs the line by over 1 residual SD). Retention pricing at this tier
           reflects outside bidders (NPB clubs bid cash) and the engine&apos;s demand anchors —
@@ -643,14 +639,14 @@ function PlayerValuationDetail({ player }) {
 
       {/* Contract year-by-year */}
       {val.contract && (
-        <div className="bg-slate-800 rounded-lg p-3 mb-4">
-          <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">
+        <div className="bg-[var(--panel-2)] p-3 mb-4">
+          <p className="text-xs ns-muted mb-2">
             Remaining Contract — aged WAR vs salary (3%/yr time discount)
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-slate-500 border-b border-slate-700">
+                <tr className="ns-muted border-b border-[var(--line-2)]">
                   <th className="text-left py-1 px-2">Yr</th>
                   <th className="text-right py-1 px-2">Age</th>
                   <th className="text-right py-1 px-2">Aged WAR</th>
@@ -662,24 +658,24 @@ function PlayerValuationDetail({ player }) {
               </thead>
               <tbody>
                 {val.contract.years.map((yr) => (
-                  <tr key={yr.year} className="border-b border-slate-800/40">
-                    <td className="py-1 px-2 text-slate-300">{yr.year}</td>
-                    <td className="py-1 px-2 text-right text-slate-400">{yr.age}</td>
-                    <td className={`py-1 px-2 text-right font-mono ${waaColor(yr.agedWAR)}`}>{yr.agedWAR.toFixed(1)}</td>
-                    <td className="py-1 px-2 text-right font-mono text-cyan-400">{formatMoney(yr.value)}</td>
-                    <td className="py-1 px-2 text-right font-mono text-green-400">{formatMoney(yr.salary)}</td>
-                    <td className={`py-1 px-2 text-right font-mono ${surplusColor(yr.surplus)}`}>{formatMoney(yr.surplus)}</td>
-                    <td className={`py-1 px-2 text-right font-mono ${surplusColor(yr.discSurplus)}`}>{formatMoney(yr.discSurplus)}</td>
+                  <tr key={yr.year} className="border-b border-[var(--line)]">
+                    <td className="py-1 px-2 ns-text">{yr.year}</td>
+                    <td className="py-1 px-2 text-right ns-text-2">{yr.age}</td>
+                    <td className={`py-1 px-2 text-right ${waaColor(yr.agedWAR)}`}>{yr.agedWAR.toFixed(1)}</td>
+                    <td className="py-1 px-2 text-right text-[var(--chart-series-1)]">{formatMoney(yr.value)}</td>
+                    <td className="py-1 px-2 text-right text-[var(--chart-series-2)]">{formatMoney(yr.salary)}</td>
+                    <td className={`py-1 px-2 text-right ${surplusColor(yr.surplus)}`}>{formatMoney(yr.surplus)}</td>
+                    <td className={`py-1 px-2 text-right ${surplusColor(yr.discSurplus)}`}>{formatMoney(yr.discSurplus)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr className="border-t border-slate-700 font-semibold">
-                  <td className="py-1.5 px-2 text-slate-300" colSpan={3}>Total</td>
-                  <td className="py-1.5 px-2 text-right font-mono text-cyan-400">{formatMoney(val.contract.totalValue)}</td>
-                  <td className="py-1.5 px-2 text-right font-mono text-green-400">{formatMoney(val.contract.totalSalary)}</td>
+                <tr className="border-t border-[var(--line-2)] font-semibold">
+                  <td className="py-1.5 px-2 ns-text" colSpan={3}>Total</td>
+                  <td className="py-1.5 px-2 text-right text-[var(--chart-series-1)]">{formatMoney(val.contract.totalValue)}</td>
+                  <td className="py-1.5 px-2 text-right text-[var(--chart-series-2)]">{formatMoney(val.contract.totalSalary)}</td>
                   <td />
-                  <td className={`py-1.5 px-2 text-right font-mono ${surplusColor(val.contract.surplus)}`}>
+                  <td className={`py-1.5 px-2 text-right ${surplusColor(val.contract.surplus)}`}>
                     {formatMoney(val.contract.surplus)}
                   </td>
                 </tr>
@@ -691,14 +687,14 @@ function PlayerValuationDetail({ player }) {
 
       {/* Fair offer by contract length */}
       {val.offerByLength && val.offerByLength.length > 0 && (
-        <div className="bg-slate-800 rounded-lg p-3 mb-4">
-          <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">
+        <div className="bg-[var(--panel-2)] p-3 mb-4">
+          <p className="text-xs ns-muted mb-2">
             Fair Offer by Contract Length — tier-local: AAV = local fit of comparable-WAR signings at the mean aged WAR; band = ±1 LOCAL residual SD (falls back to the line ± {formatMoney(rate.residSD)} if the tier is too thin)
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-slate-500 border-b border-slate-700">
+                <tr className="ns-muted border-b border-[var(--line-2)]">
                   <th className="text-left py-1 px-2">Years</th>
                   <th className="text-right py-1 px-2">Mean Aged WAR</th>
                   <th className="text-right py-1 px-2">Low AAV</th>
@@ -709,19 +705,19 @@ function PlayerValuationDetail({ player }) {
               </thead>
               <tbody>
                 {val.offerByLength.map((o) => (
-                  <tr key={o.years} className={`border-b border-slate-800/40 ${o.years === val.offerYears ? 'bg-blue-900/20' : ''}`}>
-                    <td className="py-1 px-2 text-slate-300">{o.years}{o.years === val.offerYears ? ' *' : ''}</td>
-                    <td className={`py-1 px-2 text-right font-mono ${waaColor(o.meanWAR)}`}>{o.meanWAR.toFixed(1)}</td>
-                    <td className="py-1 px-2 text-right font-mono text-slate-400">{formatMoney(o.low ?? Math.max(0, o.aav - rate.residSD))}</td>
-                    <td className="py-1 px-2 text-right font-mono text-green-400 font-semibold">{formatMoney(o.aav)}</td>
-                    <td className="py-1 px-2 text-right font-mono text-yellow-300">{formatMoney(o.high ?? (o.aav + rate.residSD))}</td>
-                    <td className="py-1 px-2 text-right font-mono text-cyan-400">{formatMoney(o.total)}</td>
+                  <tr key={o.years} className={`border-b border-[var(--line)] ${o.years === val.offerYears ? 'bg-[var(--accent-bg)]' : ''}`}>
+                    <td className="py-1 px-2 ns-text">{o.years}{o.years === val.offerYears ? ' *' : ''}</td>
+                    <td className={`py-1 px-2 text-right ${waaColor(o.meanWAR)}`}>{o.meanWAR.toFixed(1)}</td>
+                    <td className="py-1 px-2 text-right ns-text-2">{formatMoney(o.low ?? Math.max(0, o.aav - rate.residSD))}</td>
+                    <td className="py-1 px-2 text-right text-[var(--chart-series-2)] font-semibold">{formatMoney(o.aav)}</td>
+                    <td className="py-1 px-2 text-right text-[var(--chart-series-6)]">{formatMoney(o.high ?? (o.aav + rate.residSD))}</td>
+                    <td className="py-1 px-2 text-right text-[var(--chart-series-1)]">{formatMoney(o.total)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p className="text-[10px] text-slate-500 mt-1">
+          <p className="text-[11px] ns-muted mt-1">
             * default horizon ({val.offerYears} yrs — this player&apos;s remaining control
             {val.control.serviceYears !== null && `, ${val.control.serviceYears.toFixed(1)} svc yrs`}
             {val.control.contractYears !== null && `, ${val.control.contractYears} yr left on the deal`}
@@ -734,13 +730,13 @@ function PlayerValuationDetail({ player }) {
       {/* Year-by-year career projection */}
       {val.yearlyValues && val.yearlyValues.length > 0 && (
         <div>
-          <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">
+          <p className="text-xs ns-muted mb-2">
             Career Projection (at {formatMoney(rate.slope)}/WAR{rate.curv ? ` + ${formatMoney(rate.curv)}/WAR²` : ''} + {formatMoney(rate.floor)} floor)
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-slate-500 border-b border-slate-800">
+                <tr className="ns-muted border-b border-[var(--line)]">
                   <th className="text-left py-1 px-2">Age</th>
                   <th className="text-right py-1 px-2">Proj WAR</th>
                   <th className="text-right py-1 px-2">Year Value (disc.)</th>
@@ -748,17 +744,17 @@ function PlayerValuationDetail({ player }) {
               </thead>
               <tbody>
                 {val.yearlyValues.map((yr, i) => (
-                  <tr key={i} className={`border-b border-slate-800/30 ${yr.rawWAA > 0 ? '' : 'opacity-40'}`}>
-                    <td className="py-1 px-2 text-slate-300">{yr.age}</td>
-                    <td className={`py-1 px-2 text-right font-mono ${waaColor(yr.rawWAA)}`}>{yr.rawWAA.toFixed(1)}</td>
-                    <td className="py-1 px-2 text-right font-mono text-green-400">{formatMoney(yr.yearValue)}</td>
+                  <tr key={i} className={`border-b border-[var(--line)] ${yr.rawWAA > 0 ? '' : 'opacity-40'}`}>
+                    <td className="py-1 px-2 ns-text">{yr.age}</td>
+                    <td className={`py-1 px-2 text-right ${waaColor(yr.rawWAA)}`}>{yr.rawWAA.toFixed(1)}</td>
+                    <td className="py-1 px-2 text-right text-[var(--chart-series-2)]">{formatMoney(yr.yearValue)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr className="border-t border-slate-700 font-semibold">
-                  <td className="py-1.5 px-2 text-slate-300" colSpan={2}>Total</td>
-                  <td className="py-1.5 px-2 text-right font-mono text-cyan-400">
+                <tr className="border-t border-[var(--line-2)] font-semibold">
+                  <td className="py-1.5 px-2 ns-text" colSpan={2}>Total</td>
+                  <td className="py-1.5 px-2 text-right text-[var(--chart-series-1)]">
                     {formatMoney(val.totalValue)}
                   </td>
                 </tr>
@@ -774,7 +770,7 @@ function PlayerValuationDetail({ player }) {
 function MiniStat({ label, value, color }) {
   return (
     <div>
-      <p className="text-xs text-slate-500">{label}</p>
+      <p className="text-xs ns-muted">{label}</p>
       <p className={`text-sm font-semibold ${color}`}>{value}</p>
     </div>
   );
@@ -785,25 +781,25 @@ function MiniStat({ label, value, color }) {
 // ============================================================
 
 function waaColor(waa) {
-  if (waa >= 3) return 'text-purple-400';
-  if (waa >= 1.5) return 'text-cyan-400';
-  if (waa >= 0) return 'text-green-400';
-  if (waa >= -1) return 'text-orange-400';
-  return 'text-red-400';
+  if (waa >= 3) return 'ns-g80';
+  if (waa >= 1.5) return 'ns-g70';
+  if (waa >= 0) return 'ns-g55';
+  if (waa >= -1) return 'ns-g30';
+  return 'ns-g20';
 }
 
 function surplusColor(v) {
-  if (v > 0) return 'text-green-400';
-  if (v < 0) return 'text-red-400';
-  return 'text-slate-500';
+  if (v > 0) return 'ns-good';
+  if (v < 0) return 'ns-bad';
+  return 'ns-muted';
 }
 
 function fvColor(fv) {
-  if (fv >= 70) return 'text-purple-400';
-  if (fv >= 60) return 'text-cyan-400';
-  if (fv >= 50) return 'text-green-400';
-  if (fv >= 40) return 'text-yellow-300';
-  return 'text-red-400';
+  if (fv >= 70) return 'ns-g80';
+  if (fv >= 60) return 'ns-g70';
+  if (fv >= 50) return 'ns-g55';
+  if (fv >= 40) return 'ns-text-2';
+  return 'ns-g20';
 }
 
-const BUCKET_COLORS = ['#64748b', '#3b82f6', '#06b6d4', '#22c55e', '#f59e0b', '#a855f7'];
+const BUCKET_COLORS = ['var(--chart-axis)', 'var(--chart-series-1)', 'var(--chart-series-6)', 'var(--chart-series-2)', 'var(--chart-series-4)', 'var(--chart-series-5)'];

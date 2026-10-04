@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
 import { loadRatingTrends, ratingScale, DISPLAY_UNIT, invalidateRatingTrends } from '../lib/ratingTrends';
 import { useDataVersion } from '../lib/dataVersion';
-import { TrendingUp, TrendingDown, Info, Loader2 } from 'lucide-react';
 
 /**
  * TrendsPage: league-wide rating movement from the ratings-history DB
@@ -13,16 +12,15 @@ import { TrendingUp, TrendingDown, Info, Loader2 } from 'lucide-react';
  * backtest/ml/dataset.py) read last year's growth from the same archive.
  */
 
-function MoverTable({ title, rows, icon, accent }) {
+function MoverTable({ title, rows, accent }) {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-      <div className={`flex items-center gap-2 px-4 py-2.5 border-b border-slate-800 ${accent}`}>
-        {icon}
-        <h3 className="text-sm font-bold">{title}</h3>
+    <div className="ns-box overflow-hidden">
+      <div className="ns-strip flex items-center gap-2">
+        <h3 className={accent}>{title}</h3>
       </div>
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-800">
+          <tr className="text-[11px] ns-muted border-b border-[var(--line)]">
             <th className="text-left px-4 py-1.5">Player</th>
             <th className="text-left px-2 py-1.5">Pos</th>
             <th className="text-right px-2 py-1.5">Age</th>
@@ -33,19 +31,19 @@ function MoverTable({ title, rows, icon, accent }) {
         </thead>
         <tbody>
           {rows.map(x => (
-            <tr key={x.id} className="border-b border-slate-800/50 hover:bg-slate-800/40">
-              <td className="px-4 py-1.5 text-slate-200 font-medium whitespace-nowrap">{x.n}</td>
-              <td className="px-2 py-1.5 text-slate-400">{x.p || '—'}</td>
-              <td className="px-2 py-1.5 text-slate-400 text-right">{x.a != null ? Math.round(x.a) : '—'}</td>
-              <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap max-w-[160px] overflow-hidden text-ellipsis">{x.o || '—'}</td>
-              <td className={`px-2 py-1.5 text-right font-mono font-bold ${x.t > 0 ? 'text-green-400' : 'text-red-400'}`}>
+            <tr key={x.id} className="border-b border-[var(--line)] hover:bg-[var(--panel-3)]">
+              <td className="px-4 py-1.5 ns-text font-medium whitespace-nowrap">{x.n}</td>
+              <td className="px-2 py-1.5 ns-text-2">{x.p || '—'}</td>
+              <td className="px-2 py-1.5 ns-text-2 text-right">{x.a != null ? Math.round(x.a) : '—'}</td>
+              <td className="px-2 py-1.5 ns-muted whitespace-nowrap max-w-[160px] overflow-hidden text-ellipsis">{x.o || '—'}</td>
+              <td className={`px-2 py-1.5 text-right font-bold ${x.t > 0 ? 'ns-good' : 'ns-bad'}`}>
                 {x.t > 0 ? '+' : ''}{x.t}
               </td>
               <td className="px-2 py-1.5">
                 <div className="flex flex-wrap gap-1">
                   {Object.entries(x.d || {}).slice(0, 4).map(([c, d]) => (
-                    <span key={c} className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                      d > 0 ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'
+                    <span key={c} className={`text-[11px] px-1.5 py-0.5 ${
+                      d > 0 ? 'bg-[var(--good-bg)] ns-good' : 'bg-[var(--bad-bg)] ns-bad'
                     }`}>
                       {c} {d > 0 ? '+' : ''}{d}
                     </span>
@@ -55,7 +53,7 @@ function MoverTable({ title, rows, icon, accent }) {
             </tr>
           ))}
           {rows.length === 0 && (
-            <tr><td colSpan={6} className="px-4 py-4 text-slate-500 text-xs">No movers in this window.</td></tr>
+            <tr><td colSpan={6} className="px-4 py-4 ns-muted text-xs">No movers in this window.</td></tr>
           )}
         </tbody>
       </table>
@@ -73,17 +71,17 @@ const FALLBACK_TRAIT_META = {
   LEA: { label: 'Leadership', ...HNL },
 };
 const FALLBACK_PIT_COLS = ['STU', 'HRR', 'PBABIP', 'CON'];
-// High / Normal / Low keep the green / slate / orange of the old legend. Normal
-// is slate-400 because a thin slate-500 line hides next to the zero line.
-const HNL_COLOR = { H: '#22c55e', N: '#94a3b8', L: '#f97316' };
+// High / Normal / Low keep the green / grey / orange of the old legend. Normal
+// is text-2 because a thin muted line hides next to the zero line.
+const HNL_COLOR = { H: 'var(--chart-series-2)', N: 'var(--text-2)', L: 'var(--g30)' };
 // Every other bucket takes a color by its position in trait_meta.buckets, so a
 // bucket the min-sample filter hides never repaints the others. Fixed order,
-// checked on the #0f172a surface: every neighbor pair stays apart for
-// protan / deutan / tritan readers and every color clears 3:1 contrast.
-const BUCKET_COLORS = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
+// on the panel surface, in the theme's chart-series order. A bucket past the
+// sixth takes a repeat color and goes dashed.
+const BUCKET_COLORS = ['var(--chart-series-1)', 'var(--chart-series-3)', 'var(--chart-series-2)', 'var(--chart-series-4)', 'var(--chart-series-5)', 'var(--chart-series-6)'];
 const bucketColor = (key, i) => HNL_COLOR[key] || BUCKET_COLORS[i % BUCKET_COLORS.length];
-// Card surface (slate-900). A hollow dot fills with it so the line does not show through.
-const SURFACE = '#0f172a';
+// Card surface (the panel ground). A hollow dot fills with it so the line does not show through.
+const SURFACE = 'var(--panel)';
 const SIDE_LABEL = { pit: 'pitcher', hit: 'hitter' };
 const isCount = v => typeof v === 'number' && Number.isFinite(v);
 const fmtInt = v => Math.round(v).toLocaleString();
@@ -107,8 +105,8 @@ function SplitTooltip({ active, payload, label, title, thinNote, ptsWord }) {
   const pos = it => Number(String(it.dataKey).slice(1));
   const rows = [...payload].sort((a, b) => pos(a) - pos(b));
   return (
-    <div className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-xs shadow-lg">
-      <div className="text-slate-200 mb-1">Age {label} · {title}</div>
+    <div className="bg-[var(--panel-2)] border border-[var(--line-2)] px-3 py-2 text-xs">
+      <div className="ns-text mb-1">Age {label} · {title}</div>
       <table className="whitespace-nowrap">
         <tbody>
           {rows.map(it => {
@@ -119,17 +117,17 @@ function SplitTooltip({ active, payload, label, title, thinNote, ptsWord }) {
             if (p[`${k}_y`] != null) bits.push(`${fmtYears(p[`${k}_y`])} player-yrs`);
             return (
               <tr key={k}>
-                <td className="text-slate-300">
+                <td className="ns-text">
                   <span
-                    className="inline-block w-3 h-[3px] rounded-full align-middle mr-2"
+                    className="inline-block w-3 h-[3px] align-middle mr-2"
                     style={{ background: it.color }}
                   />
                   {it.name}
                 </td>
-                <td className="pl-4 text-right font-mono text-slate-100">{fmtPts(it.value)} {ptsWord}</td>
-                <td className="pl-4 font-mono text-slate-400">
+                <td className="pl-4 text-right ns-text">{fmtPts(it.value)} {ptsWord}</td>
+                <td className="pl-4 ns-text-2">
                   {bits.join(' · ')}
-                  {p[`${k}_thin`] && thinNote ? <span className="text-amber-400/80"> · {thinNote}</span> : null}
+                  {p[`${k}_thin`] && thinNote ? <span className="ns-warn"> · {thinNote}</span> : null}
                 </td>
               </tr>
             );
@@ -301,19 +299,19 @@ function AgeCurveExplorer({ ageCurves }) {
 
   if (!cols.length) return null;
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <div className="ns-box p-4">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-        <h3 className="text-sm font-bold text-slate-200">
+        <h3 className="ns-subhead">
           {effMode === 'gap' ? 'Growth Toward Potential (gap holders only)' : 'Average Gain per Year of Age'}
         </h3>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0 text-xs text-slate-400">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0 text-xs ns-text-2">
           {hasGaps && (
             <label className="flex items-center gap-1.5">
               View
               <select
                 value={effMode}
                 onChange={e => { setMode(e.target.value); setSplit('none'); }}
-                className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white"
+                className="ns-select"
               >
                 <option value="gap">Growth (players with room)</option>
                 <option value="raw">Raw change (all players)</option>
@@ -325,7 +323,7 @@ function AgeCurveExplorer({ ageCurves }) {
             <select
               value={col}
               onChange={e => setCol(e.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white"
+              className="ns-select"
             >
               {cols.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
@@ -336,7 +334,7 @@ function AgeCurveExplorer({ ageCurves }) {
               <select
                 value={lens ? lens.key : 'none'}
                 onChange={e => { setSplit(e.target.value); setHot(null); }}
-                className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white max-w-[13rem] min-w-0 truncate"
+                className="ns-select max-w-[13rem] min-w-0 truncate"
               >
                 <option value="none">—</option>
                 {lenses.map(l => (
@@ -357,13 +355,13 @@ function AgeCurveExplorer({ ageCurves }) {
             <input
               type="number" min={1} step={byPlayers ? 5 : 25} value={minGate}
               onChange={e => (byPlayers ? setMinP : setMinN)(Math.max(1, parseInt(e.target.value, 10) || 1))}
-              className="w-16 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white"
+              className="ns-input w-16"
             />
           </label>
         </div>
       </div>
       {lens && splitView.rows.length === 0 ? (
-        <div className="h-[240px] flex items-center justify-center text-xs text-slate-500">
+        <div className="h-[240px] flex items-center justify-center text-xs ns-muted">
           {byPlayers
             ? `No ${lens.label} bucket reaches ${fmtInt(minGate)} players for ${col} at any age. Lower Min players.`
             : `No ${lens.label} bucket reaches a sample of ${fmtInt(minGate)} for ${col} at any age. Lower Min sample.`}
@@ -372,13 +370,13 @@ function AgeCurveExplorer({ ageCurves }) {
       <ResponsiveContainer width="100%" height={240}>
         {!lens ? (
           <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-            <XAxis dataKey="age" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-            <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={v => (Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(1))} />
-            <ReferenceLine y={0} stroke="#64748b" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+            <XAxis dataKey="age" tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} />
+            <YAxis tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} tickFormatter={v => (Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(1))} />
+            <ReferenceLine y={0} stroke="var(--chart-ref-line)" />
             <Tooltip
-              contentStyle={{ background: '#1e293b', border: '1px solid #475569', borderRadius: 8 }}
-              labelStyle={{ color: '#e2e8f0' }}
+              contentStyle={{ background: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: 3 }}
+              labelStyle={{ color: 'var(--chart-tooltip-text)' }}
               formatter={(v, _name, item) => {
                 const p = item?.payload || {};
                 const sizes = [`n=${p.n}`];
@@ -390,15 +388,15 @@ function AgeCurveExplorer({ ageCurves }) {
               labelFormatter={age => `Age ${age}`}
             />
             <Bar dataKey="mean" radius={[3, 3, 0, 0]}>
-              {data.map((d, i) => <Cell key={i} fill={d.mean >= 0 ? '#3b82f6' : '#ef4444'} />)}
+              {data.map((d, i) => <Cell key={i} fill={d.mean >= 0 ? 'var(--chart-series-1)' : 'var(--chart-series-3)'} />)}
             </Bar>
           </BarChart>
         ) : (
           <LineChart data={splitView.rows}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-            <XAxis dataKey="age" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-            <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={v => (Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(1))} />
-            <ReferenceLine y={0} stroke="#64748b" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+            <XAxis dataKey="age" tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} />
+            <YAxis tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} tickFormatter={v => (Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(1))} />
+            <ReferenceLine y={0} stroke="var(--chart-ref-line)" />
             <Tooltip
               content={tp => (
                 <SplitTooltip
@@ -439,10 +437,10 @@ function AgeCurveExplorer({ ageCurves }) {
       {lens && (
         <div className="mt-1 space-y-1 text-[11px]">
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 justify-center">
-            <span className="text-slate-300 font-semibold">{lens.label}</span>
-            {basisText && <span className="text-slate-500">basis: {basisText}</span>}
+            <span className="ns-text font-semibold">{lens.label}</span>
+            {basisText && <span className="ns-muted">basis: {basisText}</span>}
             {splitView.ages && (
-              <span className="text-slate-500">(ages {splitView.ages[0]}–{splitView.ages[1]})</span>
+              <span className="ns-muted">(ages {splitView.ages[0]}–{splitView.ages[1]})</span>
             )}
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 justify-center">
@@ -454,11 +452,11 @@ function AgeCurveExplorer({ ageCurves }) {
                 className={`inline-flex items-center gap-1.5 cursor-default ${s.points ? '' : 'opacity-50'}`}
               >
                 <span
-                  className="inline-block w-3.5 h-[3px] rounded-full shrink-0"
+                  className="inline-block w-3.5 h-[3px] shrink-0"
                   style={{ background: bucketColor(s.key, s.i) }}
                 />
-                <span className="text-slate-300">{bucketLabel(s.key)}</span>
-                <span className="text-slate-500 font-mono">
+                <span className="ns-text">{bucketLabel(s.key)}</span>
+                <span className="ns-muted">
                   {s.points
                     ? `n=${fmtInt(s.n)}${s.allN > s.n ? ` of ${fmtInt(s.allN)}` : ''}`
                       + (s.players != null ? ` · ${fmtInt(s.players)} players` : '')
@@ -467,14 +465,14 @@ function AgeCurveExplorer({ ageCurves }) {
               </span>
             ))}
           </div>
-          <p className="text-center text-slate-500">
+          <p className="text-center ns-muted">
             n = pull-pair observations at the points drawn for {col}
             {byPlayers
               ? '; players = distinct players at each age, added over the same points, so a player who turned a year older inside the archive counts once at each age'
               : ''}
             . A point shows only when its own {byPlayers ? 'distinct players reach' : 'n reaches'} {minLabel}, and a line breaks at a hidden point.{' '}
             <svg width="9" height="9" viewBox="0 0 9 9" className="inline-block align-baseline" aria-hidden="true">
-              <circle cx="4.5" cy="4.5" r="3" fill={SURFACE} stroke="#94a3b8" strokeWidth="1.5" />
+              <circle cx="4.5" cy="4.5" r="3" fill={SURFACE} stroke="var(--chart-axis)" strokeWidth="1.5" />
             </svg>
             {' '}A hollow dot is a drawn point with fewer than {fmtInt(2 * minGate)} {byPlayers ? 'players' : 'observations'} (2x the minimum). Hover a legend entry to pick out its line.
           </p>
@@ -482,7 +480,7 @@ function AgeCurveExplorer({ ageCurves }) {
       )}
       {skippedPairs.length > 0 && (
         <p
-          className="mt-2 text-[11px] text-amber-400/80"
+          className="mt-2 text-[11px] ns-warn"
           title={skippedPairs.flatMap(sp => sp.reasons).join(' / ') || undefined}
         >
           Left out: {skippedPairs.length} pull pair{skippedPairs.length > 1 ? 's' : ''} with a league-wide rating re-scale (
@@ -496,17 +494,17 @@ function AgeCurveExplorer({ ageCurves }) {
         </p>
       )}
       {typeof lens?.note === 'string' && lens.note && (
-        <p className="mt-2 text-[11px] text-slate-400">
-          <span className="text-slate-300 font-semibold">{lens.label}: </span>{lens.note}
+        <p className="mt-2 text-[11px] ns-text-2">
+          <span className="ns-text font-semibold">{lens.label}: </span>{lens.note}
         </p>
       )}
       {dropped.length > 0 && (
-        <p className="mt-2 text-[11px] text-amber-400/80">
+        <p className="mt-2 text-[11px] ns-warn">
           Left out of this export: {dropped.map(([k, why]) => `${k} (${why})`).join('; ')}
         </p>
       )}
-      <div className="flex items-start gap-2 mt-2 text-[11px] text-slate-500">
-        <Info size={13} className="shrink-0 mt-0.5" />
+      <div className="flex items-start gap-2 mt-2 text-[11px] ns-muted">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 mt-0.5" aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg>
         <p>
           {effMode === 'gap'
             ? `Only players whose CURRENT sat below their POTENTIAL for this rating at each interval: maxed players never dilute the growth of players with room. ${lens ? 'Lines' : 'Bars'} = ${colInternal ? "points on OOTP's internal 1-600 scale" : `display points (${ratingScale(ageCurves)} scale)`} gained per year of age; the gap is re-read every pull pair, so re-scouts and caught-up ratings switch tracking automatically.${lens ? '' : ' Bars past ~29 rest on few players who still have room; read them with care.'}`
@@ -616,13 +614,13 @@ const ratingLabel = c => RATING_LABEL[c] || c;
 // One color scale for every table: green grows, gray flat, red falls.
 // unit = UNIT for internal-point rows, the display step for the rest
 function gainClass(v, unit = UNIT) {
-  if (v == null) return 'text-slate-700';
-  if (v >= 2 * unit) return 'bg-green-500/30 text-green-200 font-semibold';
-  if (v >= 1 * unit) return 'bg-green-500/15 text-green-300';
-  if (v >= 0.3 * unit) return 'bg-green-500/5 text-green-400/80';
-  if (v > -0.3 * unit) return 'text-slate-500';
-  if (v > -1 * unit) return 'bg-red-500/10 text-red-300/80';
-  return 'bg-red-500/25 text-red-200';
+  if (v == null) return 'ns-muted';
+  if (v >= 2 * unit) return 'bg-[color-mix(in_oklab,var(--good)_28%,var(--panel))] ns-text font-semibold';
+  if (v >= 1 * unit) return 'bg-[color-mix(in_oklab,var(--good)_14%,var(--panel))] ns-text';
+  if (v >= 0.3 * unit) return 'bg-[color-mix(in_oklab,var(--good)_6%,var(--panel))] ns-good';
+  if (v > -0.3 * unit) return 'ns-muted';
+  if (v > -1 * unit) return 'bg-[color-mix(in_oklab,var(--bad)_10%,var(--panel))] ns-bad';
+  return 'bg-[color-mix(in_oklab,var(--bad)_24%,var(--panel))] ns-text';
 }
 const fmtGain = (v, unit = UNIT) => {
   if (v == null) return '';
@@ -654,16 +652,14 @@ function AgeTable({ title, note, rows, source, shape, rowHeader = 'Rating', show
   };
   let lastGroup = null;
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-slate-800">
-        <h3 className="text-sm font-bold text-slate-200">{title}</h3>
-        {note && <p className="text-[11px] text-slate-500 mt-0.5">{note}</p>}
-      </div>
+    <div className="ns-box overflow-hidden">
+      <h3 className="ns-strip">{title}</h3>
+      {note && <p className="ns-sub pb-2">{note}</p>}
       <div className="overflow-x-auto">
         <table className="text-xs whitespace-nowrap">
           <thead>
-            <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-800">
-              <th className="text-left px-3 py-1.5 sticky left-0 bg-slate-900">{rowHeader}</th>
+            <tr className="text-[11px] ns-muted border-b border-[var(--line)]">
+              <th className="text-left px-3 py-1.5 sticky left-0 bg-[var(--panel)]">{rowHeader}</th>
               {SUMMARY_AGES.map(a => <th key={a} className="px-1.5 py-1.5 text-right w-12">{a}</th>)}
             </tr>
           </thead>
@@ -674,16 +670,16 @@ function AgeTable({ title, note, rows, source, shape, rowHeader = 'Rating', show
               return (
                 <React.Fragment key={r.key}>
                   {groupRow && (
-                    <tr><td colSpan={SUMMARY_AGES.length + 1} className="px-3 pt-2 pb-0.5 text-[10px] uppercase tracking-wider text-slate-500">{r.group}</td></tr>
+                    <tr><td colSpan={SUMMARY_AGES.length + 1} className="px-3 pt-2 pb-0.5 text-[11px] ns-muted">{r.group}</td></tr>
                   )}
-                  <tr className="border-b border-slate-800/40 hover:bg-slate-800/30">
-                    <td className="px-3 py-1 text-slate-300 sticky left-0 bg-slate-900">
-                      {r.label}{showKeys && r.label !== r.key && <span className="text-slate-600"> {r.key}</span>}
+                  <tr className="border-b border-[var(--line)] hover:bg-[var(--panel-3)]">
+                    <td className="px-3 py-1 ns-text sticky left-0 bg-[var(--panel)]">
+                      {r.label}{showKeys && r.label !== r.key && <span className="ns-muted"> {r.key}</span>}
                     </td>
                     {SUMMARY_AGES.map(a => {
                       const v = cell(r.key, a);
                       const u = r.unit ?? UNIT;
-                      return <td key={a} className={`px-1.5 py-1 text-right font-mono ${gainClass(v, u)}`}>{fmtGain(v, u)}</td>;
+                      return <td key={a} className={`px-1.5 py-1 text-right ${gainClass(v, u)}`}>{fmtGain(v, u)}</td>;
                     })}
                   </tr>
                 </React.Fragment>
@@ -815,7 +811,7 @@ function DevSummary({ ageCurves }) {
   }).filter(f => f.mean != null), [ageCurves, gaps, raw, unitOf]);
 
   if (!gapCols.length && !allCols.length) return null;
-  const verdictClass = v => (v === 'Matters' ? 'text-green-400' : v === 'A little' ? 'text-amber-300' : v.startsWith('Hurts') ? 'text-red-300' : v === "Doesn't matter" ? 'text-slate-400' : 'text-slate-600');
+  const verdictClass = v => (v === 'Matters' ? 'ns-good' : v === 'A little' ? 'ns-warn' : v.startsWith('Hurts') ? 'ns-bad' : v === "Doesn't matter" ? 'ns-text-2' : 'ns-muted');
   const gapRows = gapCols.map(c => ({ key: c, label: c === OVR ? 'Overall (display points)' : ratingLabel(c), unit: unitOf(c) }));
   const rawRows = RATING_GROUPS.flatMap(([g, list]) => list.filter(c => raw[c]).map(c => {
     const unit = unitOf(c);
@@ -826,41 +822,41 @@ function DevSummary({ ageCurves }) {
   return (
     <div className="space-y-4">
       {headline && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <h2 className="text-base font-bold text-white">Development: what the archive says</h2>
-          <ul className="text-sm text-slate-300 mt-2 space-y-1.5 list-disc pl-5">
+        <div className="ns-box p-4">
+          <h2 className="ns-subhead">Development: what the archive says</h2>
+          <ul className="text-sm ns-text mt-2 space-y-1.5 list-disc pl-5">
             <li>
-              Ratings grow fastest at age <span className="font-semibold text-white">{headline.peak.age}</span>
-              {' '}(about <span className="font-mono text-green-300">{fmtGain(headline.peak.mean, skillUnit)}</span> {skillPts} a year)
+              Ratings grow fastest at age <span className="font-semibold ns-text">{headline.peak.age}</span>
+              {' '}(about <span className="ns-good">{fmtGain(headline.peak.mean, skillUnit)}</span> {skillPts} a year)
               {headline.stop
-                ? <>. It has fallen under half of that by <span className="font-semibold text-white">{headline.stop.age}</span> ({fmtGain(headline.stop.mean, skillUnit)} a year).</>
+                ? <>. It has fallen under half of that by <span className="font-semibold ns-text">{headline.stop.age}</span> ({fmtGain(headline.stop.mean, skillUnit)} a year).</>
                 : <> and keeps going through every age measured.</>}
             </li>
             {overall && (
               <li>
-                <span className="font-semibold text-white">Overall grade</span> (OOTP's own, display points) grows fastest at age <span className="font-semibold text-white">{overall.peak.age}</span>
-                {' '}(about <span className="font-mono text-green-300">{fmtGain(overall.peak.mean, ovrUnit)}</span> a year, players still below their potential grade)
-                {overall.stop ? <>, under half of that by <span className="font-semibold text-white">{overall.stop.age}</span>.</> : '.'}
+                <span className="font-semibold ns-text">Overall grade</span> (OOTP's own, display points) grows fastest at age <span className="font-semibold ns-text">{overall.peak.age}</span>
+                {' '}(about <span className="ns-good">{fmtGain(overall.peak.mean, ovrUnit)}</span> a year, players still below their potential grade)
+                {overall.stop ? <>, under half of that by <span className="font-semibold ns-text">{overall.stop.age}</span>.</> : '.'}
               </li>
             )}
             {ranked.filter(f => f.verdict !== "Doesn't matter" && f.spread != null).map(f => (
               <li key={f.key}>
-                <span className="font-semibold text-white">{f.label}</span>
+                <span className="font-semibold ns-text">{f.label}</span>
                 {f.verdict === 'Matters' ? ' matters: more of it helps. ' : f.verdict === 'A little' ? ' matters a little: more of it helps. '
                   : f.verdict === 'Hurts' ? ' hurts: more of it means less growth. ' : ' hurts a little: more of it means less growth. '}
-                <span className="text-slate-400">{f.best.label}</span> grows <span className="font-mono text-slate-200">{fmtGain(f.best.mean, skillUnit)}</span> a year,
-                {' '}<span className="text-slate-400">{f.worst.label}</span> grows <span className="font-mono text-slate-200">{fmtGain(f.worst.mean, skillUnit)}</span> ({skillPts}).
+                <span className="ns-text-2">{f.best.label}</span> grows <span className="ns-text">{fmtGain(f.best.mean, skillUnit)}</span> a year,
+                {' '}<span className="ns-text-2">{f.worst.label}</span> grows <span className="ns-text">{fmtGain(f.worst.mean, skillUnit)}</span> ({skillPts}).
               </li>
             ))}
             {ranked.some(f => f.verdict === "Doesn't matter") && (
               <li>
-                <span className="font-semibold text-white">Doesn't matter:</span>{' '}
+                <span className="font-semibold ns-text">Doesn't matter:</span>{' '}
                 {ranked.filter(f => f.verdict === "Doesn't matter").map(f => f.label.toLowerCase()).join(', ')}.
               </li>
             )}
             {ranked.some(f => f.ovr && f.ovr.spread != null) && (
               <li>
-                <span className="font-semibold text-white">For the overall grade:</span>{' '}
+                <span className="font-semibold ns-text">For the overall grade:</span>{' '}
                 {(() => {
                   const yes = ranked.filter(f => f.ovr && f.ovr.spread != null && f.ovr.verdict !== "Doesn't matter" && f.ovr.verdict !== 'not enough players');
                   const no = ranked.filter(f => f.ovr && f.ovr.verdict === "Doesn't matter");
@@ -873,18 +869,18 @@ function DevSummary({ ageCurves }) {
             )}
             {families.filter(f => f.maxAbs != null && f.maxAbs < 0.3 * f.unit).length > 0 && (
               <li>
-                <span className="font-semibold text-white">Barely change:</span>{' '}
+                <span className="font-semibold ns-text">Barely change:</span>{' '}
                 {families.filter(f => f.maxAbs != null && f.maxAbs < 0.3 * f.unit).map(f => f.group.toLowerCase()).join(', ')} ratings.
               </li>
             )}
             {families.filter(f => f.mean <= -0.3 * f.unit).length > 0 && (
               <li>
-                <span className="font-semibold text-white">Drift down:</span>{' '}
+                <span className="font-semibold ns-text">Drift down:</span>{' '}
                 {families.filter(f => f.mean <= -0.3 * f.unit).map(f => `${f.group.toLowerCase()} (${fmtGain(f.mean, f.unit)} a year)`).join(', ')}. Potential ratings come down as players age without reaching them.
               </li>
             )}
           </ul>
-          <p className="text-[11px] text-slate-500 mt-2">
+          <p className="text-[11px] ns-muted mt-2">
             {hasInternal
               ? `Ratings in this league show on the ${scale} scale. Batting and pitching numbers below are points on OOTP's internal 1-600 rating scale gained per year of age, from every archived pull, MLB and minors. One 5-point step on the 20-80 display is about 45-50 internal points in the 30s and 40s and only 14-19 from 55 to 80 (a 50 is 375-412, a 60 is 437-449), so growth is counted underneath the display, where a step at 60 costs far less than a step at 40. The band table is approximate: the archive confirms the shape (sharp narrowing from 55 up), not every edge. Fielding, running, stamina and hold show no such narrowing and stay in display steps.`
               : `Ratings in this league show on the ${scale} scale, and every number below is display points on that scale gained per year of age, from every archived pull, MLB and minors.${scale === '1-100' ? ' One 20-80 point is about 1.67 points here, so one step is 1.67 points.' : ''}`}
@@ -902,39 +898,39 @@ function DevSummary({ ageCurves }) {
       )}
 
       {ranked.length > 0 && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-slate-800">
-            <h3 className="text-sm font-bold text-slate-200">What helps growth most, and least</h3>
-            <p className="text-[11px] text-slate-500 mt-0.5">
+        <div className="ns-box overflow-hidden">
+          <h3 className="ns-strip">What helps growth most, and least</h3>
+          <div className="px-3 pt-2 pb-2">
+            <p className="text-[11px] ns-muted">
               {skillPts[0].toUpperCase() + skillPts.slice(1)} gained per year at ages {GROWTH_AGES[0]}–{GROWTH_AGES[GROWTH_AGES.length - 1]}, averaged over the ratings above. Most of the factor vs least of it. Matters = more of it adds {fmtThreshold(0.5 * skillUnit)} a year or more; A little = {fmtThreshold(0.2 * skillUnit)} to {fmtThreshold(0.5 * skillUnit)}; Doesn't matter = under {fmtThreshold(0.2 * skillUnit)} either way; Hurts = more of it means less growth. The two right-hand columns judge OOTP's overall grade the same way, in display points (Matters = {fmtThreshold(0.5 * ovrUnit)} a year or more). Each factor has its own table below.
             </p>
           </div>
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-800">
+              <tr className="text-[11px] ns-muted border-b border-[var(--line)]">
                 <th className="text-left px-3 py-1.5">Factor</th>
                 <th className="text-left px-2 py-1.5">Verdict</th>
                 <th className="text-left px-2 py-1.5">Most of it</th>
                 <th className="text-left px-2 py-1.5">Least of it</th>
                 <th className="text-right px-3 py-1.5">Gap (pts/yr)</th>
-                <th className="text-left px-2 py-1.5 border-l border-slate-800">Overall verdict</th>
+                <th className="text-left px-2 py-1.5 border-l border-[var(--line)]">Overall verdict</th>
                 <th className="text-right px-3 py-1.5">Overall gap</th>
               </tr>
             </thead>
             <tbody>
               {ranked.map(f => (
-                <tr key={f.key} className="border-b border-slate-800/40">
-                  <td className="px-3 py-1.5 text-slate-200 whitespace-nowrap">{f.label}</td>
+                <tr key={f.key} className="border-b border-[var(--line)]">
+                  <td className="px-3 py-1.5 ns-text whitespace-nowrap">{f.label}</td>
                   <td className={`px-2 py-1.5 font-semibold whitespace-nowrap ${verdictClass(f.verdict)}`}>{f.verdict}</td>
                   <td className="px-2 py-1.5 whitespace-nowrap">
-                    {f.best ? <><span className="text-slate-400">{f.best.label}</span> <span className={`font-mono px-1 rounded ${gainClass(f.best.mean, skillUnit)}`}>{fmtGain(f.best.mean, skillUnit)}</span></> : '—'}
+                    {f.best ? <><span className="ns-text-2">{f.best.label}</span> <span className={`px-1 ${gainClass(f.best.mean, skillUnit)}`}>{fmtGain(f.best.mean, skillUnit)}</span></> : '—'}
                   </td>
                   <td className="px-2 py-1.5 whitespace-nowrap">
-                    {f.worst ? <><span className="text-slate-400">{f.worst.label}</span> <span className={`font-mono px-1 rounded ${gainClass(f.worst.mean, skillUnit)}`}>{fmtGain(f.worst.mean, skillUnit)}</span></> : '—'}
+                    {f.worst ? <><span className="ns-text-2">{f.worst.label}</span> <span className={`px-1 ${gainClass(f.worst.mean, skillUnit)}`}>{fmtGain(f.worst.mean, skillUnit)}</span></> : '—'}
                   </td>
-                  <td className="px-3 py-1.5 text-right font-mono text-slate-300">{f.spread == null ? '—' : fmtGain(f.spread, skillUnit)}</td>
-                  <td className={`px-2 py-1.5 font-semibold whitespace-nowrap border-l border-slate-800 ${verdictClass(f.ovr?.verdict || 'not enough players')}`}>{f.ovr?.verdict || '—'}</td>
-                  <td className="px-3 py-1.5 text-right font-mono text-slate-300">{f.ovr?.spread == null ? '—' : fmtGain(f.ovr.spread, ovrUnit)}</td>
+                  <td className="px-3 py-1.5 text-right ns-text">{f.spread == null ? '—' : fmtGain(f.spread, skillUnit)}</td>
+                  <td className={`px-2 py-1.5 font-semibold whitespace-nowrap border-l border-[var(--line)] ${verdictClass(f.ovr?.verdict || 'not enough players')}`}>{f.ovr?.verdict || '—'}</td>
+                  <td className="px-3 py-1.5 text-right ns-text">{f.ovr?.spread == null ? '—' : fmtGain(f.ovr.spread, ovrUnit)}</td>
                 </tr>
               ))}
             </tbody>
@@ -994,18 +990,18 @@ export default function TrendsPage({ league }) {
 
   if (trends === undefined) {
     return (
-      <div className="flex items-center justify-center h-full text-slate-400 gap-2">
-        <Loader2 size={18} className="animate-spin" /> Loading rating trends…
+      <div className="flex items-center justify-center h-full ns-text-2 gap-2">
+        Loading rating trends…
       </div>
     );
   }
   if (!trends || !trends.pulls || trends.pulls.length < 2) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-center max-w-md text-slate-400 text-sm space-y-2">
-          <p className="text-white font-bold">No rating history yet for {league}</p>
+        <div className="text-center max-w-md ns-text-2 text-sm space-y-2">
+          <p className="ns-text font-bold">No rating history yet for {league}</p>
           <p>The trends board needs at least two archived ratings pulls. Each pull adds itself to the archive.</p>
-          <code className="block text-xs text-blue-400 bg-slate-900 rounded p-2 text-left space-y-1">
+          <code className="block text-xs ns-text-2 bg-[var(--bg)] border border-[var(--line)] p-2 text-left space-y-1">
             <span className="block">StatsPlus league: run Get StatsPlus Ratings again after the league plays on, or Get StatsPlus History.</span>
             <span className="block">OOTP export league: export again after the league plays on, then run its Update task.</span>
             <span className="block">Dump league: run Sim Dev League.</span>
@@ -1019,11 +1015,11 @@ export default function TrendsPage({ league }) {
   const nPulls = trends.pulls.length;
 
   return (
-    <div className="h-full overflow-auto p-5 space-y-4">
-      <div className="flex items-end justify-between flex-wrap gap-2">
+    <div className="ns-page overflow-auto space-y-4 [&>*]:shrink-0">
+      <header className="ns-page-head">
         <div>
-          <h1 className="text-xl font-black text-white">Rating Trends — {league}</h1>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <h1>Rating Trends — {league}</h1>
+          <p className="ns-page-sub">
             {nPulls} archived ratings vintages (
             {trends.pulls[0].g && trends.pulls[nPulls - 1].g
               ? `in-game ${trends.pulls[0].g} → ${trends.pulls[nPulls - 1].g}`
@@ -1032,33 +1028,33 @@ export default function TrendsPage({ league }) {
           </p>
         </div>
         {windows.length > 0 && (
-          <label className="flex items-center gap-2 text-xs text-slate-400">
+          <label className="ns-head-actions ns-label">
             Mover window
             <select
               value={win ?? ''}
               onChange={e => setWin(Number(e.target.value))}
-              className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white text-sm"
+              className="ns-select"
             >
               {windows.map(w => <option key={w} value={w}>last {w} pull{w > 1 ? 's' : ''}</option>)}
             </select>
           </label>
         )}
-      </div>
+      </header>
 
       {mv && (
         <>
-          <p className="text-xs text-slate-500">
-            {mv.from} → {mv.to}: <span className="text-slate-300 font-semibold">{mv.changed.toLocaleString()}</span> players
+          <p className="text-xs ns-muted">
+            {mv.from} → {mv.to}: <span className="ns-text font-semibold">{mv.changed.toLocaleString()}</span> players
             had at least one rating change. Total Δ = sum of all rating-point changes on the {ratingScale(trends.age_curves)} scale.
           </p>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <MoverTable
               title="Top Risers" rows={mv.risers}
-              icon={<TrendingUp size={15} className="text-green-400" />} accent="text-green-400"
+              accent="ns-good"
             />
             <MoverTable
               title="Top Fallers" rows={mv.fallers}
-              icon={<TrendingDown size={15} className="text-red-400" />} accent="text-red-400"
+              accent="ns-bad"
             />
           </div>
         </>
@@ -1066,8 +1062,8 @@ export default function TrendsPage({ league }) {
 
       <DevSummary ageCurves={trends.age_curves} />
 
-      <details className="bg-slate-900/50 border border-slate-800 rounded-xl">
-        <summary className="px-4 py-2.5 text-xs text-slate-400 cursor-pointer select-none">
+      <details className="ns-box">
+        <summary className="ns-strip cursor-pointer select-none">
           Old chart explorer (one rating at a time, split by a factor)
         </summary>
         <div className="p-2">

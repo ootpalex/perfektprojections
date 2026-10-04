@@ -6,28 +6,27 @@ import { formatCellValue, getCellColorClass } from '../lib/columns';
 import PlayerDetail from '../components/PlayerDetail';
 import { useSelectedById } from '../hooks/useSelectedById';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts';
-import { Trophy, Users, Zap, Shield, Target, ArrowLeftRight, Calculator, Sigma, Dices, HeartPulse, TrendingUp, Cross } from 'lucide-react';
 
 // Win-model lenses for the selector. Linear + Pythagorean re-score the same roster;
 // Monte Carlo adds a season distribution; Durability re-picks on playing time; Levers
 // shows where the next win is cheapest.
 const WIN_MODELS = [
-  { id: 'linear', label: 'Linear', icon: Calculator, blurb: 'G/2 + WAA' },
-  { id: 'pythagorean', label: 'Pythagorean', icon: Sigma, blurb: 'runs → wins' },
-  { id: 'montecarlo', label: 'Monte Carlo', icon: Dices, blurb: 'odds + range' },
-  { id: 'durability', label: 'Durability', icon: HeartPulse, blurb: 'playing time' },
-  { id: 'levers', label: 'Levers', icon: TrendingUp, blurb: 'next win' },
+  { id: 'linear', label: 'Linear', blurb: 'G/2 + WAA' },
+  { id: 'pythagorean', label: 'Pythagorean', blurb: 'runs → wins' },
+  { id: 'montecarlo', label: 'Monte Carlo', blurb: 'odds + range' },
+  { id: 'durability', label: 'Durability', blurb: 'playing time' },
+  { id: 'levers', label: 'Levers', blurb: 'next win' },
 ];
 
 const pct = (x) => `${Math.round((x || 0) * 100)}%`;
 
 // Small surface metric for the model panels.
-function Metric({ label, value, sub, tone = 'text-white' }) {
+function Metric({ label, value, sub, tone = 'ns-text' }) {
   return (
-    <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+    <div className="ns-box p-3">
       <div className={`text-xl font-bold ${tone}`}>{value}</div>
-      <div className="text-xs text-slate-500">{label}</div>
-      {sub && <div className="text-[11px] text-slate-600 mt-0.5">{sub}</div>}
+      <div className="text-xs ns-muted">{label}</div>
+      {sub && <div className="text-[11px] ns-muted mt-0.5">{sub}</div>}
     </div>
   );
 }
@@ -237,44 +236,43 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
   // Helper for bench rows
   const BenchRow = ({ player, role, note }) => {
     if (!player) return (
-      <tr><td colSpan={7} className="text-xs text-orange-400/70 italic">No {role} available</td></tr>
+      <tr><td colSpan={7} className="text-xs ns-warn italic">No {role} available</td></tr>
     );
     const waa = player._maxWAA || 0;
     return (
-      <tr className="cursor-pointer hover:bg-slate-800/50"
+      <tr className="cursor-pointer hover:bg-[var(--panel-3)]"
         onClick={() => select(player, 'hitter')}>
-        <td className="font-bold text-green-400">{role}</td>
-        <td className="font-medium text-white">{player.Name}</td>
-        <td className="text-slate-400">{player.POS}</td>
+        <td className="font-bold ns-text-2">{role}</td>
+        <td className="font-medium ns-text">{player.Name}</td>
+        <td className="ns-text-2">{player.POS}</td>
         <td>{Math.round(parseFloat(player.Age) || 0)}</td>
         <td className={getCellColorClass(waa, 'Max WAA wtd')}>{waa.toFixed(1)}</td>
-        <td className="text-xs text-slate-500 max-w-[240px] truncate">{note}</td>
-        <td className="text-slate-400">{player.ORG}</td>
+        <td className="text-xs ns-muted max-w-[240px] truncate">{note}</td>
+        <td className="ns-text-2">{player.ORG}</td>
       </tr>
     );
   };
 
   return (
-    <div className="h-full overflow-auto">
-      <div className="p-4">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Trophy className="text-amber-400" size={24} />
-          Roster Optimizer
-        </h1>
-        <p className="text-sm text-slate-400 mt-1">
+    <div className="ns-page overflow-auto [&>*]:shrink-0">
+      <header className="ns-page-head">
+        <div>
+        <h1>Roster Optimizer</h1>
+        <p className="ns-page-sub">
           Best 13 for the two platoon lineups &bull; weighted {vrShare ? `${(vrShare * 100).toFixed(1)}%` : '~74%'} vs RHP (from league metadata) &bull; cut maximizes blended vR/vL lineup value &bull; bench contract: backup C / utility IF / utility OF / flex
         </p>
-      </div>
+        </div>
+      </header>
 
       {/* Controls */}
-      <div className="flex flex-wrap items-center gap-3 px-4 pb-4">
+      <div className="flex flex-wrap items-center gap-3 pb-4">
         <select value={orgFilter} onChange={e => setOrgFilter(e.target.value)}
-          className="py-1.5 px-3 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200">
+          className="ns-select">
           {organizations.map(o => <option key={o} value={o}>{o === 'ALL' ? 'All Organizations' : o}</option>)}
         </select>
 
         <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)}
-          className="py-1.5 px-3 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200">
+          className="ns-select">
           {levels.map(l => <option key={l} value={l}>{l === 'ALL' ? 'All Levels' : l}</option>)}
         </select>
 
@@ -285,14 +283,9 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
           title={injuryDataAvailable
             ? 'Re-pick the entire roster (13 bats + rotation + bullpen) from healthy players only. Injured = on DL, 60-day DL, or DL days remaining.'
             : 'No injury data in this league\'s files — nothing to exclude.'}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
-            !injuryDataAvailable
-              ? 'bg-slate-800/50 border-slate-700 text-slate-600 cursor-not-allowed'
-              : injuredOn
-                ? 'bg-rose-600 border-rose-500 text-white'
-                : 'bg-slate-800 border-slate-600 text-slate-300 hover:text-white hover:border-rose-500/60'
-          }`}>
-          <Cross size={14} className={injuredOn ? 'text-white' : 'text-rose-400'} fill={injuredOn ? 'currentColor' : 'none'} />
+          type="button"
+          aria-pressed={injuredOn}
+          className="ns-btn">
           Exclude injured (DL)
         </button>
 
@@ -303,28 +296,20 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
           title={posRatingsAvailable
             ? 'Win now: in the starting lineups a player can only be placed at a position where his OOTP position rating has reached his potential there. Nobody starts at a spot he is still learning or has never played. Bench roles use the normal rules. DH is always allowed.'
             : 'No position ratings in this league\'s files.'}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
-            !posRatingsAvailable
-              ? 'bg-slate-800/50 border-slate-700 text-slate-600 cursor-not-allowed'
-              : winNowOn
-                ? 'bg-amber-600 border-amber-500 text-white'
-                : 'bg-slate-800 border-slate-600 text-slate-300 hover:text-white hover:border-amber-500/60'
-          }`}>
-          <Trophy size={14} className={winNowOn ? 'text-white' : 'text-amber-400'} />
+          type="button"
+          aria-pressed={winNowOn}
+          className="ns-btn">
           Win now
         </button>
 
         {/* Win-model selector */}
-        <div className="flex gap-1 bg-slate-900 rounded-lg p-0.5 ml-auto">
+        <div className="flex gap-1 ml-auto">
           {WIN_MODELS.map(m => {
-            const Icon = m.icon;
             const active = winModel === m.id;
             return (
-              <button key={m.id} onClick={() => setWinModel(m.id)} title={m.blurb}
-                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-                  active ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'
-                }`}>
-                <Icon size={13} /> {m.label}
+              <button key={m.id} type="button" onClick={() => setWinModel(m.id)} title={m.blurb}
+                aria-pressed={active} className="ns-btn ns-btn-sm">
+                {m.label}
               </button>
             );
           })}
@@ -336,10 +321,9 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
           re-picks with him included, before StatsPlus catches up to OOTP. Click again to
           send him back to the DL. */}
       {injuredOn && injuredOut && (
-        <div className="px-4 pb-4">
-          <div className="bg-rose-900/20 border border-rose-700/40 rounded-lg px-3 py-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-            <Cross size={13} className="text-rose-400 shrink-0" />
-            <span className="text-xs font-semibold text-rose-300 uppercase tracking-wide">Out injured</span>
+        <div className="pb-4">
+          <div className="ns-alert-bad px-3 py-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+            <span className="text-xs font-semibold ns-bad">Out injured</span>
             {injuredOut.length > 0 ? (
               <>
                 {injuredOut.map((e) => (
@@ -349,33 +333,28 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
                     title={e.cleared
                       ? `${e.name} is being counted as HEALTHY (back this sim). Click to send back to the DL.`
                       : `${e.name} is on the ${e.status}. Click to mark him back this sim and re-pick the roster with him in.`}
-                    className={`text-xs rounded-md px-2 py-0.5 border transition-colors cursor-pointer ${
-                      e.cleared
-                        ? 'bg-emerald-900/50 border-emerald-600/60 text-emerald-100 hover:border-emerald-400'
-                        : 'bg-rose-950/60 border-rose-800/50 text-slate-200 hover:border-rose-400'
-                    }`}>
-                    {e.cleared
-                      ? <TrendingUp size={11} className="inline -mt-0.5 mr-1 text-emerald-400" />
-                      : <Cross size={11} className="inline -mt-0.5 mr-1 text-rose-400" />}
-                    <span className="font-medium text-white">{e.name}</span>
-                    <span className={e.cleared ? 'text-emerald-300/80' : 'text-rose-300/80'}> {e.slot}</span>
-                    <span className={e.cleared ? 'text-emerald-300/90' : 'text-rose-400/90'}> · {e.cleared ? 'back this sim' : e.status}</span>
+                    type="button"
+                    aria-pressed={!!e.cleared}
+                    className="ns-btn ns-btn-sm">
+                    <span className="font-medium ns-text">{e.name}</span>
+                    <span className={e.cleared ? 'ns-good' : 'ns-bad'}> {e.slot}</span>
+                    <span className={e.cleared ? 'ns-good' : 'ns-bad'}> · {e.cleared ? 'back this sim' : e.status}</span>
                   </button>
                 ))}
                 {clearedIds.length > 0 && (
                   <button
                     onClick={() => setClearedIds([])}
                     title="Send everyone back to the DL — respect StatsPlus injury status again."
-                    className="text-xs text-slate-400 hover:text-white underline decoration-dotted ml-1">
+                    className="ns-link ml-1">
                     reset ({clearedIds.length} back)
                   </button>
                 )}
-                <span className="text-[11px] text-slate-500 italic ml-1 basis-full sm:basis-auto">
+                <span className="text-[11px] ns-muted italic ml-1 basis-full sm:basis-auto">
                   click a name to count him healthy this sim
                 </span>
               </>
             ) : (
-              <span className="text-xs text-slate-400 italic">no roster-caliber players on the DL — lineup unchanged</span>
+              <span className="text-xs ns-text-2 italic">no roster-caliber players on the DL — lineup unchanged</span>
             )}
           </div>
         </div>
@@ -383,63 +362,63 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
 
       {/* Summary Cards */}
       {roster.totals && (
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 px-4 pb-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 pb-4">
           <div title={`Every team also fields its best 26, so the average optimized roster is about +${leagueOffset.toFixed(1)} WAA above the league-average player. That league average is subtracted so this projects your real FINISH and matches the Team Projections standings (a zero-sum league). Raw roster strength is the Total WAA card.`}
-               className="bg-gradient-to-br from-blue-900/50 to-blue-800/30 rounded-lg p-3 border border-blue-700/30">
+               className="ns-box p-3">
             <div className="flex items-baseline gap-2">
-              <div className="text-2xl font-black text-blue-400">{winView.wins}</div>
+              <div className="text-2xl font-black ns-text">{winView.wins}</div>
               {winView.delta !== 0 && (
-                <span className={`text-xs font-semibold ${winView.delta > 0 ? 'text-green-400' : 'text-orange-400'}`}>
+                <span className={`text-xs font-semibold ${winView.delta > 0 ? 'ns-good' : 'ns-warn'}`}>
                   {winView.delta > 0 ? '+' : ''}{winView.delta} {winView.deltaLabel || 'vs Linear'}
                 </span>
               )}
             </div>
-            <div className="text-xs text-blue-300/70">{winView.label}</div>
-            <div className="text-[10px] text-blue-300/50 mt-0.5">league-normalized · matches standings</div>
+            <div className="text-xs ns-text-2">{winView.label}</div>
+            <div className="text-[11px] ns-muted mt-0.5">league-normalized · matches standings</div>
           </div>
           <div title={`Raw roster strength: best-26 WAA with NO league normalization. Projected wins subtract the ~+${leagueOffset.toFixed(1)} league-average optimized roster, which is why ${Math.round((roster.totals.games || 162) / 2)} + this ≠ the win total.`}
-               className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
-            <div className="text-xl font-bold text-green-400">{roster.totals.totalRosterWAA}</div>
-            <div className="text-xs text-slate-500">Total WAA (raw strength)</div>
+               className="ns-box p-3">
+            <div className="text-xl font-bold ns-text">{roster.totals.totalRosterWAA}</div>
+            <div className="text-xs ns-muted">Total WAA (raw strength)</div>
           </div>
-          <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
-            <div className="text-xl font-bold text-cyan-400">{roster.totals.lineupWAA_vR}</div>
-            <div className="text-xs text-slate-500">vs RHP Lineup WAA</div>
+          <div className="ns-box p-3">
+            <div className="text-xl font-bold ns-text">{roster.totals.lineupWAA_vR}</div>
+            <div className="text-xs ns-muted">vs RHP Lineup WAA</div>
           </div>
-          <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
-            <div className="text-xl font-bold text-emerald-400">{roster.totals.lineupWAA_vL}</div>
-            <div className="text-xs text-slate-500">vs LHP Lineup WAA</div>
+          <div className="ns-box p-3">
+            <div className="text-xl font-bold ns-text">{roster.totals.lineupWAA_vL}</div>
+            <div className="text-xs ns-muted">vs LHP Lineup WAA</div>
           </div>
-          <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
-            <div className="text-xl font-bold text-amber-400">{roster.totals.totalSPWAA}</div>
-            <div className="text-xs text-slate-500">SP WAA</div>
+          <div className="ns-box p-3">
+            <div className="text-xl font-bold ns-text">{roster.totals.totalSPWAA}</div>
+            <div className="text-xs ns-muted">SP WAA</div>
           </div>
-          <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
-            <div className="text-xl font-bold text-purple-400">{roster.totals.totalRPWAA}</div>
-            <div className="text-xs text-slate-500">RP WAA</div>
+          <div className="ns-box p-3">
+            <div className="text-xl font-bold ns-text">{roster.totals.totalRPWAA}</div>
+            <div className="text-xs ns-muted">RP WAA</div>
           </div>
         </div>
       )}
 
       {/* ===== Win-model panel ===== */}
       {winModel === 'pythagorean' && (
-        <div className="px-4 pb-4">
-          <div className="bg-slate-800/30 rounded-lg border border-slate-700/50 p-3">
-            <div className="flex items-center gap-2 mb-1"><Sigma size={15} className="text-cyan-400" />
-              <h2 className="text-sm font-bold text-white">Pythagorean — runs → wins</h2></div>
-            <p className="text-xs text-slate-400 mb-3 max-w-3xl">
+        <div className="pb-4">
+          <div className="ns-card">
+            <div className="ns-strip flex items-center gap-2">
+              <h2>Pythagorean — runs → wins</h2></div>
+            <p className="text-xs ns-text-2 mb-3 max-w-3xl">
               Reconstructs Runs Scored / Allowed from the lineup's batting + baserunning runs and the staff,
               then applies the PythagenPat win curve. The run differential is pinned to your WAA model, so this
               agrees with Linear in the normal range and only bends at the extremes (where it correctly refuses
               to overstate a great roster).
             </p>
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-              <Metric label="Runs Scored" value={models.runs.RS} tone="text-green-400" />
-              <Metric label="Runs Allowed" value={models.runs.RA} tone="text-red-400" />
-              <Metric label="Run Differential" value={`${models.runs.runDiff > 0 ? '+' : ''}${models.runs.runDiff}`} tone="text-cyan-400" />
-              <Metric label="Pythagorean Wins" value={models.pythWins} sub={`Linear ${models.linearWins} (${models.pythWins - models.linearWins >= 0 ? '+' : ''}${models.pythWins - models.linearWins})`} tone="text-blue-400" />
-              <Metric label="Runs / Win" value={models.runs.RPW} tone="text-amber-400" />
-              <Metric label="Run Env (R/G)" value={models.runs.lgRG} sub="league baseline" tone="text-slate-300" />
+              <Metric label="Runs Scored" value={models.runs.RS} tone="ns-good" />
+              <Metric label="Runs Allowed" value={models.runs.RA} tone="ns-bad" />
+              <Metric label="Run Differential" value={`${models.runs.runDiff > 0 ? '+' : ''}${models.runs.runDiff}`} tone="ns-text" />
+              <Metric label="Pythagorean Wins" value={models.pythWins} sub={`Linear ${models.linearWins} (${models.pythWins - models.linearWins >= 0 ? '+' : ''}${models.pythWins - models.linearWins})`} tone="ns-text" />
+              <Metric label="Runs / Win" value={models.runs.RPW} tone="ns-text" />
+              <Metric label="Run Env (R/G)" value={models.runs.lgRG} sub="league baseline" tone="ns-text" />
             </div>
           </div>
         </div>
@@ -453,35 +432,35 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
         const th = mc.thresholds || { pGE90: 90, pGE95: 95, pGE100: 100 };
         const G = mc.games || 162;
         return (
-          <div className="px-4 pb-4">
-            <div className="bg-slate-800/30 rounded-lg border border-slate-700/50 p-3">
-              <div className="flex items-center gap-2 mb-1"><Dices size={15} className="text-purple-400" />
-                <h2 className="text-sm font-bold text-white">Monte Carlo — {mc.N.toLocaleString()} simulated seasons</h2></div>
-              <p className="text-xs text-slate-400 mb-3 max-w-3xl">
+          <div className="pb-4">
+            <div className="ns-card">
+              <div className="ns-strip flex items-center gap-2">
+                <h2>Monte Carlo — {mc.N.toLocaleString()} simulated seasons</h2></div>
+              <p className="text-xs ns-text-2 mb-3 max-w-3xl">
                 Each season perturbs the projection, draws a true-talent win% off the Pythagorean curve, and plays
                 {' '}{G} games. The spread is your real range of outcomes — luck plus projection uncertainty.
-                <span className="text-slate-500"> Playoff line is a {th.pGE90}-win proxy (90-win pace over 162), not a full league sim.</span>
+                <span className="ns-muted"> Playoff line is a {th.pGE90}-win proxy (90-win pace over 162), not a full league sim.</span>
               </p>
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-3">
-                <Metric label="Median" value={mc.median} tone="text-blue-400" />
-                <Metric label="Floor (5th %)" value={mc.floor} tone="text-orange-400" />
-                <Metric label="Ceiling (95th %)" value={mc.ceiling} tone="text-green-400" />
-                <Metric label={`P(${th.pGE90}+ wins)`} value={pct(mc.pGE90)} tone="text-cyan-400" />
-                <Metric label={`P(${th.pGE95}+ wins)`} value={pct(mc.pGE95)} tone="text-cyan-400" />
-                <Metric label={`P(${th.pGE100}+ wins)`} value={pct(mc.pGE100)} tone="text-purple-400" />
+                <Metric label="Median" value={mc.median} tone="ns-text" />
+                <Metric label="Floor (5th %)" value={mc.floor} tone="ns-warn" />
+                <Metric label="Ceiling (95th %)" value={mc.ceiling} tone="ns-good" />
+                <Metric label={`P(${th.pGE90}+ wins)`} value={pct(mc.pGE90)} tone="ns-text" />
+                <Metric label={`P(${th.pGE95}+ wins)`} value={pct(mc.pGE95)} tone="ns-text" />
+                <Metric label={`P(${th.pGE100}+ wins)`} value={pct(mc.pGE100)} tone="ns-text" />
               </div>
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart data={histData} margin={{ top: 4, right: 8, bottom: 4, left: -8 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="wins" tick={{ fill: '#94a3b8', fontSize: 10 }} interval={4} />
-                  <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                  <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #475569', borderRadius: 8 }}
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                  <XAxis dataKey="wins" tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} interval={4} />
+                  <YAxis tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} />
+                  <Tooltip contentStyle={{ background: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: 3 }}
                     formatter={(v) => [`${v} of ${mc.N} sims`, 'count']} labelFormatter={(l) => `${l} wins`} />
-                  <ReferenceLine x={th.pGE90} stroke="#22d3ee" strokeDasharray="4 3" label={{ value: String(th.pGE90), fill: '#22d3ee', fontSize: 10, position: 'top' }} />
-                  <ReferenceLine x={mc.median} stroke="#f59e0b" strokeDasharray="4 3" label={{ value: 'med', fill: '#f59e0b', fontSize: 10, position: 'top' }} />
+                  <ReferenceLine x={th.pGE90} stroke="var(--chart-series-1)" strokeDasharray="4 3" label={{ value: String(th.pGE90), fill: 'var(--chart-series-1)', fontSize: 11, position: 'top' }} />
+                  <ReferenceLine x={mc.median} stroke="var(--chart-ref-line)" strokeDasharray="4 3" label={{ value: 'med', fill: 'var(--chart-ref-line)', fontSize: 11, position: 'top' }} />
                   <Bar dataKey="count" radius={[3, 3, 0, 0]}>
                     {histData.map((d, i) => (
-                      <Cell key={i} fill={d.wins >= th.pGE90 ? '#34d399' : '#475569'} />
+                      <Cell key={i} fill={d.wins >= th.pGE90 ? 'var(--chart-series-2)' : 'var(--chart-axis)'} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -500,39 +479,39 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
         const added = durabilityRoster.rosteredHitters.filter(h => !normIds.has(h.ID || h.Name));
         const dropped = roster.rosteredHitters.filter(h => !durIds.has(h.ID || h.Name));
         return (
-          <div className="px-4 pb-4">
-            <div className="bg-slate-800/30 rounded-lg border border-slate-700/50 p-3">
-              <div className="flex items-center gap-2 mb-1"><HeartPulse size={15} className="text-rose-400" />
-                <h2 className="text-sm font-bold text-white">Durability — value at realistic playing time</h2></div>
-              <p className="text-xs text-slate-400 mb-3 max-w-3xl">
+          <div className="pb-4">
+            <div className="ns-card">
+              <div className="ns-strip flex items-center gap-2">
+                <h2>Durability — value at realistic playing time</h2></div>
+              <p className="text-xs ns-text-2 mb-3 max-w-3xl">
                 Each player's value is discounted by expected games (injury proneness + current DL), then the
                 roster is re-picked — a durable solid bat can beat a fragile star. This is the win total you'd
                 actually expect once the injury bug bites.
               </p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-                <Metric label="Realistic Wins" value={durabilityRoster.totals.estimatedWinsPyth} tone="text-rose-400" />
-                <Metric label="Full-strength Wins" value={models.pythWins} tone="text-blue-400" />
-                <Metric label="Cost of Injuries" value={`-${lostWins} W`} tone="text-orange-400" />
-                <Metric label="Avg Playing Time" value={pct(dm.durability.avg)} tone="text-slate-300" />
+                <Metric label="Realistic Wins" value={durabilityRoster.totals.estimatedWinsPyth} tone="ns-text" />
+                <Metric label="Full-strength Wins" value={models.pythWins} tone="ns-text" />
+                <Metric label="Cost of Injuries" value={`-${lostWins} W`} tone="ns-warn" />
+                <Metric label="Avg Playing Time" value={pct(dm.durability.avg)} tone="ns-text" />
               </div>
               {(added.length > 0 || dropped.length > 0) && (
-                <div className="text-xs text-slate-300 mb-3">
-                  <span className="text-rose-400 font-semibold">Roster changes once durability is priced in:</span>{' '}
+                <div className="text-xs ns-text mb-3">
+                  <span className="ns-bad font-semibold">Roster changes once durability is priced in:</span>{' '}
                   {added.map(h => `+${h.Name}`).join(', ')}
                   {dropped.length > 0 && <> &nbsp;|&nbsp; {dropped.map(h => `−${h.Name}`).join(', ')}</>}
                 </div>
               )}
-              <div className="text-xs font-semibold text-slate-400 uppercase mb-1">Biggest injury risks</div>
+              <div className="ns-subhead mb-1">Biggest injury risks</div>
               <table className="data-table">
                 <thead><tr><th>Player</th><th>Slot</th><th>Proneness</th><th>Playing Time</th><th>Status</th></tr></thead>
                 <tbody>
                   {dm.durability.risks.map((d, i) => (
                     <tr key={i}>
-                      <td className="font-medium text-white">{d.name}</td>
-                      <td className="text-slate-400">{d.pos}</td>
+                      <td className="font-medium ns-text">{d.name}</td>
+                      <td className="ns-text-2">{d.pos}</td>
                       <td className={getCellColorClass(d.prone, 'Prone')}>{d.prone || '—'}</td>
-                      <td className={d.f < 0.8 ? 'text-orange-400' : 'text-slate-300'}>{pct(d.f)}</td>
-                      <td className="text-xs text-slate-500">{d.onDL ? `On DL (${d.dlDays}d)` : '—'}</td>
+                      <td className={d.f < 0.8 ? 'ns-warn' : 'ns-text'}>{pct(d.f)}</td>
+                      <td className="text-xs ns-muted">{d.onDL ? `On DL (${d.dlDays}d)` : '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -550,57 +529,57 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
           ...(roster.reliefPitchers || []).map(p => ({ name: p.Name, role: 'RP', waa: p._rpWAA || 0 })),
         ].sort((a, b) => a.waa - b.waa).slice(0, 3);
         return (
-          <div className="px-4 pb-4">
-            <div className="bg-slate-800/30 rounded-lg border border-slate-700/50 p-3">
-              <div className="flex items-center gap-2 mb-1"><TrendingUp size={15} className="text-emerald-400" />
-                <h2 className="text-sm font-bold text-white">Levers — where the next win is cheapest</h2></div>
-              <p className="text-xs text-slate-400 mb-3 max-w-3xl">
+          <div className="pb-4">
+            <div className="ns-card">
+              <div className="ns-strip flex items-center gap-2">
+                <h2>Levers — where the next win is cheapest</h2></div>
+              <p className="text-xs ns-text-2 mb-3 max-w-3xl">
                 On the Pythagorean curve the marginal value of a run depends on your run balance. This is which
                 kind of upgrade buys you more wins right now, plus your weakest rostered spots.
               </p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
                 <Metric label="+10 runs of offense" value={`+${lev.offPer10.toFixed(2)} W`}
-                  tone={lev.lean === 'offense' ? 'text-green-400' : 'text-slate-300'} />
+                  tone={lev.lean === 'offense' ? 'ns-good' : 'ns-text'} />
                 <Metric label="+10 runs of prevention" value={`+${lev.prevPer10.toFixed(2)} W`}
-                  tone={lev.lean === 'run prevention' ? 'text-green-400' : 'text-slate-300'} />
+                  tone={lev.lean === 'run prevention' ? 'ns-good' : 'ns-text'} />
                 <Metric label="Better lever" value={lev.lean === 'offense' ? 'Offense' : 'Pitch / Defense'}
-                  sub={`+${lev.edge.toFixed(2)} W per 10 runs`} tone="text-emerald-400" />
+                  sub={`+${lev.edge.toFixed(2)} W per 10 runs`} tone="ns-text" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <div className="text-xs font-semibold text-slate-400 uppercase mb-1">Weakest rostered spots</div>
+                  <div className="ns-subhead mb-1">Weakest rostered spots</div>
                   <table className="data-table">
                     <thead><tr><th>Slot</th><th>Player</th><th>WAA</th></tr></thead>
                     <tbody>
                       {weakBats.map((e, i) => (
-                        <tr key={`b${i}`}><td className="text-amber-400">{e.position}</td>
-                          <td className="text-white">{e.player.Name}</td>
+                        <tr key={`b${i}`}><td className="ns-text-2">{e.position}</td>
+                          <td className="ns-text">{e.player.Name}</td>
                           <td className={getCellColorClass(e.waa, 'Max WAA wtd')}>{(e.waa || 0).toFixed(1)}</td></tr>
                       ))}
                       {weakArms.map((e, i) => (
-                        <tr key={`p${i}`}><td className="text-purple-400">{e.role}</td>
-                          <td className="text-white">{e.name}</td>
+                        <tr key={`p${i}`}><td className="ns-text-2">{e.role}</td>
+                          <td className="ns-text">{e.name}</td>
                           <td className={getCellColorClass(e.waa, 'WAA wtd')}>{e.waa.toFixed(1)}</td></tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
                 <div>
-                  <div className="text-xs font-semibold text-slate-400 uppercase mb-1">Internal call-up upgrades</div>
+                  <div className="ns-subhead mb-1">Internal call-up upgrades</div>
                   {models.callups.length > 0 ? (
                     <table className="data-table">
                       <thead><tr><th>Spot</th><th>Call up</th><th>Over</th><th>+Wins</th></tr></thead>
                       <tbody>
                         {models.callups.map((u, i) => (
-                          <tr key={i}><td className="text-amber-400">{u.pos}</td>
-                            <td className="text-green-400">{u.name}</td>
-                            <td className="text-slate-400">{u.over}</td>
-                            <td className="text-cyan-400">+{u.dWins.toFixed(1)}</td></tr>
+                          <tr key={i}><td className="ns-text-2">{u.pos}</td>
+                            <td className="ns-text">{u.name}</td>
+                            <td className="ns-text-2">{u.over}</td>
+                            <td className="ns-good">+{u.dWins.toFixed(1)}</td></tr>
                         ))}
                       </tbody>
                     </table>
                   ) : (
-                    <p className="text-xs text-slate-500 italic mt-2">
+                    <p className="text-xs ns-muted italic mt-2">
                       No internal upgrade — at this level your roster is already your org's best at every spot.
                       Gains have to come from trades or free agency.
                     </p>
@@ -612,30 +591,25 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
         );
       })()}
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 px-4 pb-4">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 pb-4">
         {/* Batting Order with Split Tabs */}
-        <div className="bg-slate-800/30 rounded-lg border border-slate-700/50">
-          <div className="p-3 border-b border-slate-700/50 flex items-center gap-2">
-            <Target className="text-blue-400" size={16} />
-            <h2 className="text-sm font-bold text-white">Batting Order</h2>
-            <span className="text-xs text-slate-500">(The Book &bull; wOBA + OBP)</span>
-            <div className="flex gap-1 bg-slate-900 rounded-lg p-0.5 ml-auto">
-              <button onClick={() => setActiveLineup('vR')}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                  activeLineup === 'vR' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'
-                }`}>
+        <div className="ns-box">
+          <div className="ns-strip flex items-center gap-2">
+            <h2>Batting Order</h2>
+            <span className="text-xs ns-muted">(The Book &bull; wOBA + OBP)</span>
+            <div className="flex gap-1 ml-auto">
+              <button type="button" onClick={() => setActiveLineup('vR')}
+                aria-pressed={activeLineup === 'vR'} className="ns-btn ns-btn-sm">
                 vs RHP
               </button>
-              <button onClick={() => setActiveLineup('vL')}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                  activeLineup === 'vL' ? 'bg-green-600 text-white' : 'text-slate-400 hover:text-slate-200'
-                }`}>
+              <button type="button" onClick={() => setActiveLineup('vL')}
+                aria-pressed={activeLineup === 'vL'} className="ns-btn ns-btn-sm">
                 vs LHP
               </button>
             </div>
           </div>
-          <div className="text-xs text-slate-500 px-3 pt-1">
-            Lineup WAA ({splitLabel}): <span className={activeLineup === 'vR' ? 'text-cyan-400 font-semibold' : 'text-emerald-400 font-semibold'}>
+          <div className="text-xs ns-muted px-3 pt-1">
+            Lineup WAA ({splitLabel}): <span className={activeLineup === 'vR' ? 'text-[var(--chart-series-1)] font-semibold' : 'text-[var(--chart-series-2)] font-semibold'}>
               {activeLineupData?.totalLineupWAA || 0}
             </span>
           </div>
@@ -656,12 +630,12 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
               {activeLineupData?.battingOrder?.map((entry, idx) => {
                 if (!entry) return null;
                 return (
-                  <tr key={idx} className="cursor-pointer hover:bg-slate-800/50"
+                  <tr key={idx} className="cursor-pointer hover:bg-[var(--panel-3)]"
                     onClick={() => select(entry.player, 'hitter')}>
-                    <td className="font-bold text-blue-400">{entry.slot}</td>
-                    <td className="font-bold text-amber-400">{entry.position}</td>
-                    <td className="font-medium text-white">{entry.player.Name}</td>
-                    <td className="text-xs text-slate-500">{entry.role}</td>
+                    <td className="font-bold ns-muted">{entry.slot}</td>
+                    <td className="font-bold ns-text-2">{entry.position}</td>
+                    <td className="font-medium ns-text">{entry.player.Name}</td>
+                    <td className="text-xs ns-muted">{entry.role}</td>
                     <td>{Math.round(parseFloat(entry.player.Age) || 0)}</td>
                     <td className={getCellColorClass(entry.woba, 'wOBA wtd')}>
                       {entry.woba ? entry.woba.toFixed(3) : '-'}
@@ -669,7 +643,7 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
                     <td className={getCellColorClass(entry.waa, splitWAACol)}>
                       {entry.waa.toFixed(1)}
                     </td>
-                    <td className="text-slate-400">{entry.player.ORG}</td>
+                    <td className="ns-text-2">{entry.player.ORG}</td>
                   </tr>
                 );
               })}
@@ -678,11 +652,10 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
         </div>
 
         {/* Bench */}
-        <div className="bg-slate-800/30 rounded-lg border border-slate-700/50">
-          <div className="p-3 border-b border-slate-700/50 flex items-center gap-2">
-            <Users className="text-green-400" size={16} />
-            <h2 className="text-sm font-bold text-white">Bench {splitLabel}</h2>
-            <span className="text-xs text-slate-500">the 13 minus this lineup's nine</span>
+        <div className="ns-box">
+          <div className="ns-strip flex items-center gap-2">
+            <h2>Bench {splitLabel}</h2>
+            <span className="text-xs ns-muted">the 13 minus this lineup's nine</span>
           </div>
           <table className="data-table">
             <thead>
@@ -700,10 +673,10 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
               {activeBench.length ? activeBench.map((b, i) => (
                 <BenchRow key={i} player={b.player} role={b.role} note={b.note} />
               )) : (
-                <tr><td colSpan={7} className="text-xs text-slate-500 italic">No bench players</td></tr>
+                <tr><td colSpan={7} className="text-xs ns-muted italic">No bench players</td></tr>
               )}
               {(roster.bench?.roleNotes?.backupC || roster.bench?.roleNotes?.utilityIF || roster.bench?.roleNotes?.utilityOF) && (
-                <tr><td colSpan={7} className="text-xs text-orange-400/80 italic">
+                <tr><td colSpan={7} className="text-xs ns-warn italic">
                   {[roster.bench.roleNotes.backupC, roster.bench.roleNotes.utilityIF, roster.bench.roleNotes.utilityOF].filter(Boolean).join(' · ')}
                 </td></tr>
               )}
@@ -713,11 +686,10 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
       </div>
 
       {/* Pitching Staff */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 px-4 pb-4">
-        <div className="bg-slate-800/30 rounded-lg border border-slate-700/50">
-          <div className="p-3 border-b border-slate-700/50 flex items-center gap-2">
-            <Zap className="text-amber-400" size={16} />
-            <h2 className="text-sm font-bold text-white">Starting Rotation (5 SP)</h2>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 pb-4">
+        <div className="ns-box">
+          <div className="ns-strip flex items-center gap-2">
+            <h2>Starting Rotation (5 SP)</h2>
           </div>
           <table className="data-table">
             <thead>
@@ -733,27 +705,26 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
             </thead>
             <tbody>
               {roster.startingPitchers?.map((p, i) => (
-                <tr key={i} className="cursor-pointer hover:bg-slate-800/50"
+                <tr key={i} className="cursor-pointer hover:bg-[var(--panel-3)]"
                   onClick={() => select(p, 'pitcher')}>
-                  <td className="font-bold text-amber-400">SP{i + 1}</td>
-                  <td className="font-medium text-white">{p.Name}</td>
+                  <td className="font-bold ns-text-2">SP{i + 1}</td>
+                  <td className="font-medium ns-text">{p.Name}</td>
                   <td>{Math.round(parseFloat(p.Age) || 0)}</td>
                   <td className={getCellColorClass(p._spWAA, 'WAA wtd')}>{(p._spWAA || 0).toFixed(1)}</td>
                   <td className={getCellColorClass(p['RA/9 wtd'], 'RA/9 wtd')}>
                     {formatCellValue(p['RA/9 wtd'], 'RA/9 wtd')}
                   </td>
                   <td>{p.STM}</td>
-                  <td className="text-slate-400">{p.ORG}</td>
+                  <td className="ns-text-2">{p.ORG}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        <div className="bg-slate-800/30 rounded-lg border border-slate-700/50">
-          <div className="p-3 border-b border-slate-700/50 flex items-center gap-2">
-            <Shield className="text-purple-400" size={16} />
-            <h2 className="text-sm font-bold text-white">Bullpen (8 RP)</h2>
+        <div className="ns-box">
+          <div className="ns-strip flex items-center gap-2">
+            <h2>Bullpen (8 RP)</h2>
           </div>
           <table className="data-table">
             <thead>
@@ -769,17 +740,17 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
             </thead>
             <tbody>
               {roster.reliefPitchers?.map((p, i) => (
-                <tr key={i} className="cursor-pointer hover:bg-slate-800/50"
+                <tr key={i} className="cursor-pointer hover:bg-[var(--panel-3)]"
                   onClick={() => select(p, 'pitcher')}>
-                  <td className="font-bold text-purple-400">RP{i + 1}</td>
-                  <td className="font-medium text-white">{p.Name}</td>
+                  <td className="font-bold ns-text-2">RP{i + 1}</td>
+                  <td className="font-medium ns-text">{p.Name}</td>
                   <td>{Math.round(parseFloat(p.Age) || 0)}</td>
                   <td className={getCellColorClass(p._rpWAA, 'WAA wtd RP')}>{(p._rpWAA || 0).toFixed(1)}</td>
                   <td className={getCellColorClass(p['RA/9 wtd RP'], 'RA/9 wtd RP')}>
                     {formatCellValue(p['RA/9 wtd RP'], 'RA/9 wtd RP')}
                   </td>
                   <td>{p.HLD}</td>
-                  <td className="text-slate-400">{p.ORG}</td>
+                  <td className="ns-text-2">{p.ORG}</td>
                 </tr>
               ))}
             </tbody>
@@ -788,43 +759,43 @@ export default function RosterOptimizerPage({ hitters, pitchers, metadata, leagu
       </div>
 
       {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 px-4 pb-6">
-        <div className="bg-slate-800/50 rounded-lg p-3">
-          <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pb-6">
+        <div className="ns-card">
+          <h3 className="ns-strip">
             Position Player WAA ({splitLabel})
           </h3>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={positionWAAData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="pos" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+              <XAxis dataKey="pos" tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} />
+              <YAxis tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} />
               <Tooltip
-                contentStyle={{ background: '#1e293b', border: '1px solid #475569', borderRadius: 8 }}
+                contentStyle={{ background: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: 3 }}
                 formatter={(val, name, props) => [`${val.toFixed(1)} WAA - ${props.payload.name}`, 'WAA']}
               />
-              <Bar dataKey="waa" radius={[4, 4, 0, 0]}>
+              <Bar dataKey="waa" radius={[3, 3, 0, 0]}>
                 {positionWAAData.map((entry, i) => (
-                  <Cell key={i} fill={entry.waa >= 2 ? '#3b82f6' : entry.waa >= 0 ? '#60a5fa' : '#ef4444'} />
+                  <Cell key={i} fill={entry.waa >= 2 ? 'var(--chart-series-1)' : entry.waa >= 0 ? 'var(--chart-series-6)' : 'var(--chart-series-3)'} />
                 ))}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-slate-800/50 rounded-lg p-3">
-          <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">Pitching Staff WAA</h3>
+        <div className="ns-card">
+          <h3 className="ns-strip">Pitching Staff WAA</h3>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={pitchingWAAData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+              <XAxis dataKey="name" tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} />
+              <YAxis tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} />
               <Tooltip
-                contentStyle={{ background: '#1e293b', border: '1px solid #475569', borderRadius: 8 }}
+                contentStyle={{ background: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: 3 }}
                 formatter={(val, name, props) => [`${val.toFixed(1)} WAA - ${props.payload.player}`, 'WAA']}
               />
-              <Bar dataKey="waa" radius={[4, 4, 0, 0]}>
+              <Bar dataKey="waa" radius={[3, 3, 0, 0]}>
                 {pitchingWAAData.map((entry, i) => (
-                  <Cell key={i} fill={entry.role === 'SP' ? '#f59e0b' : '#8b5cf6'} />
+                  <Cell key={i} fill={entry.role === 'SP' ? 'var(--chart-series-4)' : 'var(--chart-series-5)'} />
                 ))}
               </Bar>
             </BarChart>

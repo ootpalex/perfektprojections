@@ -19,30 +19,30 @@ const PERCENTILES = [
 function SliderControl({ label, value, onChange, min, max, step, description }) {
   return (
     <div className="flex items-center gap-3 mb-3">
-      <span className="text-sm text-slate-300 w-32 shrink-0">{label}</span>
+      <span className="text-sm ns-text w-32 shrink-0">{label}</span>
       <input
         type="range" min={min} max={max} step={step} value={value}
         onChange={e => onChange(parseFloat(e.target.value))}
-        className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer accent-blue-500"
+        className="flex-1 h-1.5 appearance-none cursor-pointer accent-[var(--accent)]"
       />
       <input
         type="number" min={min} max={max} step={step} value={value}
         onChange={e => onChange(parseFloat(e.target.value) || min)}
-        className="w-16 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-sm text-white text-center"
+        className="w-16 px-2 py-1 ns-input text-sm text-center"
       />
-      {description && <span className="text-[10px] text-slate-500 w-32">{description}</span>}
+      {description && <span className="text-[11px] ns-muted w-32">{description}</span>}
     </div>
   );
 }
 
 function fvCellColor(fv) {
-  if (fv >= 70) return 'text-purple-400 font-bold';
-  if (fv >= 60) return 'text-cyan-400 font-semibold';
-  if (fv >= 55) return 'text-green-400';
-  if (fv >= 50) return 'text-yellow-300';
-  if (fv >= 45) return 'text-orange-400';
-  if (fv >= 40) return 'text-slate-300';
-  return 'text-slate-500';
+  if (fv >= 70) return 'ns-g80';
+  if (fv >= 60) return 'ns-g70';
+  if (fv >= 55) return 'ns-g55';
+  if (fv >= 50) return 'ns-text-2';
+  if (fv >= 45) return 'ns-g30';
+  if (fv >= 40) return 'ns-text';
+  return 'ns-muted';
 }
 
 export default function DevAnalysisPage() {
@@ -126,28 +126,30 @@ export default function DevAnalysisPage() {
     `Discount=${discountRate}, Potential=${potentialWAA} WAA`;
 
   return (
-    <div className="h-full overflow-auto">
-      <div className="p-4">
-        <h1 className="text-2xl font-bold text-white">Future Value Impact Analysis</h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Shows Future Value for a player with the given potential WAA, using the current WAA from the data at each age/percentile.
-          Fallback model only. It runs when the DEV age curve file is missing. The lists and player cards use the DEV curve
-          and the ML model, so these sliders do not change them.
-        </p>
-      </div>
+    <div className="ns-page overflow-auto [&>*]:shrink-0">
+      <header className="ns-page-head">
+        <div>
+          <h1>Future Value Impact Analysis</h1>
+          <p className="ns-page-sub">
+            Shows Future Value for a player with the given potential WAA, using the current WAA from the data at each age/percentile.
+            Fallback model only. It runs when the DEV age curve file is missing. The lists and player cards use the DEV curve
+            and the ML model, so these sliders do not change them.
+          </p>
+        </div>
+      </header>
 
       {/* Potential WAA Input */}
-      <div className="px-4 pb-3 flex items-center gap-3">
-        <span className="text-sm text-slate-300">Example Potential WAA:</span>
+      <div className="pb-3 flex items-center gap-3">
+        <span className="text-sm ns-text">Example Potential WAA:</span>
         <input
           type="number" step="0.5" min="-5" max="10" value={potentialWAA}
           onChange={e => setPotentialWAA(parseFloat(e.target.value) || 0)}
-          className="w-20 px-3 py-1.5 bg-slate-800 border border-blue-500 rounded-lg text-white text-center font-bold"
+          className="ns-input w-20 text-center font-bold"
         />
       </div>
 
       {/* Impact Table */}
-      <div className="px-4 pb-2">
+      <div className="pb-2">
         <div className="table-container">
           <table className="data-table">
             <thead>
@@ -161,7 +163,7 @@ export default function DevAnalysisPage() {
             <tbody>
               {impactTable.map(row => (
                 <tr key={row.age}>
-                  <td className="font-bold text-white">{row.age}</td>
+                  <td className="font-bold ns-text">{row.age}</td>
                   {PERCENTILES.map(({ pct }) => {
                     const fv = row[`fv_${pct}`];
                     const scale = row[`scale_${pct}`];
@@ -172,7 +174,7 @@ export default function DevAnalysisPage() {
                         <div className={`text-sm font-bold ${fvCellColor(scale)}`}>
                           {fv.toFixed(2)}
                         </div>
-                        <div className="text-[10px] text-slate-500">
+                        <div className="text-[11px] ns-muted">
                           {isDevAge ? `curr: ${curr.toFixed(1)}` : `at peak`}
                         </div>
                       </td>
@@ -183,19 +185,19 @@ export default function DevAnalysisPage() {
             </tbody>
           </table>
         </div>
-        <div className="text-[10px] text-slate-500 mt-1 font-mono">
+        <div className="text-[11px] ns-muted mt-1">
           Settings: {settingsStr}
         </div>
       </div>
 
       {/* Fallback model settings (futureValue.computeImpact: the assumed model, no DEV curve) */}
-      <div className="px-4 pb-4">
-        <h2 className="text-lg font-bold text-white mb-3">Fallback model settings</h2>
+      <div className="pb-4">
+        <h2 className="ns-subhead mb-3">Fallback model settings</h2>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
           {/* Gap Factor Panel */}
-          <div className="bg-slate-800/50 rounded-lg p-4">
-            <h3 className="text-sm font-bold text-white mb-3">Gap Factor</h3>
+          <div className="ns-card">
+            <h3 className="ns-strip">Gap Factor</h3>
             <SliderControl label="Maturity Age" value={maturityAge} onChange={setMaturityAge}
               min={22} max={32} step={1} />
             <SliderControl label="Gap Max" value={gapMax} onChange={setGapMax}
@@ -206,29 +208,29 @@ export default function DevAnalysisPage() {
             <div className="mt-4">
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={gapCurveData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="age" tick={{ fill: '#94a3b8', fontSize: 10 }}
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                  <XAxis dataKey="age" tick={{ fill: 'var(--chart-axis)', fontSize: 11 }}
                     domain={[14, 35]} type="number" />
-                  <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }}
+                  <YAxis tick={{ fill: 'var(--chart-axis)', fontSize: 11 }}
                     domain={[0, 1]} />
                   <Tooltip
-                    contentStyle={{ background: '#1e293b', border: '1px solid #475569', borderRadius: 8 }}
-                    labelStyle={{ color: '#e2e8f0' }}
+                    contentStyle={{ background: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: 3 }}
+                    labelStyle={{ color: 'var(--chart-tooltip-text)' }}
                     formatter={(v) => [v.toFixed(3), 'Gap Factor']}
                     labelFormatter={(l) => `Age: ${l}`}
                   />
-                  <ReferenceLine x={maturityAge} stroke="#f59e0b" strokeDasharray="5 5"
-                    label={{ value: `Maturity (${maturityAge})`, fill: '#f59e0b', fontSize: 11, position: 'top' }} />
-                  <Line type="monotone" dataKey="gapFactor" stroke="#ef4444" strokeWidth={2.5} dot={false} />
+                  <ReferenceLine x={maturityAge} stroke="var(--chart-ref-line)" strokeDasharray="5 5"
+                    label={{ value: `Maturity (${maturityAge})`, fill: 'var(--chart-ref-line)', fontSize: 11, position: 'top' }} />
+                  <Line type="monotone" dataKey="gapFactor" stroke="var(--chart-series-3)" strokeWidth={2.5} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
-              <div className="text-center text-[10px] text-slate-500">Age</div>
+              <div className="text-center text-[11px] ns-muted">Age</div>
             </div>
           </div>
 
           {/* Risk & Aging Panel */}
-          <div className="bg-slate-800/50 rounded-lg p-4">
-            <h3 className="text-sm font-bold text-white mb-3">Risk & Aging</h3>
+          <div className="ns-card">
+            <h3 className="ns-strip">Risk & Aging</h3>
             <SliderControl label="Risk Floor" value={riskFloor} onChange={setRiskFloor}
               min={0.5} max={1.0} step={0.01} description="Min credit (worst pct)" />
             <SliderControl label="Risk Ceiling" value={riskCeiling} onChange={setRiskCeiling}
@@ -247,25 +249,25 @@ export default function DevAnalysisPage() {
             <div className="mt-4">
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={agingCurveData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="age" tick={{ fill: '#94a3b8', fontSize: 10 }}
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                  <XAxis dataKey="age" tick={{ fill: 'var(--chart-axis)', fontSize: 11 }}
                     domain={[20, 40]} type="number" />
-                  <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }}
+                  <YAxis tick={{ fill: 'var(--chart-axis)', fontSize: 11 }}
                     domain={[0, 1.1]} />
                   <Tooltip
-                    contentStyle={{ background: '#1e293b', border: '1px solid #475569', borderRadius: 8 }}
-                    labelStyle={{ color: '#e2e8f0' }}
+                    contentStyle={{ background: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: 3 }}
+                    labelStyle={{ color: 'var(--chart-tooltip-text)' }}
                     formatter={(v) => [v.toFixed(3), 'Aging Factor']}
                     labelFormatter={(l) => `Age: ${l}`}
                   />
-                  <ReferenceLine x={peakEnd} stroke="#22c55e" strokeDasharray="5 5"
-                    label={{ value: `Peak End (${peakEnd})`, fill: '#22c55e', fontSize: 11, position: 'top' }} />
-                  <ReferenceLine x={cliffAge} stroke="#ef4444" strokeDasharray="5 5"
-                    label={{ value: `Cliff (${cliffAge})`, fill: '#ef4444', fontSize: 11, position: 'top' }} />
-                  <Line type="monotone" dataKey="agingFactor" stroke="#f59e0b" strokeWidth={2.5} dot={false} />
+                  <ReferenceLine x={peakEnd} stroke="var(--chart-series-2)" strokeDasharray="5 5"
+                    label={{ value: `Peak End (${peakEnd})`, fill: 'var(--chart-series-2)', fontSize: 11, position: 'top' }} />
+                  <ReferenceLine x={cliffAge} stroke="var(--chart-series-3)" strokeDasharray="5 5"
+                    label={{ value: `Cliff (${cliffAge})`, fill: 'var(--chart-series-3)', fontSize: 11, position: 'top' }} />
+                  <Line type="monotone" dataKey="agingFactor" stroke="var(--chart-series-4)" strokeWidth={2.5} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
-              <div className="text-center text-[10px] text-slate-500">Age</div>
+              <div className="text-center text-[11px] ns-muted">Age</div>
             </div>
           </div>
         </div>
