@@ -258,7 +258,7 @@ export const FORTY_MAN_LIMIT = 40;
  * 40-man occupancy for one org (ported from ootp-dashboard
  * app/src/utils/waivers.js fortyManSpots). A claim costs a 40-man spot, so the
  * board shows this next to the wire. Returns null when no row in the league
- * carries the 40-man flag (`On40Man`): unknown, not "40 open".
+ * carries a 40-man flag (`isOn40Man`): unknown, not "40 open".
  */
 export function fortyManSpots(hitters = [], pitchers = [], org) {
   const rows = [...(hitters || []), ...(pitchers || [])];

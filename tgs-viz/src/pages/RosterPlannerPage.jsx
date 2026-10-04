@@ -226,7 +226,7 @@ export default function RosterPlannerPage({ hitters, pitchers, metadata, league 
           <div className="ns-page-sub">
             Game year <b>{gameYear}</b>{game.source === 'contracts' ? ' (from contract years)' : ''}
             {contractYear > gameYear ? <> · contracts have rolled to <b>{contractYear}</b></> : null}
-            {exportDate ? <> · roster flags from the OOTP export of <b>{exportDate}</b>{exportGap ? ` (${exportGap} game days old)` : ''}</> : null}
+            {exportDate ? <> · Rule 5 and options from the OOTP export of <b>{exportDate}</b>{exportGap ? ` (${exportGap} game days old)` : ''}</> : null}
           </div>
         </div>
         <div className="ns-head-actions">

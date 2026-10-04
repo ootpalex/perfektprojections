@@ -66,16 +66,20 @@ test('buildClaimBoard splits live from cleared', () => {
 // ── 40-man ──────────────────────────────────────────────────────────────────
 test('40-man occupancy per org; unknown without the flag', () => {
   const org = S.mlbHitter.ORG;
+  const { IsOnSecondary: _sp, ...base } = S.mlbHitter;   // export flag only
   const rows = [
-    { ...S.mlbHitter, ID: 'a', On40Man: true },
-    { ...S.mlbHitter, ID: 'b', On40Man: 'True' },
-    { ...S.mlbHitter, ID: 'c', On40Man: false },
-    { ...S.mlbHitter, ID: 'd', ORG: 'Elsewhere', On40Man: true },
+    { ...base, ID: 'a', On40Man: true },
+    { ...base, ID: 'b', On40Man: 'True' },
+    { ...base, ID: 'c', On40Man: false },
+    { ...base, ID: 'd', ORG: 'Elsewhere', On40Man: true },
   ];
   assert.deepEqual(fortyManSpots(rows, [], org), { used: 2, open: 38, limit: 40 });
+  // StatsPlus's flag wins over a stale export
+  const live = [...rows, { ...base, ID: 'e', On40Man: true, IsOnSecondary: false }];
+  assert.deepEqual(fortyManSpots(live, [], org), { used: 2, open: 38, limit: 40 });
   const bare = rows.map(({ On40Man, IsOnSecondary, ...r }) => r);
   assert.equal(fortyManSpots(bare, [], org), null);
-  const full = Array.from({ length: 41 }, (_, i) => ({ ...S.mlbHitter, ID: `x${i}`, On40Man: true }));
+  const full = Array.from({ length: 41 }, (_, i) => ({ ...base, ID: `x${i}`, On40Man: true }));
   assert.equal(fortyManSpots(full, [], org).open, 0);
 });
 

@@ -140,7 +140,7 @@ function ClaimTable({ rows, smartOn, smartOf, gradeOf, emptyText }) {
  * ran out have cleared and sit in their own box below. Smart rank toggles
  * (ours' injury / intangibles adjustments) re-order the claimable board.
  *
- * The 40-man card shows the org's occupancy (On40Man) because a claim costs a
+ * The 40-man card shows the org's occupancy (isOn40Man: StatsPlus, else the export) because a claim costs a
  * spot; the claim verdict itself does not price that spot.
  */
 export default function WaiverClaimPage({ hitters, pitchers, league }) {
