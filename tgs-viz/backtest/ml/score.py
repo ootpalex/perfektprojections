@@ -99,7 +99,8 @@ def scoring_note(league):
         return s, (n.get("scoring") or {}).get(league) or {}
     p = os.path.join(C.DATA_DIR, f"schema_{league}.json")
     if not os.path.isfile(p):
-        raise SystemExit(f"no {p}; run: py -3.14 tgs-viz/backtest/ml/dataset.py --basis {league} --score-only --write")
+        raise SystemExit(f"no {p}; run: py -3.14 tgs-viz/backtest/ml/dataset.py --basis {league} --score-only --write"
+                         f"\n{PR.not_installed_hint(league)}")
     s = read_json(p)
     return s, (s.get("scoring") or {}).get(league) or {}
 

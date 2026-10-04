@@ -71,6 +71,61 @@ def models_dir(basis):
     return os.path.join(C.MODELS_ROOT, C.check_basis(basis))
 
 
+def not_installed_hint(basis):
+    """One line for a missing schema / manifest: the models are the author's files, not trained here."""
+    return (f"models for basis {basis} are not installed on this machine; install the author's files with "
+            f"`python tgs-viz/backtest/ml/install_models.py --from <dir>` (training is not run on the Mac)")
+
+
+# ---------------------------------------------------------------- library versions
+def recorded_versions(pm, am):
+    """{'sklearn', 'python', 'xgboost'} the models were trained with, read from the peak manifest `pm`
+    and the path manifest `am` (peak.py fit-final / path.py fit-final record them). A value is None when
+    the manifest does not say. xgboost comes from peak's "quantile_backend" text ("xgboost 3.4.1 (trained
+    on cpu)"); None also when the quantile models are scikit-learn."""
+    meta = am.get("_meta") or {}
+    hit = re.match(r"\s*xgboost\s+(\S+)", str(pm.get("quantile_backend") or ""))
+    return {"sklearn": pm.get("sklearn") or meta.get("sklearn"),
+            "python": pm.get("python") or meta.get("python"),
+            "xgboost": hit.group(1) if hit else None}
+
+
+def installed_versions():
+    """{'sklearn', 'python', 'xgboost'} of this interpreter (None for a package that is not installed)."""
+    from importlib import metadata
+
+    def ver(dist):
+        try:
+            return metadata.version(dist)
+        except metadata.PackageNotFoundError:
+            return None
+    return {"sklearn": ver("scikit-learn"), "python": sys.version.split()[0], "xgboost": ver("xgboost")}
+
+
+def version_mismatches(rec, now=None):
+    """[(library, trained, installed)] for scikit-learn and xgboost (the libraries a pickle depends on)
+    whose recorded version differs from the installed one. A library the manifest does not record is not
+    checked. Python is not compared here: a minor-version gap alone does not break a pickle."""
+    now = now or installed_versions()
+    return [(lib, rec[lib], now.get(lib)) for lib in ("sklearn", "xgboost")
+            if rec.get(lib) and rec[lib] != now.get(lib)]
+
+
+def warn_versions(basis, pm, am, now=None):
+    """Warn (stderr) when the models were trained with other scikit-learn / xgboost versions than the
+    installed ones. Never stops scoring: sklearn itself raises when a pickle cannot be read. Returns the
+    mismatch list."""
+    bad = version_mismatches(recorded_versions(pm, am), now)
+    for lib, trained, have in bad:
+        name = {"sklearn": "scikit-learn"}.get(lib, lib)
+        print(f"WARNING: the {basis} models were trained with {name} {trained} but this Python has "
+              f"{have or 'no ' + name}; pickles are not portable across versions, so scores may be wrong or "
+              f"loading may fail. Run `python tgs-viz/backtest/ml/install_models.py --basis {basis} --check` "
+              "for the steps to build a matching environment (python.ml in settings.local.json).",
+              file=sys.stderr, flush=True)
+    return bad
+
+
 def load_bundle(basis):
     """{basis, peak: manifest, path: manifest, models: {role: {'peak': {target:
     fit dict}, 'path': {name: model}}}} for one basis. Stops with a message
@@ -81,12 +136,13 @@ def load_bundle(basis):
         p = os.path.join(d, f"{grp}_manifest.json")
         if not os.path.exists(p):
             raise SystemExit(f"no {grp} models for basis {basis} ({p}); run: py -3.14 tgs-viz/backtest/ml/"
-                             f"{grp}.py fit-final --basis {basis}")
+                             f"{grp}.py fit-final --basis {basis}\n{not_installed_hint(basis)}")
         with open(p, encoding="utf-8") as fh:
             out[grp] = json.load(fh)
     pm, am = out["peak"], out["path"]
     if pm.get("basis") not in (None, basis) or am.get("_meta", {}).get("basis") not in (None, basis):
         raise SystemExit(f"manifest basis does not match {basis}")
+    warn_versions(basis, pm, am)
     for role in C.ROLES:
         r = {"peak": {}, "path": {}}
         for t, info in pm["roles"][role]["models"].items():
