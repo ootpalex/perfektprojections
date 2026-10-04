@@ -92,7 +92,7 @@ Tri-state means the accessor returns true, false, or null when the row lacks the
 | `meta.velo` / `vt` | `getVelo`, `getVeloPotential` | `Vel` / `PotVel` (range strings) |
 | `_bestPos` | `getBestPos(p, matured)` | Hitters: `Best Pos WAR`, else `Best Pos`. Pitchers: ours' rule ported (see §5). A stamped `_bestPos` wins. |
 | `meta.is_on_dl/_dl60` | `isOnIL`, `isOnIL60`, `getInjuryDaysLeft` | `OnDL`, `OnDL60`, `DLDays` |
-| `meta.on40` | `isOn40Man` (tri-state) | `On40Man` (export), else `IsOnSecondary` (StatsPlus). See decision 2. |
+| `meta.on40` | `isOn40Man` (tri-state) | `IsOnSecondary` (StatsPlus), else `On40Man` (export). See decision 2. |
 | `meta.act` | `isActiveRoster` (tri-state) | `ActiveRoster`, else `IsActive` |
 | `meta.r5` | `isRule5Eligible` (tri-state), `getYearsProtectedFromRule5` | `Rule5Eligible`, `YearsProtectedFromRule5` |
 | `meta.opt` / `oy` | `getOptionsUsed` / `getOptionYearUsed`; `getOptionsRemaining` returns null | `OptionsUsed` / `OptionYearUsed` |
@@ -172,7 +172,7 @@ Source: a read-only inventory of every scope file's reads (call sites in a sub-a
 ## 6. Decisions for the user
 
 1. **Pitcher best position.** His data ships no pitcher best position. The adapter applies ours' rule, which compares SP and RP WAR and uses thresholds of −0.5 and 1.0 on ours' WAR scale, to his engine's WAR. **Recommendation: keep it, but put the thresholds on the wave-2 audit list.** The alternative, his listed `POS`, ignores value.
-2. **40-man source.** The export's `On40Man` is stale (dated 2043-12-28). StatsPlus `IsOnSecondary` is live but its meaning is inferred, from 99.5% agreement with ON40. The adapter prefers the export, consistent with Phase 3's decision 1. **Recommendation: keep export-first until one same-date export proves the two flags identical, then flip.** It is a one-line change.
+2. **40-man source — decided 2026-10-04: StatsPlus first.** `isOn40Man` reads `IsOnSecondary`, then the export's `On40Man`; `isActiveRoster` reads `IsActive`, then `ActiveRoster`. The export is made by hand and may not be refreshed consistently; on the 2044-05-09 pull (export 2043-12-28) export-first gave Cleveland 37 active and Colorado 48 on the 40-man, StatsPlus 26 and ≤ 40.
 3. **Price for uncontracted players.** Ours showed the league minimum, or the demand for free agents. The adapter returns null. **Recommendation: keep null.** The league minimum is a league setting this data does not carry.
 
 ## 7. Verified vs inferred

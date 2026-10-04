@@ -386,14 +386,18 @@ test('getBestPos: stamped, his Best Pos WAR, ours pitcher rule, BLM fallbacks', 
   assert.equal(A.getBestPos(null), null);
 });
 
-test('roster status: SSB export keys, StatsPlus fallback, BLM unknown', ['isOn40Man', 'isActiveRoster', 'isRule5Eligible', 'getYearsProtectedFromRule5', 'getOptionsUsed', 'getOptionYearUsed', 'getOptionsRemaining', 'isRookie', 'isIntlComplex', 'getYearsLeftStatus', 'getRosterExportDate', 'getRosterExportGapDays'], () => {
+test('roster status: StatsPlus first, export fallback, BLM unknown', ['isOn40Man', 'isActiveRoster', 'isRule5Eligible', 'getYearsProtectedFromRule5', 'getOptionsUsed', 'getOptionYearUsed', 'getOptionsRemaining', 'isRookie', 'isIntlComplex', 'getYearsLeftStatus', 'getRosterExportDate', 'getRosterExportGapDays'], () => {
   const p = S.ssEligible;
   assert.equal(A.isOn40Man(S.mlbHitter), true);
   assert.equal(A.isOn40Man(p), false);
-  assert.equal(A.isOn40Man({ IsOnSecondary: true }), true);       // fallback
+  assert.equal(A.isOn40Man({ IsOnSecondary: true }), true);
+  assert.equal(A.isOn40Man({ IsOnSecondary: false, On40Man: true }), false);  // StatsPlus wins
+  assert.equal(A.isOn40Man({ On40Man: true }), true);              // export fallback
   assert.equal(A.isOn40Man(B.mlbHitter), null);                   // unknown, not false
   assert.equal(A.isActiveRoster(S.starter), true);
   assert.equal(A.isActiveRoster({ IsActive: false }), false);
+  assert.equal(A.isActiveRoster(S.mlbHitter), true);   // stale export says false; StatsPlus true
+  assert.equal(A.isActiveRoster({ ActiveRoster: true }), true);    // export fallback
   assert.equal(A.isActiveRoster(B.starter), null);
   assert.equal(A.isRule5Eligible(p), true);
   assert.equal(A.isRule5Eligible(B.mlbHitter), null);

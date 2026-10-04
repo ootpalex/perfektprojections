@@ -557,13 +557,14 @@ export const isOnIL60 = (p) => flag(p?.OnDL60);     // ours meta.is_on_dl60
 export const getInjuryDaysLeft = (p) => num(p?.DLDays);
 
 // ── roster status (all tri-state: true / false / null = unknown) ────────────
-// 40-man (ours meta.on40, from the OOTP export's ON40). His SSB rows carry the
-// same export column as `On40Man` (Phase 3 roster_export merge); rows the export
-// did not reach fall back to StatsPlus `IsOnSecondary` (99.5% agreement with ON40,
-// inferred to be the same flag — docs/phase3/waivers_service.md §1).
-export const isOn40Man = (p) => flagOrNull(p?.On40Man) ?? flagOrNull(p?.IsOnSecondary);
-// Active (26-man) roster (ours meta.act): export `ActiveRoster`, else `IsActive`.
-export const isActiveRoster = (p) => flagOrNull(p?.ActiveRoster) ?? flagOrNull(p?.IsActive);
+// 40-man (ours meta.on40). StatsPlus `IsOnSecondary` first: it comes with every
+// pull, while the OOTP export (`On40Man`, Phase 3 roster_export merge) is made by
+// hand and can be months old. The two agree on 99.5% of rows when the export is
+// fresh (docs/phase3/waivers_service.md §1). The export is the fallback for rows
+// StatsPlus did not send. User decision 2026-10-04.
+export const isOn40Man = (p) => flagOrNull(p?.IsOnSecondary) ?? flagOrNull(p?.On40Man);
+// Active (26-man) roster (ours meta.act): StatsPlus `IsActive`, else export `ActiveRoster`.
+export const isActiveRoster = (p) => flagOrNull(p?.IsActive) ?? flagOrNull(p?.ActiveRoster);
 // Rule 5 (ours meta.r5): the export's own flag. No fallback — ours' signing-age
 // rule (eligibility.js calcR5Projection) is an OOTP rule and is NOT ported.
 export const isRule5Eligible = (p) => flagOrNull(p?.Rule5Eligible);
