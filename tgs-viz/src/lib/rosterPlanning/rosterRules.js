@@ -30,6 +30,10 @@ export const INACTIVE_FORTY_SLOTS = FORTY_MAN_LIMIT - ACTIVE_ROSTER_LIMIT;
 export const IL60_OFF_FORTY_MAN = true;
 
 // ── 2. Planning heuristics (🟡 ours' advice, not OOTP rules) ───────────────
+// The three WAR / FV cutoffs below were set on ours' WAR scale. They are moved to
+// his by matching percentiles on SSB's 2044-05-09 pull (same players, joined by
+// ID), so each picks the same share of players as in ours: ours 1.5 / 2.5 / 1.0.
+// User decision 2026-10-04 (docs/PHASE4_STATUS.md).
 // Active-roster cover (ours depth.js analyzeActiveCoverage).
 export const COVERAGE_POSITIONS = ["C", "1B", "2B", "SS", "3B", "LF", "CF", "RF"];
 export const ACTIVE_COVER_NEED = 2;          // eligible players per position, minimum
@@ -46,15 +50,15 @@ export const INACTIVE_SP_SLOTS = 2;
 export const FORTY_BALANCE_MAX = 24;
 // Rule 5 protect shortlist (ours eligibility.js): FV threshold slider default and
 // the "clearly better" margin over the weakest displaceable 40-man player.
-export const R5_DEFAULT_THRESHOLD = 1.0;
+export const R5_DEFAULT_THRESHOLD = 1.35;   // ours 1.0 (exposed R5 players, 92nd pct)
 export const R5_PROTECT_BUFFER = 0.2;
 // A 40-man player is not "displaceable" when he is a regular (active, WAR at or
 // above this) or on a big guaranteed deal (years left and salary at or above these).
-export const DISPLACE_KEEP_WAR = 2.5;
+export const DISPLACE_KEEP_WAR = 2.8;       // ours 2.5 (active roster, 70th pct)
 export const DISPLACE_KEEP_YEARS = 2;
 export const DISPLACE_KEEP_SALARY = 20_000_000;
 // Suggestions (ours crunch.js): promote an inactive 40-man player above this WAR;
 // list sizes.
-export const PROMOTE_WAR = 1.5;
+export const PROMOTE_WAR = 1.75;            // ours 1.5 (inactive 40-man, 81st pct)
 export const DFA_SUGGESTIONS = 5;
 export const PROMOTE_SUGGESTIONS = 3;

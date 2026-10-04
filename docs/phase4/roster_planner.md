@@ -94,7 +94,10 @@ its rules. Each is shown as unknown or left out:
    StatsPlus flags active but not on the 40-man. The header now names the export only as the
    source of Rule 5 and options.
 2. **The 60-day IL and the 40-man.** The planner keeps a 60-day IL player off the 40-man
-   count (`IL60_OFF_FORTY_MAN`). That is the MLB rule, not read from the data.
+   count (`IL60_OFF_FORTY_MAN`). That is the MLB rule, not read from the data. **Decided
+   2026-10-04: kept.**
+3. **Advice cutoffs — decided 2026-10-04:** moved to his scale by percentile on SSB: promote
+   1.5 → 1.75, regular 2.5 → 2.8, Rule 5 shortlist default 1.0 → 1.35 (`rosterRules.js`).
 
 ## 7. Verified vs inferred
 

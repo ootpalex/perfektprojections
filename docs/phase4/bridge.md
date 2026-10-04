@@ -171,9 +171,9 @@ Source: a read-only inventory of every scope file's reads (call sites in a sub-a
 
 ## 6. Decisions for the user
 
-1. **Pitcher best position.** His data ships no pitcher best position. The adapter applies ours' rule, which compares SP and RP WAR and uses thresholds of −0.5 and 1.0 on ours' WAR scale, to his engine's WAR. **Recommendation: keep it, but put the thresholds on the wave-2 audit list.** The alternative, his listed `POS`, ignores value.
+1. **Pitcher best position.** His data ships no pitcher best position. The adapter applies ours' rule, which compares SP and RP WAR and uses thresholds of −0.5 and 1.0 on ours' WAR scale, to his engine's WAR. **Decided 2026-10-04: kept.** On SSB the 1.0 cutoff never decides a label; every RP\* comes from the −0.5 floor, and his count (39 of 882 starters) is the same for any floor from −0.5 to +1.0.
 2. **40-man source — decided 2026-10-04: StatsPlus first.** `isOn40Man` reads `IsOnSecondary`, then the export's `On40Man`; `isActiveRoster` reads `IsActive`, then `ActiveRoster`. The export is made by hand and may not be refreshed consistently; on the 2044-05-09 pull (export 2043-12-28) export-first gave Cleveland 37 active and Colorado 48 on the 40-man, StatsPlus 26 and ≤ 40.
-3. **Price for uncontracted players.** Ours showed the league minimum, or the demand for free agents. The adapter returns null. **Recommendation: keep null.** The league minimum is a league setting this data does not carry.
+3. **Price for uncontracted players.** Ours showed the league minimum, or the demand for free agents. The adapter returns null. **Decided 2026-10-04: null.** The league minimum is a league setting this data does not carry.
 
 ## 7. Verified vs inferred
 

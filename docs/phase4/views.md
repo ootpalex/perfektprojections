@@ -90,6 +90,6 @@ The pages keep ours' inline-style grammar (`S`, `TOKENS`) rather than the `ns-*`
 
 ## 4. Decisions for the user
 
-1. **The prospect definition.** Ours' "under 45 MLB days" admits veterans signed from abroad. The alternative is OOTP's own rookie flag (`RookieStatus`), which SSB carries only on export rows (7,308 of 14,003). **Recommendation: keep ours' rule until the export covers every row, then switch to `RookieStatus`.**
-2. **The tier $ values** are ours' defaults, set on ours' WAR boards 🟡. Tiers are cut by rank, so a tier means the same population either way. The $ per tier was never derived from his data. **Recommendation: leave them, and flag them for the market-value work.**
-3. **The scout bonus constants** (§2 Scout). **Recommendation: put them on the wave-2 audit list next to the pitcher best-position thresholds from `bridge.md` decision 1.**
+1. **The prospect definition.** Ours' "under 45 MLB days" admits veterans signed from abroad. The alternative is OOTP's own rookie flag (`RookieStatus`), which SSB carries only on export rows (7,308 of 14,003). **Decided 2026-10-04: ours' rule.** StatsPlus has no rookie flag, and its secondary service is 40-man time, so it cannot screen out foreign veterans.
+2. **The tier $ values** are ours' defaults, set on ours' WAR boards 🟡. Tiers are cut by rank, so a tier means the same population either way. The $ per tier was never derived from his data. **Decided 2026-10-04: leave them; revisit with the market-value work.**
+3. **The scout bonus constants** (§2 Scout). **Decided 2026-10-04: kept.** His hitter spread is 0.86–0.89x ours; the positional-need bonus is per SD.

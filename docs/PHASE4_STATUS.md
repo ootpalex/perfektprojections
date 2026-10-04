@@ -34,29 +34,35 @@ Market Value's stat cards clip their values below about 900 px of width; they fi
   48 on the 40-man). With StatsPlus first, all 28 SSB MLB clubs are at or under 40 and 27 have
   exactly 26 active. Atlanta shows 27 because of one A+ player (Jesus Salmeron) that StatsPlus flags
   active but not on the 40-man.
+- **All other Phase 4 decisions: the recommendations.** Evidence: an SSB comparison of both apps on
+  the same players (2044-05-09 pull, joined by ID; his values run about 0.3 WAR higher on the
+  40-man and spread about 0.9x as wide).
+  1. *Pitcher best position* (SP-vs-RP thresholds −0.5 / 1.0): **kept.** The 1.0 RP-advantage
+     cutoff never decides a label in either app; every "RP\*" comes from the −0.5 floor. His data
+     gives 39 RP\* of 882 starters for any floor from −0.5 to +1.0; the two apps agree on 96.7% of
+     781 matched starters.
+  2. *Roster Planner cutoffs:* **moved to his scale by percentile** — promote 1.5 → 1.75, regular
+     (not displaceable) 2.5 → 2.8, Rule 5 shortlist default 1.0 → 1.35. Unchanged, they flagged
+     30–70% more players than ours (promote 77 vs 59, regulars 292 vs 217, Rule 5 275 vs 165);
+     moved, they reproduce ours' counts (59, 218, 159).
+  3. *Waiver smart-rank constants:* **kept.** His hitter spread is 0.86–0.89x ours, a ~12% change
+     smaller than the constants' own uncertainty; toggles are off by default. The reliever 0.375x
+     is an innings ratio, independent of the WAR scale.
+  4. *Scout fit bonuses:* **kept** (same constants as 3; the positional-need bonus is per SD).
+  5. *Prospect tier $ values:* **kept**; revisit with the market-value work.
+  6. *Prospect definition:* **ours' fewer than 45 MLB days.** StatsPlus has no rookie flag;
+     "secondary service" is 40-man service time (186 of the 353 prospects with any are under 25),
+     so it cannot screen out foreign veterans.
+  7. *Roster sizes 40 / 26:* **kept**; the live flags fit them (27 of 28 clubs at exactly 26 active,
+     none over 40).
+  8. *60-day IL off the 40-man:* **kept** (StatsPlus agrees for 29 of 32 SSB players on it).
+  9. *Price for uncontracted players:* **null.**
+  10. *StrictMode:* **removed** from `main.jsx`. The launcher runs the dev server, where StrictMode
+      ran every valuation step twice.
 
 ## Needs the user
 
-Constants carried from ours that were set on ours' WAR scale and never checked on his:
-
-1. **Pitcher best position:** SP-vs-RP WAR thresholds −0.5 / 1.0 (`bridge.md` decision 1).
-2. **Roster Planner advice cutoffs:** protect at FV 1.0, not displaceable at WAR 2.5, promote at
-   WAR 1.5.
-3. **Waiver smart rank:** injury adjustments (Iron Man +0.5 … Wrecked −2.0 wins), intangibles at
-   0.15 wins per 10 grade points, relievers scaled 0.375×.
-4. **Scout fit bonuses:** positional need, injury proneness, intangibles, reliever scaling.
-5. **Prospect tier dollar values.**
-
-Other decisions:
-
-6. **Prospect definition:** ours' "under 45 MLB days" admits veterans signed from abroad (a
-   35-year-old major-league starter is on the board). StatsPlus has no rookie flag; OOTP's
-   `RookieStatus` comes only from the export (7,308 of 14,003 SSB rows).
-7. **60-day IL off the 40-man:** the MLB rule, held as a constant (`IL60_OFF_FORTY_MAN`).
-8. **Price for uncontracted players:** null (recommended) vs a league minimum the data does not carry.
-9. **Roster sizes 40 / 26:** constants; no data field carries them.
-10. **StrictMode in development:** turning it off roughly halves the remaining dev-server main-thread
-    work (4.5–6.8 s vs 9.4–10.1 s, noisy); no effect on a production build. Left on.
+Nothing open for Phase 4.
 
 ## Follow-ups (no decision needed)
 
