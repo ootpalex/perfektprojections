@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Globe, HardDrive, FlaskConical, Copy, ArrowLeft, Loader2, Play, ListChecks } from 'lucide-react';
 import { newLeagueOptions, validateNewLeague, startJob, useJobInfo, useActiveJobs, useCatalog, findTask, startConflict } from '../../lib/controlApi';
 import { checkToken, checkSecret, conflictText } from '../../lib/inputConditions';
 import JobPanel from './JobPanel';
@@ -9,16 +8,16 @@ import { Notice } from './PromptCard';
 
 const TYPES = [
   {
-    id: 'statsplus', icon: Globe, title: 'Online league on StatsPlus',
+    id: 'statsplus', title: 'Online league on StatsPlus',
     text: "Pulls ratings from statsplus.net with your league's token. Prices players with TGS's or BLM's calibration.",
   },
-  { id: 'local_export', icon: HardDrive, title: 'Local OOTP save', text: "Reads a save's database CSV export, like Regular Game." },
+  { id: 'local_export', title: 'Local OOTP save', text: "Reads a save's database CSV export, like Regular Game." },
   {
-    id: 'dev', icon: FlaskConical, title: 'DEV research league',
+    id: 'dev', title: 'DEV research league',
     text: 'An all-AI OOTP league you sim in place. Adds a Rating Trends page from its yearly dumps.',
   },
   {
-    id: 'clone', icon: Copy, title: 'Calibration clone league',
+    id: 'clone', title: 'Calibration clone league',
     text: 'Makes and sims clone leagues from a pristine master save. No app league. Turning the clones into a calibration '
       + 'is an advanced manual job (see STATUS.md and engine/calibrate.py).',
   },
@@ -57,7 +56,7 @@ const LABELS = {
 };
 const NEEDS_CREDENTIALS = 'No token is saved for this league yet. Give the token, or both browser cookies.';
 
-const fieldClass = 'w-full bg-slate-800 text-white text-sm rounded-lg px-3 py-2 border border-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';
+const fieldClass = 'ns-input w-full';
 
 function defaultsFor(type) {
   const base = { id: '', name: '', my_org: '' };
@@ -91,10 +90,10 @@ function saveEntry(s, o = {}) {
 function Field({ label, hint, error, children, name }) {
   return (
     <div className="space-y-1" data-field={name}>
-      <label htmlFor={`nl-${name}`} className="block text-xs font-semibold text-slate-300">{label}</label>
+      <label htmlFor={`nl-${name}`} className="block ns-label">{label}</label>
       {children}
-      {hint && <p className="text-[11px] text-slate-500">{hint}</p>}
-      {error && <p className="text-[11px] text-red-400" role="alert">{error}</p>}
+      {hint && <p className="text-[11px] ns-muted">{hint}</p>}
+      {error && <p className="text-[11px] ns-bad" role="alert">{error}</p>}
     </div>
   );
 }
@@ -305,8 +304,8 @@ export default function NewLeagueWizard() {
   if (jobId) {
     return (
       <div className="space-y-3">
-        <button onClick={() => { setJobId(null); pickType(null); }} className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200">
-          <ArrowLeft size={14} /> Add another league
+        <button onClick={() => { setJobId(null); pickType(null); }} className="ns-link text-xs">
+          ← Add another league
         </button>
         <Running jobId={jobId} />
       </div>
@@ -316,18 +315,16 @@ export default function NewLeagueWizard() {
   if (!type) {
     return (
       <div className="space-y-3">
-        <p className="text-sm text-slate-400">What kind of league do you want to add?</p>
+        <p className="text-sm ns-text-2">What kind of league do you want to add?</p>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {TYPES.map(t => {
-            const Icon = t.icon;
             return (
               <button key={t.id} onClick={() => pickType(t.id)} data-type={t.id}
-                className="text-left bg-slate-900/60 border border-slate-800 hover:border-blue-500 rounded-xl p-4 transition-colors">
+                className="ns-box ns-box-body text-left hover:border-[var(--line-ink)]">
                 <div className="flex items-center gap-2 mb-1">
-                  <Icon size={16} className="text-blue-400" />
-                  <span className="text-sm font-bold text-white">{t.title}</span>
+                  <span className="text-sm font-bold ns-text">{t.title}</span>
                 </div>
-                <p className="text-xs text-slate-400 leading-relaxed">{t.text}</p>
+                <p className="text-xs ns-text-2 leading-relaxed">{t.text}</p>
               </button>
             );
           })}
@@ -371,19 +368,17 @@ export default function NewLeagueWizard() {
 
   return (
     <div className="space-y-4">
-      <button onClick={() => pickType(null)} className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200">
-        <ArrowLeft size={14} /> Pick another type
+      <button onClick={() => pickType(null)} className="ns-link text-xs">
+        ← Pick another type
       </button>
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-4">
-        <div>
-          <h2 className="text-sm font-bold text-white">{meta.title}</h2>
-          <p className="text-xs text-slate-400 mt-0.5">{meta.text}</p>
-        </div>
-        {optsError && <p className="text-xs text-red-400">{optsError}</p>}
+      <div className="ns-card space-y-4">
+        <h2 className="ns-strip">{meta.title}</h2>
+        <p className="text-xs ns-text-2">{meta.text}</p>
+        {optsError && <p className="text-xs ns-bad">{optsError}</p>}
         {noSavedGames && (
           <Notice tone="warn" title="No OOTP saved games folder was found">
             <p>
-              Set it on <Link to="/control/setup" className="text-blue-300 underline">Setup check</Link>, then come back.
+              Set it on <Link to="/control/setup" className="ns-link underline">Setup check</Link>, then come back.
             </p>
           </Notice>
         )}
@@ -449,57 +444,57 @@ export default function NewLeagueWizard() {
 
         <div className="flex justify-end">
           <button onClick={doReview} disabled={busy}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-lg bg-slate-700 text-white hover:bg-slate-600 disabled:opacity-40">
-            {busy && !review ? <Loader2 size={12} className="animate-spin" /> : <ListChecks size={12} />} Review
+            className="ns-btn ns-btn-sm">
+            Review
           </button>
         </div>
       </div>
 
       {review && (
-        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3" data-role="review">
-          <h3 className="text-sm font-bold text-white">Review</h3>
-          {review.failed && <p className="text-sm text-red-300">{review.failed}</p>}
+        <div className="ns-card space-y-3" data-role="review">
+          <h3 className="ns-strip">Review</h3>
+          {review.failed && <p className="text-sm ns-bad">{review.failed}</p>}
           {!review.failed && !review.ok && (
-            <p className="text-sm text-red-300">Fix the fields marked in red, then press Review again.</p>
+            <p className="text-sm ns-bad">Fix the fields marked in red, then press Review again.</p>
           )}
           {review.errors && Object.keys(review.errors).length > 0 && (
-            <ul className="text-xs text-red-300 list-disc pl-4 space-y-0.5">
-              {Object.entries(review.errors).map(([k, v]) => <li key={k}><span className="text-red-400">{LABELS[k] || k}:</span> {String(v)}</li>)}
+            <ul className="text-xs ns-bad list-disc pl-4 space-y-0.5">
+              {Object.entries(review.errors).map(([k, v]) => <li key={k}><span className="ns-bad">{LABELS[k] || k}:</span> {String(v)}</li>)}
             </ul>
           )}
           {Array.isArray(review.warnings) && review.warnings.length > 0 && (
-            <ul className="text-xs text-amber-300 list-disc pl-4 space-y-0.5">
+            <ul className="text-xs ns-warn list-disc pl-4 space-y-0.5">
               {review.warnings.map((w, i) => <li key={i}>{String(w)}</li>)}
             </ul>
           )}
           <div>
-            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Known limits</p>
-            <ul className="text-xs text-slate-400 list-disc pl-4 space-y-0.5">
+            <p className="ns-subhead mb-1">Known limits</p>
+            <ul className="text-xs ns-text-2 list-disc pl-4 space-y-0.5">
               {LIMITS[type].map(l => <li key={l}>{l}</li>)}
             </ul>
           </div>
           {Array.isArray(review.plan) && review.plan.length > 0 && (
             <div>
-              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">What it will do</p>
-              <ol className="text-xs text-slate-300 list-decimal pl-5 space-y-0.5">
+              <p className="ns-subhead mb-1">What it will do</p>
+              <ol className="text-xs ns-text-2 list-decimal pl-5 space-y-0.5">
                 {review.plan.map((p, i) => {
                   const writes = Array.isArray(p.writes) ? p.writes.join(', ') : String(p.writes || '');
                   return (
                     <li key={i}>
                       {p.title}
-                      {writes && writes !== 'Nothing.' && <span className="block text-slate-500">Writes: {writes}</span>}
+                      {writes && writes !== 'Nothing.' && <span className="block ns-muted">Writes: {writes}</span>}
                     </li>
                   );
                 })}
               </ol>
             </div>
           )}
-          {conflict && conflict.kind !== 'waits' && <p className="text-xs text-amber-300">{conflictText(conflict)}</p>}
-          {startError && <p className="text-xs text-red-400" role="alert">{startError}</p>}
+          {conflict && conflict.kind !== 'waits' && <p className="text-xs ns-warn">{conflictText(conflict)}</p>}
+          {startError && <p className="text-xs ns-bad" role="alert">{startError}</p>}
           {startFix && findTask(catalog, startFix) && (
             <button type="button" onClick={() => setFixForm(findTask(catalog, startFix))}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-500">
-              <Play size={12} /> {findTask(catalog, startFix).title}
+              className="ns-btn ns-btn-sm ns-btn-primary">
+              {findTask(catalog, startFix).title}
             </button>
           )}
           {fixJob && <JobPanel jobId={fixJob} compact />}
@@ -507,8 +502,8 @@ export default function NewLeagueWizard() {
             onStarted={(job) => { setFixForm(null); setStartFix(null); setStartError(null); if (job?.id) setFixJob(job.id); }} />}
           <div className="flex justify-end">
             <button onClick={doStart} disabled={!review.ok || busy || !!blocked}
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed">
-              {busy ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />} Add the league
+              className="ns-btn ns-btn-sm ns-btn-primary">
+              Add the league
             </button>
           </div>
         </div>

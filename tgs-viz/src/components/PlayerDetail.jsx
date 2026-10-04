@@ -9,6 +9,8 @@ import { useDataVersion } from '../lib/dataVersion';
 import { devSummary, devPeakText, devBasisText, devIsMl, devMlWords, fmtWaa } from '../lib/devSignals';
 import { getWorkEthicModifier, getIntelligenceModifier } from '../lib/draftFV';
 import { trainingNotes, TRAIN_PEAK_BAR } from '../lib/orgBuilder';
+import { getExtension, getArbProjection, getOptOutYears } from '../lib/accessors';
+import { formatMoney } from '../lib/marketValue';
 
 // Night Scorecard: no icon font. The close mark is a small inline stroke SVG.
 const CloseX = () => (
@@ -283,6 +285,63 @@ function TrainingLine({ player }) {
   );
 }
 
+const OPTION_WORDS = { team: 'team option', club: 'team option', player: 'player option', vesting: 'vesting option' };
+
+/**
+ * The contract keys the pull adds (ContractOptions, ContractExt, ArbProjection,
+ * OptOutYrs), shown as they come. Display only: nothing here feeds Owed / control.
+ * Renders nothing for a row that has none of them (BLM / TGS rows today).
+ */
+function ContractKeys({ player }) {
+  const options = Array.isArray(player.ContractOptions) ? player.ContractOptions : [];
+  const ext = getExtension(player);
+  const arb = getArbProjection(player);
+  const optOut = getOptOutYears(player);
+  const hasArb = arb && Number.isFinite(Number(arb.salary));
+  if (!options.length && !ext && !hasArb && !(optOut && optOut.length)) return null;
+  return (
+    <div className="ns-card">
+      <h3 className="ns-strip">Contract</h3>
+      {options.length > 0 && (
+        <div className="flex justify-between items-start gap-3 py-0.5">
+          <span className="ns-muted text-xs">Options</span>
+          <span className="flex flex-wrap justify-end gap-1">
+            {[...options].sort((a, b) => Number(a.yr) - Number(b.yr)).map((o, i) => (
+              <span key={`${o.yr}-${i}`} className="ns-chip text-[11px]"
+                title={`${OPTION_WORDS[o.type] || 'option'} for ${o.yr}${Number(o.buyout) > 0 ? `, buyout ${formatMoney(Number(o.buyout))}` : ''}`}>
+                {o.yr} {OPTION_WORDS[o.type] || o.type}{Number(o.buyout) > 0 ? ` · buyout ${formatMoney(Number(o.buyout))}` : ''}
+              </span>
+            ))}
+          </span>
+        </div>
+      )}
+      {ext && (
+        <div className="flex justify-between items-center py-0.5">
+          <span className="ns-muted text-xs">Signed extension</span>
+          <span className="text-[13px] tabular-nums ns-text">
+            from {ext.startYear}, {ext.years ?? ext.salaries.length} yr: {ext.salaries.map((v) => formatMoney(v)).join(' / ')}
+          </span>
+        </div>
+      )}
+      {hasArb && (
+        <div className="flex justify-between items-center py-0.5">
+          <span className="ns-muted text-xs">Arbitration</span>
+          <span className="text-[13px] tabular-nums ns-text">
+            arb {arb.yr}: {formatMoney(Number(arb.salary))}
+            {arb.uncertain && <span className="ml-1 ns-warn" title="The projection is uncertain (few comparable cases)">uncertain</span>}
+          </span>
+        </div>
+      )}
+      {optOut && optOut.length > 0 && (
+        <div className="flex justify-between items-center py-0.5">
+          <span className="ns-muted text-xs">Opt-out years</span>
+          <span className="text-[13px] tabular-nums ns-text">{optOut.join(', ')}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
   if (!player) return null;
 
@@ -539,6 +598,8 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                 </span>
               </div>
             </div>
+
+            <ContractKeys player={player} />
 
             {player._draftFV !== undefined && (
               <div className="ns-card">

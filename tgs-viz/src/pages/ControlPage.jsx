@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Routes, Route, NavLink, Navigate, Link, useParams, useLocation } from 'react-router-dom';
-import { Play, Plus, Settings, Loader2, ChevronDown, ChevronRight, ArrowLeft, History, RefreshCw } from 'lucide-react';
 import {
   useControlStatus, useCatalog, useActiveJobs, useRecentJobIds, listJobs, dismissRecent, reloadCatalog,
 } from '../lib/controlApi';
@@ -21,14 +20,14 @@ function saveGroups(v) {
 }
 
 const tabClass = ({ isActive }) => (isActive
-  ? 'px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white flex items-center gap-1.5'
-  : 'px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 text-slate-400 hover:text-slate-200 flex items-center gap-1.5');
+  ? 'ns-btn ns-btn-sm bg-[var(--accent-bg)] border-[var(--accent)]'
+  : 'ns-btn ns-btn-sm text-[var(--text-2)]');
 
 function Connection({ status }) {
   if (status.mode === 'connecting') {
     return (
-      <div className="flex items-center gap-2 text-slate-400 text-sm p-4">
-        <Loader2 size={16} className="animate-spin" /> Connecting to the app server...
+      <div className="flex items-center gap-2 ns-text-2 text-sm p-4">
+        Connecting to the app server...
       </div>
     );
   }
@@ -65,28 +64,27 @@ function RecentRuns({ refreshKey }) {
     return () => { on = false; };
   }, [open, refreshKey]);
   return (
-    <div className="bg-slate-900/60 border border-slate-800 rounded-xl">
-      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2 px-4 py-3 text-left">
-        {open ? <ChevronDown size={16} className="text-slate-500" /> : <ChevronRight size={16} className="text-slate-500" />}
-        <History size={16} className="text-slate-400" />
-        <span className="text-sm font-bold text-slate-200">Recent runs</span>
+    <div className="ns-box">
+      <button onClick={() => setOpen(o => !o)} aria-expanded={open} className="ns-strip w-full flex items-center gap-2 px-4 py-3 text-left">
+        <span className="ns-muted" aria-hidden="true">{open ? '▾' : '▸'}</span>
+        <span>Recent runs</span>
       </button>
       {open && (
         <div className="px-4 pb-3">
-          {err && <p className="text-xs text-red-400">{err}</p>}
-          {!jobs && !err && <p className="text-xs text-slate-500">Loading...</p>}
-          {jobs && !jobs.length && <p className="text-xs text-slate-500">No runs yet.</p>}
+          {err && <p className="text-xs ns-bad">{err}</p>}
+          {!jobs && !err && <p className="text-xs ns-muted">Loading...</p>}
+          {jobs && !jobs.length && <p className="text-xs ns-muted">No runs yet.</p>}
           {jobs && jobs.length > 0 && (
             <table className="w-full text-xs">
               <tbody>
                 {jobs.map(j => (
-                  <tr key={j.id} className="border-t border-slate-800/70">
+                  <tr key={j.id} className="ns-rule-t">
                     <td className="py-1.5 pr-2"><StatusDot status={j.status} /></td>
-                    <td className="py-1.5 pr-2 text-slate-200">
-                      <Link to={`/control/jobs/${encodeURIComponent(j.id)}`} className="hover:text-blue-400">{j.title || j.task}</Link>
+                    <td className="py-1.5 pr-2 ns-text">
+                      <Link to={`/control/jobs/${encodeURIComponent(j.id)}`} className="hover:underline">{j.title || j.task}</Link>
                     </td>
-                    <td className="py-1.5 pr-2 text-slate-400">{statusWord(j.status)}</td>
-                    <td className="py-1.5 text-slate-500 text-right whitespace-nowrap">{formatWhen(j.started || j.requested_at)}</td>
+                    <td className="py-1.5 pr-2 ns-text-2">{statusWord(j.status)}</td>
+                    <td className="py-1.5 ns-muted text-right whitespace-nowrap">{formatWhen(j.started || j.requested_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -128,7 +126,7 @@ function TasksView() {
       {settingsError && (
         <Notice tone="error" title="The settings file has a problem">
           <p>{settingsError}</p>
-          <p>Only the setup check can run until it is fixed. <Link to="/control/setup" className="text-blue-300 underline">Open Setup check</Link>.</p>
+          <p>Only the setup check can run until it is fixed. <Link to="/control/setup" className="ns-link underline">Open Setup check</Link>.</p>
         </Notice>
       )}
 
@@ -142,24 +140,24 @@ function TasksView() {
       {error && !catalog && (
         <Notice tone="error" title="The task list did not load">
           <p>{error.message}</p>
-          {error.body?.stderr_tail && <pre className="text-[11px] whitespace-pre-wrap text-red-300/80">{error.body.stderr_tail}</pre>}
-          <button onClick={() => reloadCatalog(true)} className="mt-2 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700 inline-flex items-center gap-1.5">
-            <RefreshCw size={12} /> Try again
+          {error.body?.stderr_tail && <pre className="text-[11px] whitespace-pre-wrap">{error.body.stderr_tail}</pre>}
+          <button onClick={() => reloadCatalog(true)} className="ns-btn ns-btn-sm mt-2">
+            Try again
           </button>
         </Notice>
       )}
       {!catalog && !error && (
-        <div className="flex items-center gap-2 text-slate-400 text-sm"><Loader2 size={16} className="animate-spin" /> Loading the task list...</div>
+        <div className="flex items-center gap-2 ns-text-2 text-sm">Loading the task list...</div>
       )}
 
       {groups.map(g => {
         const open = groupsOpen[g.id] !== false;
         return (
           <section key={g.id}>
-            <button onClick={() => toggle(g.id)} className="flex items-center gap-1.5 mb-2 text-left">
-              {open ? <ChevronDown size={14} className="text-slate-500" /> : <ChevronRight size={14} className="text-slate-500" />}
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{g.title}</span>
-              <span className="text-[11px] text-slate-600">({g.tasks.length})</span>
+            <button onClick={() => toggle(g.id)} aria-expanded={open} className="flex items-center gap-1.5 mb-2 text-left">
+              <span className="ns-muted" aria-hidden="true">{open ? '▾' : '▸'}</span>
+              <span className="ns-subhead">{g.title}</span>
+              <span className="text-[11px] ns-muted">({g.tasks.length})</span>
             </button>
             {open && (
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
@@ -187,8 +185,8 @@ function JobView() {
   const { id } = useParams();
   return (
     <div className="space-y-3">
-      <Link to="/control" className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200">
-        <ArrowLeft size={14} /> All tasks
+      <Link to="/control" className="ns-link text-xs">
+        ← All tasks
       </Link>
       <JobPanel jobId={id} />
     </div>
@@ -201,21 +199,23 @@ export default function ControlPage() {
   const onSetup = location.pathname.startsWith('/control/setup');
 
   return (
-    <div className="h-full overflow-auto" data-control-scroll>
-      <div className="p-4 pb-2">
-        <h1 className="text-2xl font-bold text-white">Control</h1>
-        <p className="text-sm text-slate-400 mt-1 max-w-3xl">
-          Run the updates and tools from here. Each task does the same as its .bat file. The app updates
-          itself when a task finishes a league; no reload needed.
-        </p>
-        <div className="flex gap-1 mt-3">
-          <NavLink to="/control" end className={tabClass}><Play size={12} /> Tasks</NavLink>
-          <NavLink to="/control/new-league" className={tabClass}><Plus size={12} /> New league</NavLink>
-          <NavLink to="/control/setup" className={tabClass}><Settings size={12} /> Setup check</NavLink>
+    <div className="ns-page block overflow-auto" data-control-scroll>
+      <header className="ns-page-head">
+        <div>
+          <h1>Control</h1>
+          <p className="ns-page-sub max-w-3xl">
+            Run the updates and tools from here. Each task does the same as its .bat file. The app updates
+            itself when a task finishes a league; no reload needed.
+          </p>
         </div>
-      </div>
+        <div className="ns-head-actions">
+          <NavLink to="/control" end className={tabClass}>Tasks</NavLink>
+          <NavLink to="/control/new-league" className={tabClass}>New league</NavLink>
+          <NavLink to="/control/setup" className={tabClass}>Setup check</NavLink>
+        </div>
+      </header>
 
-      <div className="p-4 pt-2 max-w-6xl">
+      <div className="max-w-6xl">
         {status.mode !== 'ok' ? (
           <div className="space-y-3">
             <Connection status={status} />

@@ -9,17 +9,16 @@ import { LEAGUE_TEAMS } from './TeamStandingsPage';
 import { resolveLeagueClubs } from '../lib/leagueClubs';
 import { usePlayerData, usePlayersWithFV } from '../hooks/usePlayerData';
 import { useAppConfig } from '../lib/controlApi';
-import { Building2, ArrowUpCircle, ArrowDownCircle, AlertTriangle, ChevronDown, Zap, Users } from 'lucide-react';
 
 const fmt = (v) => (v === null || v === undefined ? '—' : Number(v).toFixed(1));
-const valColor = (v) => (v === null || v === undefined ? 'text-slate-600'
-  : v > 1 ? 'text-emerald-400' : v > 0 ? 'text-slate-200' : v > -1.5 ? 'text-amber-400/80' : 'text-rose-400/80');
+const valColor = (v) => (v === null || v === undefined ? 'ns-dim'
+  : v > 1 ? 'ns-g70' : v > 0 ? 'ns-text' : v > -1.5 ? 'ns-g40' : 'ns-g20');
 // wOBA (MLB-equivalent projection) — for ordering the batting lineup. Same color scale as
 // the rest of the app; minor-leaguers read low because the values are MLB-equivalent.
 const fmtWoba = (v) => (v === null || v === undefined ? '—' : Number(v).toFixed(3));
-const wobaColor = (v) => (v === null || v === undefined ? 'text-slate-600'
-  : v >= 0.400 ? 'text-purple-400 font-semibold' : v >= 0.360 ? 'text-cyan-400' : v >= 0.320 ? 'text-emerald-400'
-  : v >= 0.300 ? 'text-slate-200' : v >= 0.280 ? 'text-amber-400/80' : 'text-rose-400/80');
+const wobaColor = (v) => (v === null || v === undefined ? 'ns-dim'
+  : v >= 0.400 ? 'ns-g80' : v >= 0.360 ? 'ns-g70' : v >= 0.320 ? 'ns-g55'
+  : v >= 0.300 ? 'ns-text' : v >= 0.280 ? 'ns-g40' : 'ns-g20');
 
 // Display order for position players, matching OOTP's defensive-spectrum order.
 // (The builder fills slots hardest-position-first for assignment quality; this only
@@ -28,7 +27,7 @@ const POS_ORDER = ['C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH'];
 const posRank = (pos) => { const i = POS_ORDER.indexOf(pos); return i < 0 ? POS_ORDER.length : i; };
 
 function Badge({ children, cls, title }) {
-  return <span title={title} className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide border ${cls}`}>{children}</span>;
+  return <span title={title} style={{ borderRadius: 'var(--radius)' }} className={`inline-block px-1.5 py-px text-[11px] font-semibold border border-[var(--line-2)] ${cls}`}>{children}</span>;
 }
 
 const LEVEL_NAME = { INT: 'the international complex', WL: 'winter ball', 'R-': 'R-', 'R+': 'R+', 'A-': 'A-', 'A+': 'A+', AA: 'AA', AAA: 'AAA', MLB: 'MLB' };
@@ -43,8 +42,8 @@ function LocChip({ p, cardLev }) {
   const aRank = LEVEL_RANK[lev], cRank = LEVEL_RANK[cardLev];
   const promote = aRank !== undefined && cRank !== undefined && aRank < cRank;
   return promote
-    ? <Badge title={`promote — he's in ${LEVEL_NAME[lev] || lev} right now`} cls="bg-emerald-500/20 text-emerald-300 border-emerald-500/50">↑ {lev}</Badge>
-    : <Badge title={`currently in ${LEVEL_NAME[lev] || lev} — find him there in OOTP`} cls="bg-slate-700/30 text-slate-400 border-slate-600/40">@ {lev}</Badge>;
+    ? <Badge title={`promote — he's in ${LEVEL_NAME[lev] || lev} right now`} cls="ns-good">↑ {lev}</Badge>
+    : <Badge title={`currently in ${LEVEL_NAME[lev] || lev} — find him there in OOTP`} cls="ns-muted">@ {lev}</Badge>;
 }
 
 // Other per-player tags. Captain = leadership + work ethic + loyalty: all three high
@@ -59,9 +58,9 @@ function Tags({ p, cardLev }) {
   const proveIt = cardLev === 'INT' && Number.isFinite(age) && age >= 18;
   return (
     <>
-      {lock && <Badge title="captain — high leadership, work ethic & loyalty" cls="bg-amber-500/20 text-amber-300 border-amber-500/50">★</Badge>}
-      {likely && <Badge title="likely captain — leadership & work ethic high, loyalty normal" cls="bg-amber-500/10 text-amber-300/70 border-amber-500/30">☆</Badge>}
-      {proveIt && <Badge title="18+ and still in the complex — prove it or lose it" cls="bg-orange-500/15 text-orange-300 border-orange-500/40">prove it</Badge>}
+      {lock && <Badge title="captain — high leadership, work ethic & loyalty" cls="ns-warn">★</Badge>}
+      {likely && <Badge title="likely captain — leadership & work ethic high, loyalty normal" cls="ns-warn">☆</Badge>}
+      {proveIt && <Badge title="18+ and still in the complex — prove it or lose it" cls="ns-g30">prove it</Badge>}
     </>
   );
 }
@@ -86,7 +85,7 @@ function TrainChip({ h, lev }) {
   const label = notes.map((n) => (n.untrained ? `${n.pos} new` : `${n.pos} ${n.cur}/${n.pot}`)).join(' · ');
   const peaks = notes.map((n) => `${n.pos} ${signed(n.peak)}`).join(', ');
   const title = `Positions where he is ${TRAIN_PEAK_BAR} WAA or better if he reaches his potential, but has not mastered (position rating current/potential; "new" = never trained there, his tools carry it). Set his training position in OOTP. His WAA there at his potential: ${peaks}.`;
-  return <Badge title={title} cls="bg-amber-500/15 text-amber-300 border-amber-500/40 whitespace-nowrap">train {label}</Badge>;
+  return <Badge title={title} cls="ns-warn whitespace-nowrap">train {label}</Badge>;
 }
 
 // Parse a raw sheet value; null when the projection doesn't exist for that role.
@@ -145,15 +144,15 @@ function PitcherLine({ x, lev, role }) {
     : role === 'RP' ? (pnum(x.p['WAP RP']) ?? x.pot) : x.pot;
   const chance = chanceRow(x, lev);
   return (
-    <div className="flex items-center justify-between px-2 py-1 border-t border-slate-800/50 text-xs">
-      <span className="text-slate-200 truncate flex items-center gap-1">{x.p['Name']} <span className="text-slate-600">{x.p['T']}HP</span><LocChip p={x.p} cardLev={lev} /><Tags p={x.p} cardLev={lev} />
-        {x._stretch && <Badge title={`roster filler — stretched up from ${x.ceiling} to complete the staff (no real future, so no harm)`} cls="bg-amber-500/15 text-amber-300/80 border-amber-500/30">stretch ↑ {x.ceiling}</Badge>}
-        {x._devDepth && <Badge title="roster depth — fills the staff beyond the core 6 SP / 9 RP (young arms kept to develop, plus fillers to reach the roster cap)" cls="bg-sky-500/10 text-sky-300/70 border-sky-500/25">depth</Badge>}</span>
+    <div className="flex items-center justify-between px-2 py-1 ns-rule-t text-xs">
+      <span className="ns-text truncate flex items-center gap-1">{x.p['Name']} <span className="ns-muted">{x.p['T']}HP</span><LocChip p={x.p} cardLev={lev} /><Tags p={x.p} cardLev={lev} />
+        {x._stretch && <Badge title={`roster filler — stretched up from ${x.ceiling} to complete the staff (no real future, so no harm)`} cls="ns-warn">stretch ↑ {x.ceiling}</Badge>}
+        {x._devDepth && <Badge title="roster depth — fills the staff beyond the core 6 SP / 9 RP (young arms kept to develop, plus fillers to reach the roster cap)" cls="ns-series-1">depth</Badge>}</span>
       <span className="flex items-center gap-2 tabular-nums">
-        <span className="text-slate-500">{x.age ?? '—'}</span>
+        <span className="ns-muted">{x.age ?? '—'}</span>
         <span className={valColor(cur)}>{fmt(cur)}</span>
-        <span className="text-sky-300/70 w-8 text-right">{fmt(pot)}</span>
-        {lev !== 'MLB' && <span className="w-8 text-right text-[10px] text-slate-500 whitespace-nowrap" title={chance === null ? undefined : chanceTitle(chance, x.p)}>{chanceText(chance)}</span>}
+        <span className="ns-series-1 w-8 text-right">{fmt(pot)}</span>
+        {lev !== 'MLB' && <span className="w-8 text-right text-[11px] ns-muted whitespace-nowrap" title={chance === null ? undefined : chanceTitle(chance, x.p)}>{chanceText(chance)}</span>}
       </span>
     </div>
   );
@@ -165,13 +164,13 @@ function CutRow({ x }) {
   const isP = x.isPitcher;
   const pos = isP ? (x.role || x.p['POS']) : (x.bestPos || x.p['POS']);
   return (
-    <div className="flex items-center justify-between px-2 py-1 border-t border-slate-800/40 text-xs">
-      <span className="text-slate-300 truncate flex items-center gap-1">{x.p['Name']} <LocChip p={x.p} cardLev={x.p['Lev']} /><span className="text-slate-600">{pos}</span></span>
+    <div className="flex items-center justify-between px-2 py-1 ns-rule-t text-xs">
+      <span className="ns-text-2 truncate flex items-center gap-1">{x.p['Name']} <LocChip p={x.p} cardLev={x.p['Lev']} /><span className="ns-muted">{pos}</span></span>
       <span className="flex items-center gap-2 tabular-nums">
-        <span className="text-slate-500">{x.age ?? '—'}</span>
+        <span className="ns-muted">{x.age ?? '—'}</span>
         {!isP && <span className={`w-12 text-right ${wobaColor(x.woba)}`}>{fmtWoba(x.woba)}</span>}
         <span className={valColor(x.cur)}>{fmt(x.cur)}</span>
-        <span className="text-sky-300/70 w-8 text-right">{fmt(x.pot)}</span>
+        <span className="ns-series-1 w-8 text-right">{fmt(x.pot)}</span>
       </span>
     </div>
   );
@@ -191,22 +190,22 @@ function HitterRow({ h, lev, bench }) {
   const pot = h.slotPos ? (pnum(h.p[`${h.slotPos} WAA P`]) ?? h.pot) : h.pot;
   const chance = chanceRow(h, lev);
   return (
-    <tr className={`border-t border-slate-800/50 hover:bg-slate-800/30 ${bench ? 'opacity-70' : ''}`}>
-      <td className="px-2 py-1"><Badge cls={bench ? 'bg-slate-800/40 text-slate-500 border-slate-700/40' : 'bg-slate-700/40 text-slate-300 border-slate-600/40'}>{slot}</Badge></td>
-      <td className="px-2 py-1 text-slate-200 whitespace-nowrap"><span className="inline-flex items-center gap-1.5">{h.p['Name']} <LocChip p={h.p} cardLev={lev} /></span></td>
-      <td className="px-2 py-1 text-slate-500 text-center">{h.age ?? '—'}</td>
-      <td className="px-2 py-1 text-slate-400 text-center">{pos}</td>
+    <tr className={`ns-rule-t hover:bg-[var(--panel-3)] ${bench ? 'opacity-70' : ''}`}>
+      <td className="px-2 py-1"><Badge cls={bench ? 'ns-muted' : 'ns-text'}>{slot}</Badge></td>
+      <td className="px-2 py-1 ns-text whitespace-nowrap"><span className="inline-flex items-center gap-1.5">{h.p['Name']} <LocChip p={h.p} cardLev={lev} /></span></td>
+      <td className="px-2 py-1 ns-muted text-center">{h.age ?? '—'}</td>
+      <td className="px-2 py-1 ns-text-2 text-center">{pos}</td>
       <td className={`px-2 py-1 text-right tabular-nums ${wobaColor(h.woba)}`}>{fmtWoba(h.woba)}</td>
       <td className={`px-2 py-1 text-right tabular-nums ${valColor(cur)}`}>{fmt(cur)}</td>
-      <td className="px-2 py-1 text-right tabular-nums text-sky-300/70">{fmt(pot)}</td>
-      {lev !== 'MLB' && <td className="px-1 py-1 text-right tabular-nums text-[10px] text-slate-500 whitespace-nowrap" title={chance === null ? undefined : chanceTitle(chance, h.p)}>{chanceText(chance)}</td>}
+      <td className="px-2 py-1 text-right tabular-nums ns-series-1">{fmt(pot)}</td>
+      {lev !== 'MLB' && <td className="px-1 py-1 text-right tabular-nums text-[11px] ns-muted whitespace-nowrap" title={chance === null ? undefined : chanceTitle(chance, h.p)}>{chanceText(chance)}</td>}
       <td className="px-2 py-1">
         <div className="flex gap-1 items-center">
           <Tags p={h.p} cardLev={lev} />
-          {prospect && <Badge cls="bg-sky-500/15 text-sky-400 border-sky-500/30">prospect</Badge>}
-          {split && <Badge cls="bg-violet-500/15 text-violet-300 border-violet-500/30">split ↓ from {eff}</Badge>}
-          {h._stretch && <Badge title="roster filler — stretched up to cover a bench spot (no real future, no harm)" cls="bg-amber-500/15 text-amber-300/80 border-amber-500/30">stretch ↑ {h.ceiling}</Badge>}
-          {h._devDepth && <Badge title="roster depth — fills the roster beyond the core lineup + bench (young bats kept to develop, plus fillers to reach the roster cap)" cls="bg-sky-500/10 text-sky-300/70 border-sky-500/25">depth</Badge>}
+          {prospect && <Badge cls="ns-series-1">prospect</Badge>}
+          {split && <Badge cls="ns-text-2">split ↓ from {eff}</Badge>}
+          {h._stretch && <Badge title="roster filler — stretched up to cover a bench spot (no real future, no harm)" cls="ns-warn">stretch ↑ {h.ceiling}</Badge>}
+          {h._devDepth && <Badge title="roster depth — fills the roster beyond the core lineup + bench (young bats kept to develop, plus fillers to reach the roster cap)" cls="ns-series-1">depth</Badge>}
           <TrainChip h={h} lev={lev} />
         </div>
       </td>
@@ -222,34 +221,34 @@ function LevelCard({ lev, data }) {
   const starters = [...data.hitters].sort((a, b) => posRank(a.slot) - posRank(b.slot));
   const bench = [...(data.bench || [])].sort((a, b) => posRank(a.slotPos || a.bestPos) - posRank(b.slotPos || b.bestPos));
   return (
-    <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-900 border-b border-slate-800">
+    <div className="ns-box">
+      <div className="ns-strip flex items-center justify-between px-4 py-2.5">
         <div className="flex items-center gap-3">
-          <span className="text-base font-black text-white w-12">{lev}</span>
-          {!empty && <span className="text-xs text-slate-500 tabular-nums">{c.SP} SP · {c.RP} RP · {c.hitters} bats{c.bench ? ` (${c.bench} bench)` : ''} · {c.LHP} LHP</span>}
+          <h2 className="w-12">{lev}</h2>
+          {!empty && <span className="text-xs ns-muted tabular-nums">{c.SP} SP · {c.RP} RP · {c.hitters} bats{c.bench ? ` (${c.bench} bench)` : ''} · {c.LHP} LHP</span>}
         </div>
         <div className="flex gap-1.5 flex-wrap justify-end">
-          {data.gaps.map((g, i) => <Badge key={i} cls="bg-rose-500/15 text-rose-400 border-rose-500/30" title="every fill path was tried: the org has no eligible 27+ body left for this slot; sign a minor-league filler">{g}: sign a filler</Badge>)}
+          {data.gaps.map((g, i) => <Badge key={i} cls="ns-bad" title="every fill path was tried: the org has no eligible 27+ body left for this slot; sign a minor-league filler">{g}: sign a filler</Badge>)}
         </div>
       </div>
-      {empty ? <div className="px-4 py-3 text-xs text-slate-600 italic">No players reach this level</div> : (
+      {empty ? <div className="px-4 py-3 text-xs ns-muted italic">No players reach this level</div> : (
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-0">
           {/* pitching */}
-          <div className="lg:col-span-2 border-r border-slate-800/60">
-            <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-slate-600 flex items-center gap-1"><Zap size={11} /> Rotation</div>
+          <div className="lg:col-span-2 border-r border-[var(--line)]">
+            <div className="px-2 py-1 ns-subhead flex items-center gap-1">Rotation</div>
             {data.SP.map((x, i) => <PitcherLine key={i} x={x} lev={lev} role="SP" />)}
             {lev !== 'WL' && lev !== 'INT' && data.SP.length < (lev === 'MLB' ? 5 : 6) &&
-              <div className="px-2 py-1 text-[11px] text-rose-400/70">{data.SP.length}/{lev === 'MLB' ? 5 : 6} SP — sign {(lev === 'MLB' ? 5 : 6) - data.SP.length} filler starter{(lev === 'MLB' ? 5 : 6) - data.SP.length > 1 ? 's' : ''}</div>}
-            <div className="px-2 py-1 mt-1 text-[10px] uppercase tracking-wider text-slate-600">Bullpen</div>
+              <div className="px-2 py-1 text-[11px] ns-bad">{data.SP.length}/{lev === 'MLB' ? 5 : 6} SP — sign {(lev === 'MLB' ? 5 : 6) - data.SP.length} filler starter{(lev === 'MLB' ? 5 : 6) - data.SP.length > 1 ? 's' : ''}</div>}
+            <div className="px-2 py-1 mt-1 ns-subhead">Bullpen</div>
             {data.RP.map((x, i) => <PitcherLine key={i} x={x} lev={lev} role="RP" />)}
             {lev !== 'WL' && lev !== 'INT' && data.RP.length < 8 &&
-              <div className="px-2 py-1 text-[11px] text-rose-400/70">{data.RP.length}/8 RP — sign {8 - data.RP.length} filler reliever{8 - data.RP.length > 1 ? 's' : ''}</div>}
+              <div className="px-2 py-1 text-[11px] ns-bad">{data.RP.length}/8 RP — sign {8 - data.RP.length} filler reliever{8 - data.RP.length > 1 ? 's' : ''}</div>}
           </div>
           {/* hitters */}
           <div className="lg:col-span-3">
-            <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-slate-600 flex items-center gap-1"><Users size={11} /> Lineup</div>
+            <div className="px-2 py-1 ns-subhead flex items-center gap-1">Lineup</div>
             <table className="w-full text-xs">
-              <thead><tr className="text-[10px] uppercase tracking-wider text-slate-600">
+              <thead><tr className="ns-subhead">
                 <th className="px-2 py-0.5 text-left font-medium">Slot</th><th className="px-2 py-0.5 text-left font-medium">Player</th>
                 <th className="px-2 py-0.5 font-medium">Age</th><th className="px-2 py-0.5 font-medium">Pos</th>
                 <th className="px-2 py-0.5 text-right font-medium">wOBA</th>
@@ -259,7 +258,7 @@ function LevelCard({ lev, data }) {
               <tbody>
                 {starters.map((h, i) => <HitterRow key={`s${i}`} h={h} lev={lev} />)}
                 {bench.length > 0 && (
-                  <tr><td colSpan={lev === 'MLB' ? 8 : 9} className="px-2 pt-2 pb-0.5 text-[9px] uppercase tracking-wider text-slate-600">Bench</td></tr>
+                  <tr><td colSpan={lev === 'MLB' ? 8 : 9} className="px-2 pt-2 pb-0.5 ns-subhead">Bench</td></tr>
                 )}
                 {bench.map((h, i) => <HitterRow key={`b${i}`} h={h} lev={lev} bench />)}
               </tbody>
@@ -271,10 +270,10 @@ function LevelCard({ lev, data }) {
   );
 }
 
-function SummaryCard({ title, icon, children }) {
+function SummaryCard({ title, children }) {
   return (
-    <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3">
-      <div className="flex items-center gap-1.5 mb-2">{icon}<h3 className="text-xs font-bold text-slate-300 uppercase tracking-wide">{title}</h3></div>
+    <div className="ns-card">
+      <h3 className="ns-strip">{title}</h3>
       <div className="space-y-0.5">{children}</div>
     </div>
   );
@@ -349,40 +348,36 @@ export default function OrganizationPage({ hitters: hittersIn = [], pitchers: pi
   }, [rosters]);
 
   return (
-    <div className="h-full overflow-auto p-6">
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-3">
-          <Building2 className="text-blue-400" size={22} />
+    <div className="ns-page block overflow-auto">
+      <header className="ns-page-head">
           <div>
-            <h1 className="text-xl font-black text-white">Organization Builder</h1>
-            <p className="text-xs text-slate-500">Cards = where each player <span className="text-slate-300">should</span> be · <span className="text-slate-400">@ lvl</span> = where he is <span className="text-slate-300">now</span> in OOTP · <span className="text-emerald-300">↑ lvl</span> promote · <span className="text-orange-300">prove it</span> = 18+ in complex · <span className="text-amber-300">★</span> captain — {league}</p>
-            <p className="text-xs text-slate-500"><span className="text-amber-300">train C 45/50 · RF new</span> = positions he projects at 0 WAA or better at peak but has not mastered (position rating current/potential; new = never trained there, his tools carry it): set his training position in OOTP · shown for minors bats who are not fillers and MLB bats under 27 · hover a chip for the projected peak at each position</p>
+            <h1>Organization Builder</h1>
+            <p className="ns-page-sub">Cards = where each player <b>should</b> be · <span className="ns-text-2">@ lvl</span> = where he is <b>now</b> in OOTP · <span className="ns-good">↑ lvl</span> promote · <span className="ns-g30">prove it</span> = 18+ in complex · <span className="ns-warn">★</span> captain — {league}</p>
+            <p className="ns-page-sub"><span className="ns-warn">train C 45/50 · RF new</span> = positions he projects at 0 WAA or better at peak but has not mastered (position rating current/potential; new = never trained there, his tools carry it): set his training position in OOTP · shown for minors bats who are not fillers and MLB bats under 27 · hover a chip for the projected peak at each position</p>
           </div>
-        </div>
-        <div className="relative">
+        <div className="ns-head-actions">
           <select value={org} onChange={(e) => { pickedOrg.current = true; setOrg(e.target.value); }}
-            className="appearance-none bg-slate-800 text-white text-sm font-semibold rounded-lg px-3 py-2 pr-8 border border-slate-700 hover:border-blue-500 focus:outline-none cursor-pointer min-w-[200px]">
+            className="ns-select min-w-[200px]">
             {orgs.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
-          <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
         </div>
-      </div>
+      </header>
 
       {rosters && (
         <>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
-            <SummaryCard title="Pipeline gaps" icon={<AlertTriangle size={14} className="text-rose-400" />}>
-              {rosters.needs.length === 0 ? <span className="text-xs text-emerald-400/80">Every position group has a prospect</span>
-                : rosters.needs.map((n, i) => <div key={i} className="text-xs text-slate-300">{n.msg}</div>)}
-              <div className="mt-2 text-[11px] text-slate-500">prospects — C{rosters.pipeline.C || 0} IF{rosters.pipeline.IF || 0} OF{rosters.pipeline.OF || 0} SP{rosters.pipeline.SP || 0} RP{rosters.pipeline.RP || 0}</div>
+            <SummaryCard title="Pipeline gaps">
+              {rosters.needs.length === 0 ? <span className="text-xs ns-good">Every position group has a prospect</span>
+                : rosters.needs.map((n, i) => <div key={i} className="text-xs ns-text-2">{n.msg}</div>)}
+              <div className="mt-2 text-[11px] ns-muted">prospects — C{rosters.pipeline.C || 0} IF{rosters.pipeline.IF || 0} OF{rosters.pipeline.OF || 0} SP{rosters.pipeline.SP || 0} RP{rosters.pipeline.RP || 0}</div>
             </SummaryCard>
-            <SummaryCard title="Promote candidates" icon={<ArrowUpCircle size={14} className="text-emerald-400" />}>
-              {rosters.promote.length === 0 ? <span className="text-xs text-slate-600">None flagged</span>
-                : rosters.promote.slice(0, 6).map((r, i) => <div key={i} className="text-xs text-slate-300 flex justify-between"><span>{r.p['Name']} <span className="text-slate-600">({r.lev} → {r.placed})</span></span><span className={valColor(r.cur)}>{fmt(r.cur)}</span></div>)}
+            <SummaryCard title="Promote candidates">
+              {rosters.promote.length === 0 ? <span className="text-xs ns-muted">None flagged</span>
+                : rosters.promote.slice(0, 6).map((r, i) => <div key={i} className="text-xs ns-text-2 flex justify-between"><span>{r.p['Name']} <span className="ns-muted">({r.lev} → {r.placed})</span></span><span className={valColor(r.cur)}>{fmt(r.cur)}</span></div>)}
             </SummaryCard>
-            <SummaryCard title="Overmatched (buried)" icon={<ArrowDownCircle size={14} className="text-rose-400" />}>
-              {rosters.buried.length === 0 ? <span className="text-xs text-slate-600">None flagged</span>
-                : rosters.buried.slice(0, 6).map((r, i) => <div key={i} className="text-xs text-slate-300 flex justify-between"><span>{r.p['Name']} <span className="text-slate-600">({r.lev} → {r.placed})</span></span><span className={valColor(r.cur)}>{fmt(r.cur)}</span></div>)}
+            <SummaryCard title="Overmatched (buried)">
+              {rosters.buried.length === 0 ? <span className="text-xs ns-muted">None flagged</span>
+                : rosters.buried.slice(0, 6).map((r, i) => <div key={i} className="text-xs ns-text-2 flex justify-between"><span>{r.p['Name']} <span className="ns-muted">({r.lev} → {r.placed})</span></span><span className={valColor(r.cur)}>{fmt(r.cur)}</span></div>)}
             </SummaryCard>
           </div>
 
@@ -406,20 +401,19 @@ export default function OrganizationPage({ hitters: hittersIn = [], pitchers: pi
           </div>
 
           {(cuts.H.length > 0 || cuts.P.length > 0) && (
-            <div className="mt-4 bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden">
-              <div className="px-4 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center gap-2">
-                <ArrowDownCircle size={15} className="text-rose-400" />
-                <span className="text-sm font-black text-rose-300">Possible Cuts</span>
-                <span className="text-xs text-slate-500">{cuts.H.length + cuts.P.length} surplus: rosters are filled, these didn't make one (most cuttable first: fillers, then prospects with the lowest MLB %)</span>
+            <div className="mt-4 ns-box">
+              <div className="ns-strip flex items-center gap-2 px-4 py-2.5">
+                <h2>Possible Cuts</h2>
+                <span className="ns-count">{cuts.H.length + cuts.P.length} surplus: rosters are filled, these didn't make one (most cuttable first: fillers, then prospects with the lowest MLB %)</span>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
-                <div className="border-r border-slate-800/60">
-                  <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-slate-600 flex items-center gap-1"><Users size={11} /> Hitters ({cuts.H.length})</div>
-                  {cuts.H.length ? cuts.H.map((x, i) => <CutRow key={i} x={x} />) : <div className="px-2 py-1 text-[11px] text-slate-600">none</div>}
+                <div className="border-r border-[var(--line)]">
+                  <div className="px-2 py-1 ns-subhead flex items-center gap-1">Hitters ({cuts.H.length})</div>
+                  {cuts.H.length ? cuts.H.map((x, i) => <CutRow key={i} x={x} />) : <div className="px-2 py-1 text-[11px] ns-muted">none</div>}
                 </div>
                 <div>
-                  <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-slate-600 flex items-center gap-1"><Zap size={11} /> Pitchers ({cuts.P.length})</div>
-                  {cuts.P.length ? cuts.P.map((x, i) => <CutRow key={i} x={x} />) : <div className="px-2 py-1 text-[11px] text-slate-600">none</div>}
+                  <div className="px-2 py-1 ns-subhead flex items-center gap-1">Pitchers ({cuts.P.length})</div>
+                  {cuts.P.length ? cuts.P.map((x, i) => <CutRow key={i} x={x} />) : <div className="px-2 py-1 text-[11px] ns-muted">none</div>}
                 </div>
               </div>
             </div>

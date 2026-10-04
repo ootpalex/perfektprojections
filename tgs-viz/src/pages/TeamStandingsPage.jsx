@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { optimizeRoster, leagueGames } from '../lib/rosterOptimizer';
 import { PositionalStrengthGrid } from '../components/PositionalStrength';
 import { resolveLeagueClubs } from '../lib/leagueClubs';
-import { Download, ArrowUpDown, Loader2 } from 'lucide-react';
 
 // ─── League assignments, per league ──────────────────────────────
 // A league whose metadata.json carries "clubs" (written at pull time by
@@ -226,87 +225,76 @@ function StandingsTable({ title, rows, onExport, halfWins = 81 }) {
   };
 
   return (
-    <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-        <h2 className="text-lg font-bold text-white">{title}</h2>
-        <button
-          onClick={onExport}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
-        >
-          <Download size={14} /> Export CSV
+    <div className="ns-box">
+      <div className="ns-strip flex items-center justify-between">
+        <h2>{title}</h2>
+        <button onClick={onExport} className="ns-btn ns-btn-sm">
+          Export CSV
         </button>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="data-table">
           <thead>
-            <tr className="border-b border-slate-800">
+            <tr>
               {COLUMNS.map(col => (
                 <th
                   key={col.key}
                   onClick={() => handleSort(col.key)}
                   title={col.tip}
-                  className={`px-4 py-2.5 font-semibold text-slate-400 cursor-pointer hover:text-white transition-colors select-none whitespace-nowrap ${
-                    col.align === 'left' ? 'text-left' : 'text-right'
-                  }`}
+                  aria-sort={sortKey === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
+                  className={`${col.align === 'left' ? '' : 'num'} ${sortKey === col.key ? 'sorted' : ''}`}
                 >
-                  <span className="inline-flex items-center gap-1">
-                    {col.label}
-                    {sortKey === col.key && (
-                      <ArrowUpDown size={12} className="text-blue-400" />
-                    )}
-                  </span>
+                  {col.label}
+                  {sortKey === col.key && (
+                    <span className="text-[11px] ml-1" aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>
+                  )}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {sorted.map((row, i) => (
-              <tr
-                key={row.team}
-                className={`border-b border-slate-800/50 hover:bg-slate-800/40 transition-colors ${
-                  i % 2 === 0 ? '' : 'bg-slate-900/50'
-                }`}
-              >
+            {sorted.map((row) => (
+              <tr key={row.team}>
                 {COLUMNS.map(col => {
                   const raw = col.accessor(row);
                   const display = col.fmt(raw);
-                  let colorClass = 'text-slate-300';
+                  let colorClass = 'ns-text-2';
 
                   if (col.key === 'projW') {
                     // Scale: G/2 = neutral (81 at 162 games — B3), ±14 = bright
                     const diff = raw - halfWins;
-                    if (diff >= 14) colorClass = 'text-green-400 font-semibold';
-                    else if (diff >= 9) colorClass = 'text-green-400';
-                    else if (diff >= 4) colorClass = 'text-green-400/70';
-                    else if (diff > 0) colorClass = 'text-green-400/50';
-                    else if (diff === 0) colorClass = 'text-slate-400';
-                    else if (diff > -4) colorClass = 'text-red-400/50';
-                    else if (diff > -9) colorClass = 'text-red-400/70';
-                    else if (diff > -14) colorClass = 'text-red-400';
-                    else colorClass = 'text-red-400 font-semibold';
+                    if (diff >= 14) colorClass = 'ns-g70';
+                    else if (diff >= 9) colorClass = 'ns-g60';
+                    else if (diff >= 4) colorClass = 'ns-g55';
+                    else if (diff > 0) colorClass = 'ns-g50';
+                    else if (diff === 0) colorClass = 'ns-text-2';
+                    else if (diff > -4) colorClass = 'ns-g45';
+                    else if (diff > -9) colorClass = 'ns-g40';
+                    else if (diff > -14) colorClass = 'ns-g30';
+                    else colorClass = 'ns-g20';
                   } else if (col.key === 'projL') {
                     // Inverse: high losses = red, low losses = green
                     const diff = raw - halfWins;
-                    if (diff >= 14) colorClass = 'text-red-400 font-semibold';
-                    else if (diff >= 9) colorClass = 'text-red-400';
-                    else if (diff >= 4) colorClass = 'text-red-400/70';
-                    else if (diff > 0) colorClass = 'text-red-400/50';
-                    else if (diff === 0) colorClass = 'text-slate-400';
-                    else if (diff > -4) colorClass = 'text-green-400/50';
-                    else if (diff > -9) colorClass = 'text-green-400/70';
-                    else if (diff > -14) colorClass = 'text-green-400';
-                    else colorClass = 'text-green-400 font-semibold';
+                    if (diff >= 14) colorClass = 'ns-g20';
+                    else if (diff >= 9) colorClass = 'ns-g30';
+                    else if (diff >= 4) colorClass = 'ns-g40';
+                    else if (diff > 0) colorClass = 'ns-g45';
+                    else if (diff === 0) colorClass = 'ns-text-2';
+                    else if (diff > -4) colorClass = 'ns-g50';
+                    else if (diff > -9) colorClass = 'ns-g55';
+                    else if (diff > -14) colorClass = 'ns-g60';
+                    else colorClass = 'ns-g70';
                   } else if (col.key !== 'team' && typeof raw === 'number') {
-                    if (raw > 5) colorClass = 'text-green-400';
-                    else if (raw > 0) colorClass = 'text-green-400/70';
-                    else if (raw < -5) colorClass = 'text-red-400';
-                    else if (raw < 0) colorClass = 'text-red-400/70';
+                    if (raw > 5) colorClass = 'ns-g60';
+                    else if (raw > 0) colorClass = 'ns-g50';
+                    else if (raw < -5) colorClass = 'ns-g20';
+                    else if (raw < 0) colorClass = 'ns-g40';
                   }
 
                   return (
                     <td
                       key={col.key}
-                      className={`px-4 py-2 whitespace-nowrap ${col.align === 'left' ? 'text-left' : 'text-right'} ${colorClass}`}
+                      className={`${col.key === 'team' ? 'col-name' : 'num'} ${col.key === 'team' ? '' : colorClass}`}
                     >
                       {display}
                     </td>
@@ -369,41 +357,37 @@ export default function TeamStandingsPage({ hitters, pitchers, metadata, league 
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center space-y-3">
-          <Loader2 size={36} className="animate-spin text-blue-500 mx-auto" />
-          <p className="text-slate-400 text-sm">Building optimal rosters for all teams...</p>
+          <p className="ns-text-2 text-sm">Building optimal rosters for all teams...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="p-4 pb-2">
-        <div className="flex items-center justify-between">
+    <div className="ns-page block overflow-y-auto">
+      <header className="ns-page-head">
           <div>
-            <h1 className="text-2xl font-bold text-white">Team Projections</h1>
-            <p className="text-sm text-slate-400 mt-1">
+            <h1>Team Projections</h1>
+            <p className="ns-page-sub">
               Optimized 26-man rosters. Every column is a{' '}
-              <span className="text-slate-200 font-medium">team total shown vs the league-average team</span>{' '}
+              <b>team total shown vs the league-average team</b>{' '}
               (0 = average, + better, − worse) so the standings stay zero-sum (total W = total L).
               The org page shows raw per-player WAA, which runs higher.
             </p>
-            <p className="text-xs text-slate-500 mt-1">
-              <span className="text-slate-400">wtd</span> = platoon-weighted WAA ·{' '}
-              <span className="text-slate-400">Off vR / vL</span> = lineup vs right / left-handed pitching ·{' '}
-              <span className="text-slate-400">Proj W</span> = {halfWins} + Total WAA wtd ({leagueGames(league)}-game season) · hover any header for detail
+            <p className="ns-page-sub">
+              <b>wtd</b> = platoon-weighted WAA ·{' '}
+              <b>Off vR / vL</b> = lineup vs right / left-handed pitching ·{' '}
+              <b>Proj W</b> = {halfWins} + Total WAA wtd ({leagueGames(league)}-game season) · hover any header for detail
             </p>
           </div>
-          <button
-            onClick={exportAll}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
-          >
-            <Download size={16} /> Export All Teams
-          </button>
-        </div>
-      </div>
+          <div className="ns-head-actions">
+            <button onClick={exportAll} className="ns-btn ns-btn-primary">
+              Export All Teams
+            </button>
+          </div>
+      </header>
 
-      <div className="p-4 space-y-6">
+      <div className="space-y-6">
         {map ? (
           <>
             <StandingsTable

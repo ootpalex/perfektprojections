@@ -71,6 +71,9 @@
   white-space: nowrap;
 }
 
+/* numeric columns read right-aligned (the mockup's .num) */
+.data-table th.num, .data-table td.num { text-align: right; }
+
 /* box padding on the outer cells */
 .data-table th:first-child, .data-table td:first-child { padding-left: 12px; }
 .data-table th:last-child, .data-table td:last-child { padding-right: 12px; }
