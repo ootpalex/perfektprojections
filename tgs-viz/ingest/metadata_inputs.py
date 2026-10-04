@@ -696,7 +696,9 @@ def season_end_pull(league, season):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--league", required=True, choices=list(LEAGUE_DIRS))
+    # TGS / BLM, plus any enabled StatsPlus league in settings (SSB): those have no "The Sheets" workbook,
+    # so their role tabs come from --workbook or a later --stage roles source.
+    ap.add_argument("--league", required=True, choices=list(dict.fromkeys([*LEAGUE_DIRS, *ST.slug_map()])))
     ap.add_argument("--out", required=True, help="directory for the nine CSVs (+ manifest.json)")
     ap.add_argument("--stage", default="all", choices=["auto", "roles", "all"])
     ap.add_argument("--year", type=int, help="season to build (default: from the in-game date)")
@@ -725,7 +727,7 @@ def main():
     season = season_of(date, a.year, a.allow_partial)
     check_engine_boundary(a.league, season)         # after /date, before /teams and the stat feeds
     pull_path = a.pull or season_end_pull(a.league, season) or os.path.join(HERE, ".cache", f"statsplus_{slug}.json")
-    xlsx = a.workbook or os.path.join(REPO, LEAGUE_DIRS[a.league], "25 Metadata.xlsx")
+    xlsx = a.workbook or os.path.join(REPO, LEAGUE_DIRS.get(a.league, f"The Sheets {a.league}"), "25 Metadata.xlsx")
     from_wb = {t.strip() for t in a.from_workbook.split(",") if t.strip()} | set(PASTE_TABS)
     os.makedirs(a.out, exist_ok=True)
     mpath = os.path.join(a.out, "manifest.json")
