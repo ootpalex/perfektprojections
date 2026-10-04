@@ -412,42 +412,83 @@ export function formatCellValue(value, columnName) {
   return value;
 }
 
+// ─── Night Scorecard colour classes (src/index.css, @layer components) ──────
+// Restyle only (Phase 4, docs/phase4/restyle_pattern.md): every threshold
+// below is his, unchanged; only the class each band paints was re-pointed.
+// Quality ladders (ordered bands grading a rating or a value) translate his
+// Tailwind palette by colour name onto the 20-80 grade ramp, top to bottom:
+//   purple / sky -> ns-g80 · cyan / emerald -> ns-g70 · green / lime -> ns-g55
+//   · neutral middle band (gray / slate-300 / yellow) -> ns-text-2
+//   · amber -> ns-g40 · orange -> ns-g30 · red -> ns-g20
+// (the ns-gNN classes carry the ramp's own weight, so his font-bold /
+// font-semibold tier markers are dropped there). Meaning (flags, good/bad
+// splits, money) uses ns-good / ns-bad / ns-warn and keeps his weight;
+// greys map slate-400 -> ns-text-2, slate-500 -> ns-muted, slate-600 -> ns-dim.
+
+const PRONE_CLASS = {
+  'Wrecked': 'ns-prone-wrecked',
+  'Fragile': 'ns-prone-fragile',
+  'Normal': 'ns-prone-normal',
+  'Durable': 'ns-prone-durable',
+  'Iron Man': 'ns-prone-iron-man',
+};
+
+const POS_CLASS_KEYS = new Set(['C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH', 'SP', 'RP', 'CL']);
+
+/** Position text class ('ns-pos ns-pos-1b'), or '' for anything that is not a position. */
+export function posClass(value) {
+  const key = typeof value === 'string' ? value.replace(/[^A-Za-z0-9]/g, '').toUpperCase() : '';
+  return POS_CLASS_KEYS.has(key) ? `ns-pos ns-pos-${key.toLowerCase()}` : '';
+}
+
+// OOTP level -> the data-lvl key of a level chip (.ns-chip[data-lvl]).
+// Rookie tiers (R+, R-) read as R, A- as A; FA / AMA and unknowns get no chip.
+const LEVEL_KEYS = {
+  MLB: 'mlb', AAA: 'aaa', AA: 'aa', 'A+': 'aplus', A: 'a', 'A-': 'a',
+  R: 'r', 'R+': 'r', 'R-': 'r', INT: 'int',
+};
+
+/** data-lvl key for a level chip, or null when the level has no chip. */
+export function levelKey(lev) {
+  return LEVEL_KEYS[lev] || null;
+}
+
 /**
- * Tailwind color class for one cell. `row` is optional: the Dev_Grow
+ * Night Scorecard colour class for one cell. `row` is optional: the Dev_Grow
  * threshold depends on the row's role (Dev_Role), hitter bar when unknown.
  */
 export function getCellColorClass(value, columnName, row) {
   // Dev signals
   if (columnName === 'Dev_PotDir') {
-    return value === 'up' ? 'text-green-400' : value === 'down' ? 'text-red-400' : value === 'flat' ? 'text-slate-400' : '';
+    return value === 'up' ? 'ns-good' : value === 'down' ? 'ns-bad' : value === 'flat' ? 'ns-text-2' : '';
   }
   if (columnName === 'Dev_Flag') {
-    return value === 'keep' ? 'text-green-400 font-bold' : value === 'move' ? 'text-red-400 font-bold' : '';
+    return value === 'keep' ? 'ns-good font-bold' : value === 'move' ? 'ns-bad font-bold' : '';
   }
   if (columnName === 'Dev_Grow') {
     const g = parseFloat(value);
     if (isNaN(g)) return '';
     const bar = GROW_KEEP[row && row.Dev_Role === 'P' ? 'P' : 'H'];
-    if (g >= bar) return 'text-green-400 font-semibold';
-    if (g <= 1) return 'text-red-400';
-    return 'text-slate-300';
+    if (g >= bar) return 'ns-good font-semibold';
+    if (g <= 1) return 'ns-bad';
+    return 'ns-text-2';
   }
   if (columnName === 'Dev_Odds') {
     const o = parseFloat(value);
     if (isNaN(o)) return '';
-    if (o >= 0.5) return 'text-green-400 font-semibold';
-    if (o >= 0.25) return 'text-yellow-300';
-    if (o >= 0.1) return 'text-orange-400';
-    return 'text-red-400';
+    if (o >= 0.5) return 'ns-good font-semibold';
+    if (o >= 0.25) return 'ns-text-2';
+    if (o >= 0.1) return 'ns-warn';
+    return 'ns-bad';
   }
   // MLB % (user, 2026-09-24, "if they will ever be anything in the mlb"):
-  // green at 0.6 or more, red at 0.25 or less, yellow between.
+  // green at 0.6 or more, red at 0.25 or less, neutral between.
   if (columnName === 'Dev_PeakMlb') {
     const s = parseFloat(value);
     if (isNaN(s)) return '';
-    if (s >= 0.6) return 'text-green-400 font-semibold';
-    if (s <= 0.25) return 'text-red-400';
-    return 'text-yellow-300';
+    if (s >= 0.6) return 'ns-good font-semibold';
+    if (s <= 0.25) return 'ns-bad';
+    return 'ns-text-2';
   }
   // Starter % / Star % (user, 2026-09-24): green when the chance is high,
   // red when it is low. Starter bars 0.5 / 0.2, Star bars 0.3 / 0.1.
@@ -455,81 +496,68 @@ export function getCellColorClass(value, columnName, row) {
     const s = parseFloat(value);
     if (isNaN(s)) return '';
     const [hi, lo] = columnName === 'Dev_PeakUseful' ? [0.5, 0.2] : [0.3, 0.1];
-    if (s >= hi) return 'text-green-400 font-semibold';
-    if (s <= lo) return 'text-red-400';
-    return 'text-yellow-300';
+    if (s >= hi) return 'ns-good font-semibold';
+    if (s <= lo) return 'ns-bad';
+    return 'ns-text-2';
   }
   if (columnName === 'Dev_VsTypical') {
     const d = parseFloat(value);
     if (isNaN(d)) return '';
-    if (d >= 40) return 'text-cyan-400 font-semibold';
-    if (d >= 15) return 'text-green-400';
-    if (d > -15) return 'text-slate-300';
-    if (d > -40) return 'text-orange-400';
-    return 'text-red-400';
+    if (d >= 40) return 'ns-g70';
+    if (d >= 15) return 'ns-g55';
+    if (d > -15) return 'ns-text-2';
+    if (d > -40) return 'ns-g30';
+    return 'ns-g20';
   }
-  // Exp peak: same palette as a WAA value.
+  // Exp peak: same ladder as a WAA value.
   if (columnName === 'Dev_PeakP50') {
     const w = parseFloat(value);
     if (isNaN(w)) return '';
-    if (w >= 5) return 'text-purple-400 font-bold';
-    if (w >= 3) return 'text-cyan-400 font-semibold';
-    if (w >= 1.5) return 'text-green-400';
-    if (w >= 0) return 'text-gray-300';
-    if (w >= -1) return 'text-orange-400';
-    return 'text-red-400';
+    if (w >= 5) return 'ns-g80';
+    if (w >= 3) return 'ns-g70';
+    if (w >= 1.5) return 'ns-g55';
+    if (w >= 0) return 'ns-text-2';
+    if (w >= -1) return 'ns-g30';
+    return 'ns-g20';
   }
   // vs listed: green when DEV peers beat his listed peak by half a win,
   // red when they fell half a win short.
   if (columnName === 'Dev_PeakVsListed') {
     const d = parseFloat(value);
     if (isNaN(d)) return '';
-    if (d >= 0.5) return 'text-green-400 font-semibold';
-    if (d <= -0.5) return 'text-red-400';
-    return 'text-slate-300';
+    if (d >= 0.5) return 'ns-good font-semibold';
+    if (d <= -0.5) return 'ns-bad';
+    return 'ns-text-2';
   }
   if (columnName === 'Dev_PeakRange') {
-    return typeof value === 'string' && value ? 'text-slate-400' : '';
+    return typeof value === 'string' && value ? 'ns-text-2' : '';
   }
 
   // String-based color coding (non-numeric)
-  if (columnName === '_durability') {
-    const durMap = {
-      'Wrecked': 'text-red-400 font-bold',
-      'Fragile': 'text-orange-400',
-      'Normal': 'text-gray-300',
-      'Durable': 'text-green-400',
-      'Iron Man': 'text-cyan-400 font-semibold',
-    };
-    return durMap[value] || '';
+  // Durability and injury proneness (raw OOTP rating): the theme's proneness encoding
+  if (columnName === '_durability' || columnName === 'Prone') {
+    return PRONE_CLASS[value] || '';
   }
   if (columnName === '_highINT') {
-    return value === true ? 'text-green-400 font-semibold' : 'text-slate-600';
+    return value === true ? 'ns-good font-semibold' : 'ns-dim';
   }
   if (columnName === '_wrecked') {
-    return value === true ? 'text-red-400 font-bold' : '';
-  }
-  // Injury proneness (raw OOTP rating) — same palette as _durability
-  if (columnName === 'Prone') {
-    const proneMap = {
-      'Wrecked': 'text-red-400 font-bold',
-      'Fragile': 'text-orange-400',
-      'Normal': 'text-gray-300',
-      'Durable': 'text-green-400',
-      'Iron Man': 'text-cyan-400 font-semibold',
-    };
-    return proneMap[value] || '';
+    return value === true ? 'ns-bad font-bold' : '';
   }
   // Current injury / roster flags — red when flagged
   if (['OnDL', 'OnDL60', 'DFA', 'OnWaivers'].includes(columnName)) {
-    return value === true ? 'text-red-400 font-semibold' : 'text-slate-600';
+    return value === true ? 'ns-bad font-semibold' : 'ns-dim';
   }
   if (columnName === 'NoTrade') {
-    return value === true ? 'text-amber-400' : 'text-slate-600';
+    return value === true ? 'ns-warn' : 'ns-dim';
   }
   // Market tier badge — scarcity tier = local price departs the fitted line
   if (columnName === '_mktTier') {
-    return value === 'scarcity' ? 'text-amber-400 font-semibold' : 'text-slate-400';
+    return value === 'scarcity' ? 'ns-warn font-semibold' : 'ns-text-2';
+  }
+  // Position columns: the position hue (Night Scorecard td[data-pos])
+  if (columnName === 'POS' || columnName === 'Best Pos' || columnName === 'Best Pos WAR') {
+    return posClass(value);
   }
 
   const num = parseFloat(value);
@@ -538,12 +566,12 @@ export function getCellColorClass(value, columnName, row) {
   // Value Gap: + = our projection (FV) rates him above his OOTP POT → undervalued, a buy
   // target; − = the market's POT is higher than our projection → overvalued.
   if (columnName === '_fvGap') {
-    if (num >= 8) return 'text-purple-400 font-bold';
-    if (num >= 4) return 'text-cyan-400 font-semibold';
-    if (num >= 1) return 'text-green-400';
-    if (num > -1) return 'text-gray-300';
-    if (num >= -4) return 'text-orange-400';
-    return 'text-red-400';
+    if (num >= 8) return 'ns-g80';
+    if (num >= 4) return 'ns-g70';
+    if (num >= 1) return 'ns-g55';
+    if (num > -1) return 'ns-text-2';
+    if (num >= -4) return 'ns-g30';
+    return 'ns-g20';
   }
 
   const ratingLikeCols = [
@@ -559,12 +587,12 @@ export function getCellColorClass(value, columnName, row) {
   ];
 
   if (ratingLikeCols.includes(columnName)) {
-    if (num >= 75) return 'text-purple-400 font-bold';
-    if (num >= 65) return 'text-cyan-400 font-semibold';
-    if (num >= 55) return 'text-green-400';
-    if (num >= 45) return 'text-yellow-300';
-    if (num >= 35) return 'text-orange-400';
-    return 'text-red-400';
+    if (num >= 75) return 'ns-g80';
+    if (num >= 65) return 'ns-g70';
+    if (num >= 55) return 'ns-g55';
+    if (num >= 45) return 'ns-text-2';
+    if (num >= 35) return 'ns-g30';
+    return 'ns-g20';
   }
 
   const isValueCol = columnName.includes('WAA') || columnName.includes('WAR') ||
@@ -573,61 +601,61 @@ export function getCellColorClass(value, columnName, row) {
     columnName === '_draftCeiling' || columnName === '_draftCeilingWAA' || columnName === '_g5Raw';
 
   if (isValueCol) {
-    if (num >= 5) return 'text-purple-400 font-bold';
-    if (num >= 3) return 'text-cyan-400 font-semibold';
-    if (num >= 1.5) return 'text-green-400';
-    if (num >= 0) return 'text-gray-300';
-    if (num >= -1) return 'text-orange-400';
-    return 'text-red-400';
+    if (num >= 5) return 'ns-g80';
+    if (num >= 3) return 'ns-g70';
+    if (num >= 1.5) return 'ns-g55';
+    if (num >= 0) return 'ns-text-2';
+    if (num >= -1) return 'ns-g30';
+    return 'ns-g20';
   }
 
   if (columnName.includes('RA/9')) {
-    if (num <= 3.0) return 'text-purple-400 font-bold';
-    if (num <= 3.5) return 'text-cyan-400 font-semibold';
-    if (num <= 4.0) return 'text-green-400';
-    if (num <= 4.5) return 'text-gray-300';
-    if (num <= 5.5) return 'text-orange-400';
-    return 'text-red-400';
+    if (num <= 3.0) return 'ns-g80';
+    if (num <= 3.5) return 'ns-g70';
+    if (num <= 4.0) return 'ns-g55';
+    if (num <= 4.5) return 'ns-text-2';
+    if (num <= 5.5) return 'ns-g30';
+    return 'ns-g20';
   }
 
   if (columnName.includes('wOBA')) {
-    if (num >= 0.400) return 'text-purple-400 font-bold';
-    if (num >= 0.360) return 'text-cyan-400 font-semibold';
-    if (num >= 0.320) return 'text-green-400';
-    if (num >= 0.300) return 'text-gray-300';
-    if (num >= 0.280) return 'text-orange-400';
-    return 'text-red-400';
+    if (num >= 0.400) return 'ns-g80';
+    if (num >= 0.360) return 'ns-g70';
+    if (num >= 0.320) return 'ns-g55';
+    if (num >= 0.300) return 'ns-text-2';
+    if (num >= 0.280) return 'ns-g30';
+    return 'ns-g20';
   }
 
   // Surplus: green = underpaid/good deal, red = overpaid
   if (columnName === '_surplus' || columnName === '_ctrSurplus' || columnName === '_mktSurplus') {
-    if (num > 10_000_000) return 'text-green-400 font-bold';
-    if (num > 0) return 'text-green-400';
-    if (num > -5_000_000) return 'text-orange-400';
-    return 'text-red-400';
+    if (num > 10_000_000) return 'ns-good font-bold';
+    if (num > 0) return 'ns-good';
+    if (num > -5_000_000) return 'ns-warn';
+    return 'ns-bad';
   }
 
   // Money columns — just use green for positive values
   const moneyColorCols = ['_marketValue', '_offerFloor', '_offerMid', '_offerCeiling', '_annualValue', '_mktPrice', '_perWAA',
     '_futureAAV', '_futureOfferLow', '_futureOfferMid', '_futureOfferHigh'];
   if (moneyColorCols.includes(columnName)) {
-    if (num > 0) return 'text-green-400';
-    return 'text-slate-500';
+    if (num > 0) return 'ns-good';
+    return 'ns-muted';
   }
 
   // Role column
   if (columnName === '_marketRole') {
-    return value === 'SP' ? 'text-blue-400' : value === 'RP' ? 'text-yellow-300' : '';
+    return value === 'SP' ? 'ns-pos ns-pos-sp' : value === 'RP' ? 'ns-pos ns-pos-rp' : '';
   }
 
   if (columnName === '_agePercentile' || columnName === '_draftRawFV' || columnName === '_ceilingScore' ||
     columnName === '_g5DevPct' || columnName === '_hybridRaw') {
-    if (num >= 90) return 'text-purple-400 font-bold';
-    if (num >= 75) return 'text-cyan-400 font-semibold';
-    if (num >= 50) return 'text-green-400';
-    if (num >= 25) return 'text-yellow-300';
-    if (num >= 10) return 'text-orange-400';
-    return 'text-red-400';
+    if (num >= 90) return 'ns-g80';
+    if (num >= 75) return 'ns-g70';
+    if (num >= 50) return 'ns-g55';
+    if (num >= 25) return 'ns-text-2';
+    if (num >= 10) return 'ns-g30';
+    return 'ns-g20';
   }
 
   return '';
