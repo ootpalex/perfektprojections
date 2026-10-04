@@ -17,6 +17,9 @@ import WaiverClaimPage from './pages/WaiverClaimPage';
 import ParksPage from './pages/ParksPage';
 import MakeItOddsPage from './pages/MakeItOddsPage';
 import ControlPage from './pages/ControlPage';
+import ProspectsPage from './pages/ProspectsPage';
+import ScoutPage from './pages/ScoutPage';
+import PlayerComparePage from './pages/PlayerComparePage';
 import { useActiveJobs, useControlStatus, useAppConfig } from './lib/controlApi';
 import { loadRatingTrends } from './lib/ratingTrends';
 import { loadLeagueMetadata, pickGameDate } from './lib/gameDate';
@@ -159,6 +162,11 @@ function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeC
                 <li><NavLink to="/pitchers-fa" className={link}>Pitchers (FA)</NavLink></li>
               </>
             )}
+
+            <li className="group">Scouting</li>
+            <li><NavLink to="/prospects" className={link}>Prospects</NavLink></li>
+            <li><NavLink to="/scout" className={link}>Scout</NavLink></li>
+            <li><NavLink to="/compare" className={link}>Player Compare</NavLink></li>
 
             <li className="group">Organization</li>
             <li><NavLink to="/organization" className={link}>Org Builder</NavLink></li>
@@ -457,6 +465,9 @@ export default function App() {
             <Route path="/standings" element={
               <TeamStandingsPage hitters={data.hitters} pitchers={data.pitchers} metadata={data.metadata} league={currentLeague} />
             } />
+            <Route path="/prospects" element={<ProspectsPage hitters={data.hitters} pitchers={data.pitchers} metadata={data.metadata} league={currentLeague} />} />
+            <Route path="/scout" element={<ScoutPage hitters={data.hitters} pitchers={data.pitchers} metadata={data.metadata} league={currentLeague} />} />
+            <Route path="/compare" element={<PlayerComparePage hitters={data.hitters} pitchers={data.pitchers} />} />
             <Route path="/parks" element={<ParksPage parks={data.parks} parkList={data.park_list} league={currentLeague} />} />
             <Route path="/organization" element={
               <OrganizationPage hitters={data.hitters} pitchers={data.pitchers} metadata={data.metadata} league={currentLeague} parkMode={parkMode} />
