@@ -1,9 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { optimizeRoster, leagueGames } from '../lib/rosterOptimizer';
 import { PositionalStrengthGrid } from '../components/PositionalStrength';
+import { resolveLeagueClubs } from '../lib/leagueClubs';
 import { Download, ArrowUpDown, Loader2 } from 'lucide-react';
 
 // ─── League assignments, per league ──────────────────────────────
+// A league whose metadata.json carries "clubs" (written at pull time by
+// ingest/club_list.py) ranks those clubs and their sub-leagues instead
+// (lib/leagueClubs.js); these sets are the fallback when it does not.
 // OOTP's export carries no AL/NL field, and team names differ between leagues
 // (e.g. BLM disambiguates same-city clubs as "Chicago (N) Cubs"). The two
 // leagues also disagree on some clubs — Milwaukee is AL in TGS but NL in BLM —
@@ -319,15 +323,14 @@ function StandingsTable({ title, rows, onExport, halfWins = 81 }) {
 
 // ─── Main page ───────────────────────────────────────────────────
 export default function TeamStandingsPage({ hitters, pitchers, metadata, league }) {
-  // Resolve the per-league AL/NL map. Unknown leagues fall back to a single
-  // combined table (no sub-league split) so teams are never silently dropped.
-  const map = LEAGUE_TEAMS[league] || null;
+  // Resolve the per-league AL/NL map: the pull's club list (metadata.clubs),
+  // else LEAGUE_TEAMS. Unknown leagues fall back to a single combined table
+  // (no sub-league split) so teams are never silently dropped.
+  const clubs = useMemo(() => resolveLeagueClubs(metadata, LEAGUE_TEAMS[league]), [metadata, league]);
+  const map = clubs.map;
   const halfWins = Math.round(leagueGames(league) / 2);   // neutral win total (B3: 81 at 162 games)
 
-  const knownTeams = useMemo(
-    () => map ? new Set([...map.AL, ...map.NL]) : null,
-    [map]
-  );
+  const knownTeams = clubs.known;
 
   // Same platoon-weight basis as the Roster Optimizer (real season vs-RHP share
   // from the league metadata) so the two screens agree on every team's WAA.
@@ -354,7 +357,7 @@ export default function TeamStandingsPage({ hitters, pitchers, metadata, league 
 
   const exportAll = () => {
     const allCols = [
-      { label: 'League', accessor: r => map && map.AL.has(r.team) ? 'AL' : (map && map.NL.has(r.team) ? 'NL' : '-') },
+      { label: 'League', accessor: r => map && map.AL.has(r.team) ? clubs.abbrs.AL : (map && map.NL.has(r.team) ? clubs.abbrs.NL : '-') },
       ...COLUMNS,
     ];
     const rows = map ? [...alTeams, ...nlTeams] : allTeams;
@@ -404,13 +407,13 @@ export default function TeamStandingsPage({ hitters, pitchers, metadata, league 
         {map ? (
           <>
             <StandingsTable
-              title="American League"
+              title={clubs.names.AL}
               rows={alTeams}
               halfWins={halfWins}
               onExport={() => exportLeague(alTeams, 'al_projections.csv')}
             />
             <StandingsTable
-              title="National League"
+              title={clubs.names.NL}
               rows={nlTeams}
               halfWins={halfWins}
               onExport={() => exportLeague(nlTeams, 'nl_projections.csv')}
