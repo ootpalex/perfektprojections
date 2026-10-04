@@ -87,16 +87,12 @@ its rules. Each is shown as unknown or left out:
 
 ## 6. Decisions for the user
 
-1. **The stale roster export makes some orgs' counts impossible.** On the 2044-05-09 SSB pull
-   the export flags are dated 2043-12-28, 133 game days old. Export-first (the accessor's
-   current rule, bridge decision 2) gives Cleveland 37 active players on a 26-man roster and
-   Colorado 48 on the 40-man. The live StatsPlus flags give both exactly 26 active and at most
-   40 on the 40-man. For the Cubs the two give 32 / 25 (export) against 34 / 26 (StatsPlus).
-   Across the 40 SSB orgs with a 40-man, export-first gives 40-man counts of 26-51 and active
-   counts of 16-37. **Recommendation: flip `isOn40Man` / `isActiveRoster` to StatsPlus-first
-   (one line each in `accessors.js`), or at least for the planner.** I did not flip it here,
-   because it is a shared accessor and the bridge left the call to you. The page names the
-   export date and its age in the header, and the over-limit warnings fire.
+1. **Roster-flag source — decided 2026-10-04: StatsPlus first** (bridge decision 2). The export
+   (2043-12-28, 133 game days before the 2044-05-09 pull) had given Cleveland 37 active and
+   Colorado 48 on the 40-man. With StatsPlus first, all 28 SSB MLB clubs are at or under 40, and
+   27 have exactly 26 active. Atlanta counts 27 because of one A+ player, Jesus Salmeron, whom
+   StatsPlus flags active but not on the 40-man. The header now names the export only as the
+   source of Rule 5 and options.
 2. **The 60-day IL and the 40-man.** The planner keeps a 60-day IL player off the 40-man
    count (`IL60_OFF_FORTY_MAN`). That is the MLB rule, not read from the data.
 
