@@ -41,6 +41,20 @@ Phase 1–2 SSB rebuilds therefore made about 7–8 small StatsPlus reads (no ra
 - **Our dashboard bug (not ours to fix here):** `model/main.py:355-359` can save an empty StatsPlus
   cache for a game date because `_fetch_csv` swallows errors.
 
+## Decisions taken (2026-10-04)
+
+- **Option-aware Owed/control: A** — the option keys ship as data; the app shows them in Phase 4;
+  "C" (both readings) after a few odd contracts (buyout without an option flag) are checked in OOTP.
+- **`org.csv`:** exported by hand from OOTP. SSB's `roster_export` (local settings) points at the
+  file the dashboard already uses (`ootp-dashboard/leagues/SSB/csv/players/org.csv`), so one export
+  feeds both; the merged keys carry the export's date and its gap to the pull.
+- **Salary-report pages: keep** — they are the only source of OOTP's arbitration projections.
+  Being ported onto his client (sequential, cached per in-game day).
+- **Data-date report** shows each league's in-game date (from `metadata.json`) and no longer the
+  `metadata.json` file time. **Draft task description** no longer says the pool needs an export
+  (the echo texts of his TGS/BLM bat tasks stay — his Windows bat-equivalence test pins them).
+- **Live validation pull:** approved, after the user's other agent finishes.
+
 ## Needs the user
 
 1. **One live validation pull** (SSB): `/draftpool/` (shape, token, row count vs the 2044/2045

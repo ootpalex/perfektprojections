@@ -24,6 +24,7 @@ Exit code: 0 when at least one league's ratings are fresh, 1 when none are.
 task passes its own league). With no flag it reports TGS and BLM, the ones of
 those two that are enabled online leagues in the settings.
 """
+import json
 import os
 import sys
 import time
@@ -55,6 +56,16 @@ def _age_str(mtime, now):
     if hours < 36:
         return f"{hours:.0f} hours ago"
     return f"{hours / 24.0:.1f} days ago"
+
+
+def _game_date(league_dir):
+    """The in-game date the pull wrote into metadata.json (Phase 3), or None."""
+    try:
+        with open(os.path.join(league_dir, "metadata.json"), encoding="utf-8") as fh:
+            gd = json.load(fh).get("game_date")
+        return str(gd)[:10] if gd else None
+    except (OSError, ValueError, AttributeError):
+        return None
 
 
 def _token_lines(lg):
@@ -129,6 +140,9 @@ def main():
         else:
             print(f"  {lg}: not pulled this run - app is serving data from {stamp} ({_age_str(oldest, now)})")
             stale_lgs.append(lg)
+        gd = _game_date(d)
+        if gd:
+            print(f"       in-game date: {gd}")
         for ln in token_lines:
             print(ln)
         if missing:
@@ -136,6 +150,8 @@ def main():
         # board dates are informational - they only move when their source does
         for fn in BOARD_FILES:
             p = os.path.join(d, fn)
+            if fn == "metadata.json" and gd:
+                continue        # every pull now writes its game_date, so its file time is the pull's
             if os.path.exists(p):
                 m = os.path.getmtime(p)
                 print(f"       {fn}: {time.strftime('%Y-%m-%d %H:%M', time.localtime(m))} ({_age_str(m, now)})")

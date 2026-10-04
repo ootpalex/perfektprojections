@@ -1643,8 +1643,8 @@ def t_draft_board():
     ]
     ok = T["draft.ok"][:2] + ["  Done. " + NO_RELOAD + " Switch leagues to see each board."] + T["draft.ok"][2:]
     return task("draft_board", "Update Draft Board",
-                "Builds the TGS and BLM draft boards from your OOTP draft-pool export and the StatsPlus ratings. "
-                "A league with no pool export is skipped.",
+                "Builds the TGS and BLM draft boards: the class from StatsPlus (or your OOTP draft-pool export "
+                "when StatsPlus does not answer), the ratings from the StatsPlus pull.",
                 "everyday", steps, leagues=["TGS", "BLM"], bat="Update Draft Board.bat", requires=["TGS", "BLM"],
                 fl=flags(network=True, writes_app_data=True), time="1 to 2 minutes", banner=T["draft.banner"],
                 finish=fin("fails", ok=ok, fails=T["draft.fails"], exit_ok=None))
