@@ -27,6 +27,10 @@
 import { replacementOrgOffset } from './leagueCalib.js';
 import { getEligiblePositions } from './rosterOptimizer.js';
 import { contractAAV } from './marketValue.js';
+import {
+  isOnWaivers as accIsOnWaivers, isDFA as accIsDFA,
+  getWaiverDaysLeft, getWaiverDays, isOn40Man, getOrg,
+} from './accessors.js';
 
 const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
 
@@ -36,8 +40,40 @@ function isFlag(v) {
   return v === true || v === 'true' || v === 'True' || v === 'TRUE' || v === 'Yes';
 }
 
-export function isOnWaivers(p) { return isFlag(p.OnWaivers); }
-export function isDFA(p) { return isFlag(p.DFA); }
+// Same flag rule as isFlag, read through the Phase 4 accessor adapter.
+export function isOnWaivers(p) { return accIsOnWaivers(p); }
+export function isDFA(p) { return accIsDFA(p); }
+
+/**
+ * The live claim clock (StatsPlus /players `days_on_waivers_left`, shipped as
+ * `WaiverDaysLeft`; `WaiverDays` is the days already served). Ported from
+ * ootp-dashboard app/src/utils/waivers.js.
+ *
+ *   'claimable' — on waivers with days left, or on waivers with no clock in the
+ *                 row (a league whose pull predates the field): the flag says he
+ *                 is on waivers and nothing says otherwise.
+ *   'cleared'   — on waivers with 0 days left: unclaimed, can no longer be
+ *                 claimed. StatsPlus keeps the waiver flag set after the clock runs out.
+ *   'dfa'       — designated for assignment but not (yet) on waivers. The clock
+ *                 reads 0 here because it never started, so it says nothing.
+ *   null        — neither flag.
+ */
+export const CLOCK_CLAIMABLE = 'claimable';
+export const CLOCK_CLEARED = 'cleared';
+export const CLOCK_DFA = 'dfa';
+
+export function waiverClock(p) {
+  if (isOnWaivers(p)) {
+    const daysLeft = getWaiverDaysLeft(p);
+    return {
+      state: daysLeft === 0 ? CLOCK_CLEARED : CLOCK_CLAIMABLE,
+      daysLeft,
+      daysOn: getWaiverDays(p),
+    };
+  }
+  if (isDFA(p)) return { state: CLOCK_DFA, daysLeft: null, daysOn: null };
+  return null;
+}
 
 /** Every player the league has made available: on waivers, DFA'd, or both. */
 export function isClaimable(p) { return isOnWaivers(p) || isDFA(p); }
@@ -102,6 +138,7 @@ export function evaluateClaim(p, league) {
     waa = spot.waa;
     vor = spot.waa === null ? null : spot.waa + replacementOrgOffset(league, 'hitter');
   }
+  const clock = waiverClock(p);
   return {
     player: p,
     id: p.ID ?? p.Name,
@@ -123,6 +160,9 @@ export function evaluateClaim(p, league) {
     contractYr: num(p.ContractYr),
     contractYrs: num(p.ContractYrs),
     svcYears: num(p.MLBSvcYrs),
+    clock: clock ? clock.state : null,     // claimable / cleared / dfa (see waiverClock)
+    daysLeft: clock ? clock.daysLeft : null,
+    daysOn: clock ? clock.daysOn : null,
   };
 }
 
@@ -147,9 +187,11 @@ function weakestIncumbent(entries, role) {
  * @param {Array} hitters  that league's hitter rows
  * @param {Array} pitchers that league's pitcher rows
  * @param {{league: string, org?: string}} opts
- * @returns {{ entries, counts, offsets, incumbents }}
- *   entries    — claimable players, best first by value above org replacement,
+ * @returns {{ entries, live, cleared, counts, offsets, incumbents }}
+ *   entries    — every flagged player, best first by value above org replacement,
  *                each carrying `fit` when an org was given
+ *   live       — the entries that can still be claimed (clock running, or DFA)
+ *   cleared    — the entries whose claim clock has run out (see waiverClock)
  *   counts     — how many are on waivers / DFA'd / both, and the role split
  *   offsets    — the measured org replacement offsets used, for labelling
  *   incumbents — the weakest MLB body per role in the selected org
@@ -169,7 +211,14 @@ export function buildClaimBoard(hitters = [], pitchers = [], { league, org } = {
     hitters: entries.filter(e => e.role === 'hitter').length,
     sp: entries.filter(e => e.role === 'sp').length,
     rp: entries.filter(e => e.role === 'rp').length,
+    claimable: entries.filter(e => e.clock === CLOCK_CLAIMABLE).length,
+    cleared: entries.filter(e => e.clock === CLOCK_CLEARED).length,
+    dfaOnly: entries.filter(e => e.clock === CLOCK_DFA).length,
+    // on waivers and the row carries the clock (false on a pre-clock pull)
+    clockKnown: entries.filter(e => e.onWaivers && e.daysLeft !== null).length,
   };
+  const live = entries.filter(e => e.clock !== CLOCK_CLEARED);
+  const cleared = entries.filter(e => e.clock === CLOCK_CLEARED);
 
   const offsets = {
     hitter: replacementOrgOffset(league, 'hitter'),
@@ -200,5 +249,21 @@ export function buildClaimBoard(hitters = [], pitchers = [], { league, org } = {
     }
   }
 
-  return { entries, counts, offsets, incumbents };
+  return { entries, live, cleared, counts, offsets, incumbents };
+}
+
+export const FORTY_MAN_LIMIT = 40;
+
+/**
+ * 40-man occupancy for one org (ported from ootp-dashboard
+ * app/src/utils/waivers.js fortyManSpots). A claim costs a 40-man spot, so the
+ * board shows this next to the wire. Returns null when no row in the league
+ * carries the 40-man flag (`On40Man`): unknown, not "40 open".
+ */
+export function fortyManSpots(hitters = [], pitchers = [], org) {
+  const rows = [...(hitters || []), ...(pitchers || [])];
+  if (!rows.some((p) => isOn40Man(p) !== null)) return null;
+  if (!org) return { used: 0, open: FORTY_MAN_LIMIT, limit: FORTY_MAN_LIMIT };
+  const used = rows.filter((p) => getOrg(p) === org && isOn40Man(p) === true).length;
+  return { used, open: Math.max(0, FORTY_MAN_LIMIT - used), limit: FORTY_MAN_LIMIT };
 }
