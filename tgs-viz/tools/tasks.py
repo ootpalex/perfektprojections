@@ -1803,6 +1803,37 @@ def t_update_statsplus(ST, lg):
                            exit_ok=None, report_step="pull_report", report_verdict="strict"))
 
 
+def t_draft_league(ST, lg):
+    """The draft board alone for a wizard-added StatsPlus league: the pick list (/draft, read fresh)
+    and the pool (/draftpool/, at most once per in-game day) against the last ratings pull. For use
+    between picks while a draft runs; Update <league> refreshes the ratings themselves."""
+    lid = lg["id"]
+    slug = ST.slug(lid)
+    basis = lg.get("basis") or lid
+    calib = ["--calib", basis] if basis != lid else []
+    c = env_cookie()
+    steps = [
+        step("tok", "Check the token", py(TOKEN, "--have", lid), kind="probe", set_flag="tok", on_error="ignore"),
+        step("cookie", "Browser login", kind="prelude", prelude="cookie_single",
+             prelude_text={"token": [" Using the saved " + lid + " StatsPlus token. No browser cookies needed."],
+                           "notoken": [" No StatsPlus token is saved for " + lid + ". Using your browser cookies."]}),
+        step("draft", f"{lid} draft board", py(DRAFT, "--league", lid, "--slug", slug, *calib, "--write"),
+             "collect", f"{lid}-draft", app=True, env=c),
+        step("manifest", "Refresh the app's page list", py(NEW_LEAGUE, "refresh-manifest", "--league", lid),
+             "collect", f"{lid}-manifest", app=True),
+    ]
+    headers(steps)
+    name = lg.get("name") or lid
+    return task(f"draft.{lid}", f"Update {name} Draft Board",
+                f"Rebuilds the {name} draft board with the latest picks from StatsPlus, priced on the last "
+                f"ratings pull. Quick: use it between picks. Update {name} refreshes the ratings.",
+                "leagues", steps, leagues=[lid], requires=[lid],
+                fl=flags(network=True, secret_inputs=True, writes_app_data=True),
+                time="under a minute", inputs=cookie_inputs({"no_token": lid}),
+                finish=fin("fails", ok=[""], fails=["", "  Steps that did not update:{fails}",
+                                                     "  (each one said why above)"], exit_ok=None))
+
+
 def t_bank_season_league(ST, lg):
     """Season end for one wizard-added StatsPlus league (Phase 2 row 10 decision, 2026-10-03):
     bank the finished season's actuals, snapshot the projections, then the fielding referee on
@@ -2371,6 +2402,7 @@ def all_tasks(ST, state=None):
         if typ == "statsplus":
             out.append(t_update_statsplus(ST, lg))
             if lid not in defaults_ids:
+                out.append(t_draft_league(ST, lg))
                 out.append(t_bank_season_league(ST, lg))
         elif typ == "local_export":
             out.append(t_update_local(ST, lg))

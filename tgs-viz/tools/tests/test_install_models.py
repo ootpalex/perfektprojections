@@ -426,6 +426,10 @@ class UpdateTaskSkip(Base):
         for task in ("update.TGS", "update.BLM", "update.RG"):
             self.assertNotIn("waa_cache", self.plan(task, exists=True)[0], task)
 
+    def test_quick_draft_task_for_a_wizard_league(self):
+        steps, _ = self.plan("draft.ZQ")
+        self.assertEqual(steps, ["tok", "draft", "manifest"])        # no ratings pull, no ML
+
     def test_waa_cache_step_command(self):
         loc = os.path.join(self.tmp, "settings.local.json")
         with open(loc, "w") as fh:
