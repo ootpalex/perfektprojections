@@ -68,12 +68,26 @@ unchanged); `ml_rows` still runs.
   calibration files); a rebuild now records `3100568b98`, the fingerprint of BLM's calibration. It is
   the only line in `score_note_SSB.json` that changed besides the timestamp. The old files were moved
   to `*.bak-20261004`.
-- A `.waa_cache` for pull 575 with that fingerprint exists. One for pull 576 (the latest pull) does
-  not. `dataset.league_waa` only looks a cache up; nothing builds the latest pull's cache for an
-  exported league: `growth_lenses._pair_waa` builds the older pull of a pair, and the Update task's
-  `agecurve` step runs only when the league's basis is itself (`tasks.py`, `if basis == lid`), so it
-  is skipped for SSB.
-- `d_now`, `d_ceiling` and `cache_ceiling_waa` are NaN on every row (6,871 hitters, 7,132 pitchers).
-  The missing 576 cache is one cause. The other is that no earlier pull is at least 0.1 game-years
-  back (the archive holds two pulls two days apart), so the "from" side has no values either. Until
-  both exist the models score SSB with those features missing.
+- Before the follow-up below, a `.waa_cache` existed for pull 575 only. `dataset.league_waa` only
+  looks a cache up, and nothing built the latest pull's cache for an exported league:
+  `growth_lenses._pair_waa` builds the older pull of a pair, and the Update task's `agecurve` step
+  runs only when the league's basis is itself (`tasks.py`, `if basis == lid`).
+- `agecurve_fit.py --league SSB --calib BLM` (without `--cache-only`) would not have helped: it tags
+  its cache `<fingerprint>-BLM` (the DEV convention), while `growth_lenses` and `dataset.py` look for
+  the plain `<fingerprint>`. RG (one vintage, no cache) has the same gap and is not changed here.
+
+## Engine WAA cache for the latest pull (follow-up)
+
+`agecurve_fit.py --league SSB --calib BLM --cache-only` runs the engine on every archived vintage
+with BLM's calibration and fills `vintages/SSB/.waa_cache/<vintage>.<fingerprint>.json` under the
+plain fingerprint. It measures and writes nothing else, works with a single vintage, and reuses
+cached vintages, so a rerun prices only the new pull (about 4 s per vintage here). The Update task
+runs it as the step "SSB engine WAA cache" right before the ML rows, for wizard-added leagues whose
+basis is another league (not TGS, BLM or RG).
+
+Checked on SSB (offline): pull 576 now has its cache; the existing pull 575 file is identical to a
+fresh engine pass (13,991 players). After rebuilding the rows, the only columns that changed are
+`cache_now_waa` and `cache_ceiling_waa` (filled for the latest pull; the app's current WAA matches
+the cache's, correlation 0.997 over 14,003 players, mean difference -0.06). `d_now` and `d_ceiling`
+are still NaN on every row: they are latest minus an earlier pull, and no earlier pull at least
+0.1 game-years back exists (`from_pull` is None).

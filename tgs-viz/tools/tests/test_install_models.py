@@ -419,6 +419,73 @@ class UpdateTaskSkip(Base):
             self.assertIn("ml_score", steps, task)
             self.assertNotIn("models installed", text, task)
 
+    def test_waa_cache_step_only_for_a_wizard_league_on_another_basis(self):
+        steps, _ = self.plan("update.ZQ", exists=True)
+        self.assertEqual(steps.count("waa_cache"), 1)
+        self.assertEqual(steps.index("waa_cache") + 1, steps.index("ml_rows"))      # right before the rows
+        for task in ("update.TGS", "update.BLM", "update.RG"):
+            self.assertNotIn("waa_cache", self.plan(task, exists=True)[0], task)
+
+    def test_waa_cache_step_command(self):
+        loc = os.path.join(self.tmp, "settings.local.json")
+        with open(loc, "w") as fh:
+            json.dump({"leagues": {"ZQ": {"type": "statsplus", "name": "Wizard", "slug": "zq", "basis": "BLM",
+                                          "ootp_version": "27"}}}, fh)
+        env = dict(os.environ, TGS_SETTINGS_LOCAL=loc, TGS_CONTROL_DIR=os.path.join(self.tmp, "control"),
+                   STATSPLUS_TOKEN_FILE=os.path.join(self.tmp, "tokens", "StatsPlus Tokens.txt"))
+        env.pop("TGS_SELFTEST", None)
+        cp = subprocess.run([sys.executable, RUN, "--plan", "update.ZQ"], cwd=REPO, env=env, capture_output=True,
+                            text=True, encoding="utf-8")
+        cmd = next(i for i in json.loads(cp.stdout)["items"] if i.get("step_id") == "waa_cache")
+        self.assertEqual(cmd["argv"][-5:], ["--league", "ZQ", "--calib", "BLM", "--cache-only"])
+        self.assertTrue(cmd["argv"][1].replace("\\", "/").endswith("engine/agecurve_fit.py"))
+        self.assertNotIn("--write", cmd["argv"])
+
+
+class WaaCacheOnly(Base):
+    """agecurve_fit.py --cache-only prices every vintage under the plain basis fingerprint."""
+
+    def run_main(self, argv, files):
+        sys.path.insert(0, os.path.join(VIZ, "engine"))
+        import agecurve_fit as A
+        viz = os.path.join(self.tmp, "viz")
+        os.makedirs(os.path.join(viz, "public", "data", "ZQ"), exist_ok=True)
+        for fn in ("hitters.json", "pitchers.json"):
+            with open(os.path.join(viz, "public", "data", "ZQ", fn), "w") as fh:
+                json.dump([{"ID": "1", "B": "R", "T": "R", "HT": 70}], fh)
+        seen = []
+
+        def fake_waa(league, path, static, fp, calib=None):
+            seen.append((os.path.basename(path), fp, calib))
+            return {}
+        stack = contextlib.ExitStack()
+        stack.enter_context(mock.patch.object(A, "VIZ", viz))
+        stack.enter_context(mock.patch.object(A, "ordered_vintages", lambda league, log=print: files))
+        stack.enter_context(mock.patch.object(A, "vintage_waa", fake_waa))
+        stack.enter_context(mock.patch.object(sys, "argv", ["agecurve_fit.py"] + argv))
+        with stack, contextlib.redirect_stdout(io.StringIO()):
+            rc = A.main()
+        return rc, seen, A.calib_fingerprint("BLM")
+
+    def test_one_vintage_is_enough_and_the_tag_is_the_plain_fingerprint(self):
+        files = [os.path.join(self.tmp, "2026-10-04_p9.csv.gz")]
+        rc, seen, fp = self.run_main(["--league", "ZQ", "--calib", "BLM", "--cache-only"], files)
+        self.assertEqual(rc, 0)
+        self.assertEqual(seen, [("2026-10-04_p9.csv.gz", fp, "BLM")])      # no "-BLM" suffix: what dataset.py reads
+        self.assertNotIn("-", fp)
+
+    def test_every_vintage_is_priced(self):
+        files = [os.path.join(self.tmp, f"2026-10-0{i}_p{i}.csv.gz") for i in (2, 4)]
+        rc, seen, fp = self.run_main(["--league", "ZQ", "--calib", "BLM", "--cache-only"], files)
+        self.assertEqual((rc, [s[0] for s in seen]), (0, [os.path.basename(f) for f in files]))
+
+    def test_without_the_flag_the_curve_run_is_unchanged(self):
+        files = [os.path.join(self.tmp, f"2026-10-0{i}_p{i}.csv.gz") for i in (2, 4)]
+        rc, seen, fp = self.run_main(["--league", "ZQ", "--calib", "BLM"], files)
+        self.assertEqual(rc, 1)                                              # too little usable time to fit
+        self.assertEqual({s[1] for s in seen}, {fp + "-BLM"})                # the borrowed-calibration tag, as before
+        self.assertEqual(self.run_main(["--league", "ZQ", "--calib", "BLM"], files[:1])[0], 1)   # one vintage: refused
+
 
 if __name__ == "__main__":
     unittest.main()
