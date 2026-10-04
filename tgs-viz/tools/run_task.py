@@ -1071,6 +1071,7 @@ class Engine:
 
     def do_step(self, k, s):
         if s.get("when") is not None and not self.cond(s["when"]):
+            self.echo(s.get("skip_echo"))       # optional: why this step was skipped
             self.mark(k, s, "skipped", None)
             return "ok"
         self.ensure_data(k, s)

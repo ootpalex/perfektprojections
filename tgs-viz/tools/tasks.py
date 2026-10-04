@@ -1162,6 +1162,7 @@ RATINGS_DB = r"tgs-viz\backtest\ratings_db.py"
 DEV_SIGNALS = r"tgs-viz\backtest\dev_signals.py"
 DEV_ODDS, DEV_RATING_ODDS = r"tgs-viz\backtest\dev_odds.py", r"tgs-viz\backtest\dev_rating_odds.py"
 ML_DATASET, ML_SCORE = r"tgs-viz\backtest\ml\dataset.py", r"tgs-viz\backtest\ml\score.py"
+ML_MODELS = r"tgs-viz\backtest\.dev_cache\ml\models\{basis}\peak_manifest.json"
 REPRICE = r"tgs-viz\backtest\ml\reprice.py"
 TOKEN = r"tgs-viz\ingest\statsplus_token.py"
 PULL_REPORT = r"tgs-viz\ingest\pull_report.py"
@@ -1764,6 +1765,14 @@ def t_update_statsplus(ST, lg):
         step("ml_score", f"{lid} ML scores", ml(ML_SCORE, "--league", lid, "--write"), "collect", f"{lid}-ml-score",
              app=True, env=c),
     ]
+    # The models are the author's files (backtest/ml/install_models.py), not trained on the Mac. A
+    # wizard-added league with no models installed for its basis skips the scoring step instead of
+    # failing it. TGS / BLM / RG keep the step their bats pin (test_bat_equivalence).
+    if lid not in defaults_league_ids(ST):
+        ms = steps[-1]
+        ms["when"] = {"exists": ML_MODELS.format(basis=basis)}
+        ms["skip_echo"] = [f" No {basis} models installed: skipping {lid} ML scores "
+                           "(install the author's files with backtest/ml/install_models.py)."]
     # A wizard-added league's manifest entry (its pages: draft, contracts, ...) was built once, at
     # New League time. Rebuild its datasets/features from the files this run wrote, so a page whose
     # files appeared later (SSB's draft boards) is offered without a hand edit. TGS / BLM keep the
