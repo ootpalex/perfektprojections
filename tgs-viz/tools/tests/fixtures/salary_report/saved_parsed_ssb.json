@@ -1,0 +1,341 @@
+{
+ "_note": "Trimmed copies of 6 players from the dashboard's saved parsed salary reports (SSB, game date 2044-05-09), the output of model/src/salary_report.py. Players are fictional. The HTML these came from is not saved anywhere.",
+ "players": {
+  "59554": {
+   "name": "Jae-ik Kim",
+   "pos": "C",
+   "years": {
+    "2044": {
+     "salary": 2600000,
+     "type": "signed",
+     "guaranteed": true
+    },
+    "2045": {
+     "salary": null,
+     "type": "signed",
+     "guaranteed": false
+    },
+    "2046": {
+     "salary": 4600000,
+     "type": "arb",
+     "guaranteed": false
+    },
+    "2047": {
+     "salary": 6000000,
+     "type": "arb",
+     "guaranteed": false
+    },
+    "2048": {
+     "salary": 7000000,
+     "type": "arb",
+     "guaranteed": false
+    },
+    "2049": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2050": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2051": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2052": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2053": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    }
+   }
+  },
+  "63066": {
+   "name": "Jimmy Winter",
+   "pos": "LF",
+   "years": {
+    "2044": {
+     "salary": 39000000,
+     "type": "signed",
+     "guaranteed": true
+    },
+    "2045": {
+     "salary": 37000000,
+     "type": "signed",
+     "guaranteed": true
+    },
+    "2046": {
+     "salary": 37000000,
+     "type": "signed",
+     "guaranteed": true
+    },
+    "2047": {
+     "salary": 37000000,
+     "type": "opt_out",
+     "guaranteed": true
+    },
+    "2048": {
+     "salary": 37000000,
+     "type": "player_option",
+     "guaranteed": true
+    },
+    "2049": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2050": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2051": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2052": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2053": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    }
+   }
+  },
+  "68528": {
+   "name": "Indiana Hitchcock",
+   "pos": "RP",
+   "years": {
+    "2044": {
+     "salary": 571000,
+     "type": "milb",
+     "guaranteed": false
+    },
+    "2045": {
+     "salary": null,
+     "type": "milc",
+     "guaranteed": false
+    },
+    "2046": {
+     "salary": null,
+     "type": "milc",
+     "guaranteed": false
+    },
+    "2047": {
+     "salary": 1300000,
+     "type": "arb_uncertain",
+     "guaranteed": false
+    },
+    "2048": {
+     "salary": 1500000,
+     "type": "arb",
+     "guaranteed": false
+    },
+    "2049": {
+     "salary": 1700000,
+     "type": "arb",
+     "guaranteed": false
+    },
+    "2050": {
+     "salary": 2000000,
+     "type": "arb",
+     "guaranteed": false
+    },
+    "2051": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2052": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2053": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    }
+   }
+  },
+  "54669": {
+   "name": "Jimmy Albitz",
+   "pos": "LF",
+   "years": {
+    "2044": {
+     "salary": 36800000,
+     "type": "signed",
+     "guaranteed": true
+    },
+    "2045": {
+     "salary": null,
+     "type": "signed",
+     "guaranteed": true
+    },
+    "2046": {
+     "salary": 33600000,
+     "type": "player_option",
+     "guaranteed": true
+    },
+    "2047": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2048": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2049": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2050": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2051": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2052": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2053": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    }
+   }
+  },
+  "58156": {
+   "name": "Curt David",
+   "pos": "SP",
+   "years": {
+    "2044": {
+     "salary": 42600000,
+     "type": "signed",
+     "guaranteed": true
+    },
+    "2045": {
+     "salary": 42600000,
+     "type": "opt_out",
+     "guaranteed": true
+    },
+    "2046": {
+     "salary": 39800000,
+     "type": "signed",
+     "guaranteed": true
+    },
+    "2047": {
+     "salary": 38800000,
+     "type": "player_option",
+     "guaranteed": true
+    },
+    "2048": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2049": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2050": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2051": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2052": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2053": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    }
+   }
+  },
+  "62024": {
+   "name": "Ken Alward",
+   "pos": "C",
+   "years": {
+    "2044": {
+     "salary": 571000,
+     "type": "signed",
+     "guaranteed": true
+    },
+    "2045": {
+     "salary": 1800000,
+     "type": "arb",
+     "guaranteed": false
+    },
+    "2046": {
+     "salary": 3400000,
+     "type": "arb",
+     "guaranteed": false
+    },
+    "2047": {
+     "salary": 5000000,
+     "type": "arb",
+     "guaranteed": false
+    },
+    "2048": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2049": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2050": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2051": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2052": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    },
+    "2053": {
+     "salary": null,
+     "type": "fa",
+     "guaranteed": false
+    }
+   }
+  }
+ }
+}

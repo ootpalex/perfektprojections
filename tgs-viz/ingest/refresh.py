@@ -16,6 +16,10 @@ StatsPlus mode (what the bats and the Control page run):
       with no new ratings job. The team names, contracts and injury status then
       reuse the StatsPlus replies saved earlier while the league's in-game date
       has not moved (at most 6 hours old). A live pull always reads them fresh.
+  The team salary report pages (ingest/salary_report.py: OOTP's arbitration
+      projections, opt-outs, retained salary) are read once per team per in-game
+      day, live or from cache: ~28 requests on the first pull of a day, none after.
+      add --no-salary-reports to leave them out.
 
 Export mode (the older manual path): point it at your two OOTP exports (the
 batters export and the pitchers export, each = Player List columns ID..R5).
@@ -514,6 +518,32 @@ def main():
         except Exception as e:
             print(f"  note: option/extension/waiver keys not attached ({type(e).__name__}: "
                   f"{(S.redact(str(e)).splitlines() or [''])[0][:160]}); the rest of the pull is unaffected")
+
+        # Phase 3 (additive, new keys only): OOTP's arbitration projections, opt-outs and retained
+        # salary live only on the per-team salary report pages (ingest/salary_report.py). One page per
+        # MLB club (28 for SSB), one request at a time, through the same date-keyed cache as the other
+        # reads: a page is read at most once per team per in-game day. Never fatal. Skip: --no-salary-reports.
+        if "--no-salary-reports" in sys.argv:
+            print("  salary reports: skipped (--no-salary-reports)")
+        else:
+            try:
+                import salary_report as SR
+                team_ids = SR.mlb_team_ids(rows, teams)
+                res = SR.fetch_reports(base, team_ids, cache=True)
+                n_sr = 0
+                for recs_, count in ((hrecs, True), (precs, True), (hrecs_park, False), (precs_park, False)):
+                    k_sr = SR.attach_salary_reports(recs_, res.players, res.span)
+                    if count:
+                        n_sr += k_sr
+                print(f"  salary reports: {res.pages}/{len(team_ids)} team pages "
+                      f"({res.fetched} fetched, {res.reused} reused); {len(res.players)} players, "
+                      f"{n_sr} records carry SalaryReport")
+                if res.stopped:
+                    print(f"  note: salary reports stopped early ({res.stopped}); "
+                          f"{len(team_ids) - res.pages} team pages not read, their players carry no SalaryReport")
+            except Exception as e:
+                print(f"  note: salary reports not attached ({type(e).__name__}: "
+                      f"{(S.redact(str(e)).splitlines() or [''])[0][:160]}); the rest of the pull is unaffected")
 
         # --- optional: roster-management fields from the OOTP org export ---
         # Option years, Rule 5, 40-man, rookie status ... are not in StatsPlus. A league
