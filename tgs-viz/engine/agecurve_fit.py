@@ -41,12 +41,18 @@ when neither is there). It also shows on the profile's development chart.
 
     python tgs-viz/engine/agecurve_fit.py --league TGS [--write]
     python tgs-viz/engine/agecurve_fit.py --league DEV --calib BLM [--write]
+    python tgs-viz/engine/agecurve_fit.py --league SSB --calib BLM --cache-only
 
 --calib <LG>: run the engine with THAT league's calibration (a dump league such
 as DEV has true OOTP 27 ratings but no calibration of its own; BLM's is the
 OOTP 27 one). Bats / throws / height then come from the league's raw vintage
 rows (backtest/vintages/<LG>/raw_<year>.json.gz) instead of a shipped pull.
 --write ->  calib/<LG>/age_curve.json  +  public/data/<LG>/age_curve.json
+--cache-only: an exported league (SSB, RG: no calibration of its own, its manifest "basis" names one).
+    Runs the engine on every archived vintage with --calib's calibration and fills the .waa_cache under
+    the plain calibration fingerprint, the tag growth_lenses.py and backtest/ml/dataset.py look up (the
+    DEV runs above tag theirs "<fingerprint>-<calib>"). Measures and writes nothing else; works with a
+    single vintage. Cached vintages are reused, so a rerun prices only the new pull.
 """
 import os
 import sys
@@ -206,9 +212,10 @@ def main():
     # a whole game-year of real development moves league medians, which the
     # guard would read as contamination. Off by default for scouted archives.
     no_guard = "--no-guard" in sys.argv
+    cache_only = "--cache-only" in sys.argv
 
     files = ordered_vintages(league)       # in-game order (was: file modification time)
-    if len(files) < 2:
+    if len(files) < (1 if cache_only else 2):
         print(f"{league}: fewer than 2 vintages archived — nothing to measure")
         return 1
 
@@ -237,9 +244,18 @@ def main():
         print(f"{league}: no bats / throws / height source (no shipped pull, no raw vintage rows)")
         return 1
 
-    fp = calib_fingerprint(calib) + ("" if calib == league else f"-{calib}")
+    fp = calib_fingerprint(calib) + ("" if calib == league or cache_only else f"-{calib}")
     print(f"{league}: {len(files)} vintages, engine calibration {calib}, fingerprint {fp} "
           f"(uncached vintages get one engine pass each; later runs reuse the cache)")
+
+    if cache_only:
+        for path in files:
+            cached = os.path.exists(os.path.join(os.path.dirname(path), ".waa_cache",
+                                                 f"{os.path.basename(path)}.{fp}.json"))
+            print(f"  {os.path.basename(path)}: " + ("cached" if cached else "engine pass ..."), flush=True)
+            vintage_waa(league, path, static, fp, calib=calib)
+        print(f"  {league}: {len(files)} vintages cached under fingerprint {fp}")
+        return 0
 
     sums, yrs, cnt = {}, {}, {}
     csums, cyrs, ccnt = {}, {}, {}
