@@ -86,8 +86,8 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
   const rowsByKind = useMemo(() => ({ hitter: hittersWithHybrid, pitcher: pitchersWithHybrid }), [hittersWithHybrid, pitchersWithHybrid]);
   const { selected: selectedPlayer, kind: playerType, select, clear } = useSelectedById(rowsByKind);
 
-  // Combined and sorted draft board
-  const draftBoard = useMemo(() => {
+  // Combined and sorted draft board (all that pass the filters; the table shows the top 200)
+  const rankedBoard = useMemo(() => {
     let players = [];
 
     if (viewMode !== 'pitchers') {
@@ -120,8 +120,9 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
       return bVal - aVal;
     });
 
-    return players.slice(0, 200);
+    return players;
   }, [hittersWithHybrid, pitchersWithHybrid, viewMode, sortBy, maxAge, minFV, hideWrecked, hideImpossible, hideTaken, marks, liveIndex, myOrg]);
+  const draftBoard = useMemo(() => rankedBoard.slice(0, 200), [rankedBoard]);
 
   // My picks: live picks by my org (pick order), then manual 'mine' marks the pull has not caught up on.
   const myPicks = useMemo(() => {
@@ -162,13 +163,25 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
     }));
   }, [draftBoard]);
 
+  // StatsPlus draft list: an ID header, then up to 500 IDs in board order (the format ours'
+  // dashboard exported). Players already taken or mine are left out, whatever the Hide taken toggle.
   const exportDraftList = () => {
-    const csv = draftBoard.map(p => p.ID || '').join('\n');
+    const ids = [];
+    const seen = new Set();
+    for (const p of rankedBoard) {
+      const id = String(p.ID || '');
+      const st = draftStatus(id, marks, liveIndex, myOrg);
+      if (!id || seen.has(id) || (st && (st.taken || st.mine))) continue;
+      seen.add(id);
+      ids.push(id);
+      if (ids.length >= 500) break;
+    }
+    const csv = 'ID\n' + ids.join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'draft_board.csv';
+    a.download = `draft_list_${league}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -208,7 +221,7 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
         </div>
         <div className="ns-head-actions">
           <button type="button" onClick={exportDraftList} className="ns-btn ns-btn-primary ns-btn-sm"
-            title="Export draft list as CSV (with player IDs for StatsPlus)">
+            title="Export the top 500 still available, in board order, as a StatsPlus draft list (ID column)">
             Export CSV
           </button>
         </div>
