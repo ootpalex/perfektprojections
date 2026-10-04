@@ -45,5 +45,8 @@ two days apart. They fill in as the archive grows; no change needed.
 ## Open question carried from the plan
 
 Whether DEV priced with SSB's own league numbers differs enough from BLM's to justify an SSB model
-set. Needs the DEV vintages from the author **and** SSB's own metadata (`metadata_inputs.py`: a small
-set of StatsPlus reads, not yet run; needs your OK).
+set. Needs the DEV vintages from the author **and** SSB's own metadata. The metadata is built
+(2026-10-04, offline, from the nine approved StatsPlus reads plus the dashboard's 2043 files) and
+compared with BLM's in [`phase5/ssb_metadata.md`](phase5/ssb_metadata.md): within a role the order of
+prices barely moves, the role baselines shift (hitters -0.10, relievers +0.17 WAA at MLB level). The
+DEV vintages are still the missing half of the test.
