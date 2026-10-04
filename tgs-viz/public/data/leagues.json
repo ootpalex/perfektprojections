@@ -55,12 +55,14 @@
       "name": "SSB",
       "datasets": [
         "hitters",
-        "pitchers"
+        "pitchers",
+        "hitters_draft",
+        "pitchers_draft"
       ],
       "features": {
         "players": true,
         "trends": true,
-        "draft": false,
+        "draft": true,
         "fa": false,
         "contracts": true
       },
