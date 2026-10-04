@@ -1,9 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { usePlayersWithFV, usePlayersWithDraftFV, usePlayersWithG5FV, usePlayersWithHybridFV } from '../hooks/usePlayerData';
 import PlayerDetail from '../components/PlayerDetail';
 import { useSelectedById } from '../hooks/useSelectedById';
 import { formatCellValue, getCellColorClass, posClass } from '../lib/columns';
-import { useAppConfig } from '../lib/controlApi';
+import { useAppConfig, useCatalog, findTask, startJob, useJobInfo, isActiveStatus, isFinalStatus } from '../lib/controlApi';
 import {
   MARK_MINE, MARK_TAKEN, loadMarks, saveMarks, toggleMark, livePickIndex,
   draftStatus, pickLabel, hiddenAsTaken, summarizeMarks,
@@ -70,6 +70,34 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
     return next;
   });
   const liveIndex = useMemo(() => livePickIndex(picks), [picks]);
+
+  // Refresh picks from the board: runs the league's quick draft task (draft.<league>, a wizard
+  // league's board alone, no ratings pull); the live refresh then reloads the board. When the
+  // picks were last pulled: draft_picks.json's file time, re-read whenever the picks change.
+  const { catalog } = useCatalog();
+  const pickTask = findTask(catalog, `draft.${league}`) ? `draft.${league}` : null;
+  const [pickJob, setPickJob] = useState(null);
+  const [pickErr, setPickErr] = useState(null);
+  const pickJobInfo = useJobInfo(pickJob);
+  const refreshing = !!pickJobInfo && isActiveStatus(pickJobInfo.status);
+  const pickFailed = !!pickJobInfo && isFinalStatus(pickJobInfo.status) && pickJobInfo.status !== 'done';
+  const refreshPicks = async () => {
+    setPickErr(null);
+    try {
+      const job = await startJob(pickTask);
+      setPickJob(job?.id || null);
+    } catch (e) {
+      setPickErr(e?.message || String(e));
+    }
+  };
+  const [picksAt, setPicksAt] = useState(null);
+  useEffect(() => {
+    let on = true;
+    fetch(`/data/${league}/draft_picks.json`, { method: 'HEAD' })
+      .then((r) => { const lm = r.ok ? r.headers.get('last-modified') : null; if (on) setPicksAt(lm ? new Date(lm) : null); })
+      .catch(() => { if (on) setPicksAt(null); });
+    return () => { on = false; };
+  }, [league, picks]);
   const statusOf = (p) => draftStatus(p.ID, marks, liveIndex, myOrg);
   const markSummary = useMemo(() => summarizeMarks(marks, liveIndex, myOrg), [marks, liveIndex, myOrg]);
 
@@ -220,6 +248,18 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
           </p>
         </div>
         <div className="ns-head-actions">
+          {(pickTask || picksAt) && (
+            <span className="text-[11px] ns-muted" title="When the pick list was last pulled from StatsPlus. Export after a refresh so it leaves out the latest picks.">
+              {picksAt ? `Picks pulled ${picksAt.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'Picks not pulled yet'}
+              {pickFailed ? ' · refresh failed, see Control' : ''}{pickErr ? ` · ${pickErr}` : ''}
+            </span>
+          )}
+          {pickTask && (
+            <button type="button" onClick={refreshPicks} disabled={refreshing} className="ns-btn ns-btn-sm"
+              title="Pull the latest picks from StatsPlus and rebuild this board (no ratings pull; a few seconds)">
+              {refreshing ? 'Refreshing…' : 'Refresh picks'}
+            </button>
+          )}
           <button type="button" onClick={exportDraftList} className="ns-btn ns-btn-primary ns-btn-sm"
             title="Export the top 500 still available, in board order, as a StatsPlus draft list (ID column)">
             Export CSV
