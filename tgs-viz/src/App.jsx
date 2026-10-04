@@ -14,6 +14,7 @@ import TeamStandingsPage from './pages/TeamStandingsPage';
 import OrganizationPage from './pages/OrganizationPage';
 import TrendsPage from './pages/TrendsPage';
 import WaiverClaimPage from './pages/WaiverClaimPage';
+import RosterPlannerPage from './pages/RosterPlannerPage';
 import ParksPage from './pages/ParksPage';
 import MakeItOddsPage from './pages/MakeItOddsPage';
 import ControlPage from './pages/ControlPage';
@@ -161,6 +162,7 @@ function Sidebar({ leagues, currentLeague, onLeagueChange, parkMode, onParkModeC
 
             <li className="group">Organization</li>
             <li><NavLink to="/organization" className={link}>Org Builder</NavLink></li>
+            <li><NavLink to="/roster-planner" className={link}>Roster Planner</NavLink></li>
             <li><NavLink to="/waivers" className={link}>Waivers &amp; DFA</NavLink></li>
             <li><NavLink to="/parks" className={link}>Parks</NavLink></li>
 
@@ -459,6 +461,9 @@ export default function App() {
             <Route path="/parks" element={<ParksPage parks={data.parks} parkList={data.park_list} league={currentLeague} />} />
             <Route path="/organization" element={
               <OrganizationPage hitters={data.hitters} pitchers={data.pitchers} metadata={data.metadata} league={currentLeague} parkMode={parkMode} />
+            } />
+            <Route path="/roster-planner" element={
+              <RosterPlannerPage hitters={data.hitters} pitchers={data.pitchers} metadata={data.metadata} league={currentLeague} />
             } />
             <Route path="/waivers" element={
               <WaiverClaimPage hitters={data.hitters} pitchers={data.pitchers} league={currentLeague} />
