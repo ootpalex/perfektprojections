@@ -477,7 +477,7 @@ export default function App() {
               <RosterPlannerPage hitters={data.hitters} pitchers={data.pitchers} metadata={data.metadata} league={currentLeague} />
             } />
             <Route path="/waivers" element={
-              <WaiverClaimPage hitters={data.hitters} pitchers={data.pitchers} league={currentLeague} />
+              <WaiverClaimPage hitters={data.hitters} pitchers={data.pitchers} metadata={data.metadata} league={currentLeague} />
             } />
             <Route path="/market-value" element={
               <MarketValuePage hitters={data.hitters} pitchers={data.pitchers} marketBank={data.marketBank} />

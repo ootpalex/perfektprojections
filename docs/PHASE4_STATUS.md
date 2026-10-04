@@ -25,7 +25,6 @@ and the 3-option limit; each shows as unknown or is left out.
 **Checks run on the merged branch:** `vite build` passes; every `tests/client/*.test.mjs` passes. In
 the browser on SSB (Atlanta): Roster Planner, Waivers, Prospects, Scout, Org Builder, Market Value,
 Control and the player drawer with the contract card render with real numbers and no console errors.
-Market Value's stat cards clip their values below about 900 px of width; they fit at 1440.
 
 ## Decisions taken (2026-10-04)
 
@@ -64,12 +63,16 @@ Market Value's stat cards clip their values below about 900 px of width; they fi
 
 Nothing open for Phase 4.
 
-## Follow-ups (no decision needed)
+## Follow-ups
 
-- The Waivers and Roster Planner org dropdowns still list KBO and South African clubs; they should
-  use `resolveLeagueClubs()` like the standings.
-- Market Value stat cards clip below ~900 px width.
-- `useLeagues` downloads DEV's 9.8 MB `rating_trends.json` on every start only to test that it exists.
+Fixed 2026-10-04:
+- The Org Builder, Roster Planner and Waivers team dropdowns list only the league's own clubs
+  (`listOrgs(..., known)` with `resolveLeagueClubs`); on SSB, 28 instead of 50.
+- Market Value's cards wrap onto a new row instead of clipping (checked at the narrow pane width).
+- The league list checks DEV's `rating_trends.json` with a HEAD request (300 bytes) instead of
+  downloading 9.8 MB on every start; the file loads only when Rating Trends opens.
+
+Still open (not code):
 - Re-export `org.csv` from OOTP when convenient: Rule 5 and options used still come only from it, and
   this one is 133 game days old.
 - ML models from the original creator are still awaited (the prospect board's ML source is empty).

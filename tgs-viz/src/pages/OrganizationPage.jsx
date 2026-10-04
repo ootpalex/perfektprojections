@@ -299,7 +299,14 @@ export default function OrganizationPage({ hitters: hittersIn = [], pitchers: pi
   const hitters = usePlayersWithFV(hittersNeutral);
   const pitchers = usePlayersWithFV(pitchersNeutral);
 
-  const orgs = useMemo(() => listOrgs(hitters, pitchers), [hitters, pitchers]);
+  // Same club set the standings rank against, so "8th of 28" means the same
+  // thing on both screens (the pull's metadata.clubs, else LEAGUE_TEAMS).
+  // Unmapped leagues pass null and fall back to any org carrying a real roster.
+  const knownTeams = useMemo(
+    () => resolveLeagueClubs(metadata, LEAGUE_TEAMS[league]).known,
+    [metadata, league]
+  );
+  const orgs = useMemo(() => listOrgs(hitters, pitchers, knownTeams), [hitters, pitchers, knownTeams]);
   const [org, setOrg] = useState('');
   // Default org: the league's my_org from the settings (app config), else the
   // first org matching /cub/i, else the first org. The config may arrive after
@@ -324,13 +331,6 @@ export default function OrganizationPage({ hitters: hittersIn = [], pitchers: pi
     [org, hitters, pitchers, league, vrShare]
   );
 
-  // Same club set the standings rank against, so "8th of 28" means the same
-  // thing on both screens (the pull's metadata.clubs, else LEAGUE_TEAMS).
-  // Unmapped leagues pass null and fall back to any org carrying a real roster.
-  const knownTeams = useMemo(
-    () => resolveLeagueClubs(metadata, LEAGUE_TEAMS[league]).known,
-    [metadata, league]
-  );
 
   // Surplus who didn't make any roster — possible cuts, MOST cuttable first (lowest
   // youth-weighted keep value, so old no-ceiling fillers top the list and any young arm

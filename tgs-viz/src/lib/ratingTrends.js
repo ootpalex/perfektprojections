@@ -30,9 +30,34 @@ export function ratingScale(ageCurves) {
 export function invalidateRatingTrends(league) {
   if (league === undefined || league === null) {
     for (const k of Object.keys(cache)) delete cache[k];
+    for (const k of Object.keys(probes)) delete probes[k];
     return;
   }
   delete cache[league];
+  delete probes[league];
+}
+
+const probes = {};
+
+/**
+ * Whether the league's trends file exists, without downloading it: a HEAD
+ * request (DEV's file is ~10 MB, and the league list needs only its presence).
+ * Reuses a full load already made; falls back to one if the server refuses HEAD.
+ */
+export function probeRatingTrends(league) {
+  const lg = league || 'TGS';
+  if (cache[lg]) return cache[lg].then((t) => t != null);
+  if (!probes[lg]) {
+    probes[lg] = fetch(`/data/${lg}/rating_trends.json`, { method: 'HEAD' })
+      .then((res) => {
+        if (res.status === 405 || res.status === 501) return loadRatingTrends(lg).then((t) => t != null);
+        // Non-JSON = dev-server SPA fallback for a missing file, as in loadRatingTrends.
+        const ctype = res.headers.get('content-type') || '';
+        return res.ok && ctype.includes('json');
+      })
+      .catch(() => false);
+  }
+  return probes[lg];
 }
 
 /** Fetch (once per league) the trends file. Resolves to null when missing. */

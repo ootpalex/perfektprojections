@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { buildClaimBoard, fortyManSpots, CLOCK_CLAIMABLE, CLOCK_CLEARED, CLOCK_DFA } from '../lib/waivers';
 import { listOrgs } from '../lib/orgBuilder';
+import { resolveLeagueClubs } from '../lib/leagueClubs';
+import { LEAGUE_TEAMS } from './TeamStandingsPage';
 import { formatMoney } from '../lib/marketValue';
 import { useAppConfig } from '../lib/controlApi';
 import { posClass, levelKey } from '../lib/columns';
@@ -143,8 +145,9 @@ function ClaimTable({ rows, smartOn, smartOf, gradeOf, emptyText }) {
  * The 40-man card shows the org's occupancy (isOn40Man: StatsPlus, else the export) because a claim costs a
  * spot; the claim verdict itself does not price that spot.
  */
-export default function WaiverClaimPage({ hitters, pitchers, league }) {
-  const orgs = useMemo(() => listOrgs(hitters, pitchers), [hitters, pitchers]);
+export default function WaiverClaimPage({ hitters, pitchers, metadata, league }) {
+  const knownClubs = useMemo(() => resolveLeagueClubs(metadata, LEAGUE_TEAMS[league]).known, [metadata, league]);
+  const orgs = useMemo(() => listOrgs(hitters, pitchers, knownClubs), [hitters, pitchers, knownClubs]);
   const [org, setOrg] = useState('');
   // Default org: the league's my_org from the settings (app config), else the
   // first org matching /cub/i, else the first org. The config may arrive after

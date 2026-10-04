@@ -9,6 +9,8 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { DndContext, DragOverlay, useSensor, useSensors, PointerSensor, KeyboardSensor } from '@dnd-kit/core';
 import { listOrgs } from '../lib/orgBuilder';
+import { resolveLeagueClubs } from '../lib/leagueClubs';
+import { LEAGUE_TEAMS } from './TeamStandingsPage';
 import { useAppConfig } from '../lib/controlApi';
 import { getOrg, getRosterExportDate, getRosterExportGapDays } from '../lib/accessors';
 import PlayerDetail from '../components/PlayerDetail';
@@ -51,7 +53,8 @@ function Alert({ w }) {
 
 export default function RosterPlannerPage({ hitters, pitchers, metadata, league }) {
   const rows = useMemo(() => [...hitters, ...pitchers].map(enrichForPlanner), [hitters, pitchers]);
-  const orgs = useMemo(() => listOrgs(hitters, pitchers), [hitters, pitchers]);
+  const knownClubs = useMemo(() => resolveLeagueClubs(metadata, LEAGUE_TEAMS[league]).known, [metadata, league]);
+  const orgs = useMemo(() => listOrgs(hitters, pitchers, knownClubs), [hitters, pitchers, knownClubs]);
 
   // Default org: the league's my_org (app config), else /cub/i, else the first
   // org — the Org Builder / Waivers rule. A user pick sticks while it exists.

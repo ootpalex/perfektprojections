@@ -7,7 +7,7 @@ import { buildDevPercentileData, calculateG5FV } from '../lib/g5FV';
 import { calculateHybridFV } from '../lib/hybridFV';
 import { getBestWAA, getPlayerWAR, calculatePlayerValue, calculatePitcherValue, fitFAMarket, resolveRate } from '../lib/marketValue';
 import { DEFAULT_FEATURES, FALLBACK_LEAGUES, normalizeLeagues, isTrendsOnly } from '../lib/leagues.js';
-import { loadRatingTrends } from '../lib/ratingTrends';
+import { probeRatingTrends } from '../lib/ratingTrends';
 import { applyDevSignals, fetchDevSignals } from '../lib/devSignals';
 import { applyDevMl, fetchDevMl, devMlStaleReason } from '../lib/devMl';
 import { loadAgeCurve, peekAgeCurve, MEASURED_CURVE_LEAGUE } from '../lib/ageCurve';
@@ -90,8 +90,8 @@ function emptyData() {
  * Returns { leagues, loading }. Never fails: if the manifest is missing,
  * unreadable, or empty, it falls back to the built-in TGS/BLM list.
  * A trends-only league (features.players false) is listed only when its
- * rating_trends.json exists; the probe is the same cached fetch the Rating
- * Trends page reuses, so the file is downloaded once.
+ * rating_trends.json exists; the probe is a HEAD request, so the file is
+ * downloaded only when the Rating Trends page opens.
  * It loads again when leagues.json or any league's trends file changes (live
  * refresh). A reload that fails keeps the list it had.
  */
@@ -117,7 +117,7 @@ export function useLeagues() {
         const normalized = normalizeLeagues(data);
         setLeagueBases(normalized);
         const present = await Promise.all(normalized.map(lg => (
-          isTrendsOnly(lg) ? loadRatingTrends(lg.id).then(t => t != null) : Promise.resolve(true)
+          isTrendsOnly(lg) ? probeRatingTrends(lg.id) : Promise.resolve(true)
         )));
         if (!on) return;
         setLeagues(prev => {

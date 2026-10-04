@@ -1527,11 +1527,13 @@ export function buildRosters(org, hitters, pitchers, opts = {}) {
   return { org, levels, depth, promote: promote.slice(0, 12), buried: buried.slice(0, 12), pipeline, needs };
 }
 
-export function listOrgs(hitters, pitchers) {
+// `known` (a Set from resolveLeagueClubs().known) limits the list to the league's
+// own clubs; SSB rows also carry KBO and South African clubs. null = every org.
+export function listOrgs(hitters, pitchers, known = null) {
   const s = new Set();
   for (const p of [...hitters, ...pitchers]) {
     const o = p["ORG"];
-    if (o && o !== "-" && o !== "0") s.add(o);
+    if (o && o !== "-" && o !== "0" && (!known || known.has(o))) s.add(o);
   }
   return [...s].sort();
 }

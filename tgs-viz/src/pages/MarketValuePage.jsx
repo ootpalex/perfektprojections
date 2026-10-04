@@ -192,7 +192,7 @@ export default function MarketValuePage({ hitters, pitchers, marketBank }) {
         )}
 
         {/* Fitted Market Cards */}
-        <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))]">
           <StatCard
             label="Fitted $/WAR"
             value={fit?.pooled ? fmtSlope(fit.pooled.slope) : '-'}
@@ -600,7 +600,7 @@ function PlayerValuationDetail({ player }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-3 mb-4">
+      <div className="grid gap-3 mb-4 grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))]">
         <MiniStat label="Current WAR" value={val.warNow.toFixed(1)} color={waaColor(val.warNow)} />
         {/* Remaining team control — the horizon behind the offer table below. */}
         <MiniStat
