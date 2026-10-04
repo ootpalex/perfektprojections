@@ -2,14 +2,20 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { calculateFutureValue } from '../lib/futureValue';
 import { controlWindow, formatControl } from '../lib/serviceTime';
-import { formatCellValue, getCellColorClass } from '../lib/columns';
+import { formatCellValue, getCellColorClass, levelKey } from '../lib/columns';
 import { loadRatingTrends, playerHistory } from '../lib/ratingTrends';
 import { loadAgeCurve } from '../lib/ageCurve';
 import { useDataVersion } from '../lib/dataVersion';
 import { devSummary, devPeakText, devBasisText, devIsMl, devMlWords, fmtWaa } from '../lib/devSignals';
 import { getWorkEthicModifier, getIntelligenceModifier } from '../lib/draftFV';
 import { trainingNotes, TRAIN_PEAK_BAR } from '../lib/orgBuilder';
-import { X } from 'lucide-react';
+
+// Night Scorecard: no icon font. The close mark is a small inline stroke SVG.
+const CloseX = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+    <path d="M6 6l12 12M18 6L6 18" />
+  </svg>
+);
 
 /**
  * One line of dev signals for a player aged 16-26 (lib/devSignals.js), the
@@ -28,23 +34,23 @@ function DevSignalsLine({ player }) {
   const flag = player.Dev_Flag;
   const peak = devPeakText(player);
   return (
-    <div className="border-t border-slate-700/50 mt-1 pt-1">
+    <div className="ns-rule-t mt-1 pt-1">
       <div className="flex justify-between items-start gap-2 py-0.5">
-        <span className="text-xs text-slate-300">
-          <span className="text-slate-500">Dev signals: </span>{devSummary(player)}
+        <span className="text-xs ns-text">
+          <span className="ns-muted">Dev signals: </span>{devSummary(player)}
         </span>
         {flag && (
-          <span className={`text-xs font-bold shrink-0 ${flag === 'keep' ? 'text-green-400' : 'text-red-400'}`}>
+          <span className={`text-xs font-bold shrink-0 ${flag === 'keep' ? 'ns-good' : 'ns-bad'}`}>
             {flag.toUpperCase()}
           </span>
         )}
       </div>
       {peak && (
-        <div className="text-xs text-slate-300 py-0.5">
-          <span className="text-slate-500">Exp peak: </span>{peak}
+        <div className="text-xs ns-text py-0.5">
+          <span className="ns-muted">Exp peak: </span>{peak}
         </div>
       )}
-      <div className="text-[10px] text-slate-600">{devBasisText(player)}</div>
+      <div className="text-[11px] ns-muted">{devBasisText(player)}</div>
     </div>
   );
 }
@@ -53,23 +59,26 @@ function DevSignalsLine({ player }) {
  * OOTP-style 20-80 rating chip. The whole point is legibility: a big number in
  * a bucket color you can read across the room, like the game's own star scale.
  */
+// Night Scorecard: the band's grade-ramp text colour; .ns-rchip tints its own
+// fill 10% from that colour (thresholds unchanged; see lib/columns.js for the
+// colour-name -> ramp translation).
 function ratingClass(v) {
-  if (v === null || v === undefined || isNaN(v)) return 'bg-slate-800 text-slate-600';
-  if (v >= 75) return 'bg-sky-500/25 text-sky-300';
-  if (v >= 65) return 'bg-emerald-500/25 text-emerald-300';
-  if (v >= 55) return 'bg-lime-500/20 text-lime-300';
-  if (v >= 45) return 'bg-yellow-500/15 text-yellow-200';
-  if (v >= 40) return 'bg-amber-600/25 text-amber-300';
-  if (v >= 30) return 'bg-orange-600/25 text-orange-300';
-  return 'bg-red-600/25 text-red-300';
+  if (v === null || v === undefined || isNaN(v)) return 'is-empty';
+  if (v >= 75) return 'ns-g80';
+  if (v >= 65) return 'ns-g70';
+  if (v >= 55) return 'ns-g55';
+  if (v >= 45) return 'ns-text-2';
+  if (v >= 40) return 'ns-g40';
+  if (v >= 30) return 'ns-g30';
+  return 'ns-g20';
 }
 
 function RChip({ value, dim }) {
   const v = parseFloat(value);
   const has = !isNaN(v);
   return (
-    <span className={`inline-flex items-center justify-center w-9 h-7 rounded-md text-sm font-bold tabular-nums ${
-      has ? ratingClass(v) : 'bg-slate-800/60 text-slate-600'
+    <span className={`ns-rchip font-bold ${
+      has ? ratingClass(v) : 'is-empty'
     } ${dim ? 'opacity-70' : ''}`}>
       {has ? Math.round(v) : '–'}
     </span>
@@ -81,7 +90,7 @@ function RatingsTable({ rows, player }) {
   return (
     <table className="w-full border-separate" style={{ borderSpacing: '0 3px' }}>
       <thead>
-        <tr className="text-[10px] text-slate-500 uppercase tracking-wider">
+        <tr className="font-narrow text-[12px] ns-muted">
           <th className="text-left font-semibold"> </th>
           <th className="font-semibold w-10">vR</th>
           <th className="font-semibold w-10">vL</th>
@@ -91,7 +100,7 @@ function RatingsTable({ rows, player }) {
       <tbody>
         {rows.map(([label, vr, vl, pot]) => (
           <tr key={label}>
-            <td className="text-xs text-slate-400 pr-1">{label}</td>
+            <td className="text-xs ns-text-2 pr-1">{label}</td>
             <td className="text-center"><RChip value={player[vr]} /></td>
             <td className="text-center"><RChip value={player[vl]} /></td>
             <td className="text-center"><RChip value={player[pot]} /></td>
@@ -109,7 +118,7 @@ function ChipRow({ items, player, cols = 2 }) {
     <div className={`grid ${cols === 1 ? 'grid-cols-1' : 'grid-cols-2'} gap-x-5`}>
       {items.map(([label, key]) => (
         <div key={label} className="flex items-center justify-between py-[3px]">
-          <span className="text-xs text-slate-400">{label}</span>
+          <span className="text-xs ns-text-2">{label}</span>
           <RChip value={player[key]} />
         </div>
       ))}
@@ -132,17 +141,17 @@ function PitchRepertoire({ player }) {
   owned.sort((a, b) => b.cur - a.cur);
   return (
     <div>
-      <h4 className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5 mt-3">
+      <h4 className="ns-subhead mt-3">
         Pitches ({owned.length})
       </h4>
       <div className="space-y-1">
         {owned.map(p => (
           <div key={p.code} className="flex items-center gap-2">
-            <span className="text-xs text-slate-400 w-20">{p.name}</span>
+            <span className="text-xs ns-text-2 w-20">{p.name}</span>
             <RChip value={p.cur} />
             {!isNaN(p.pot) && p.pot > p.cur ? (
               <>
-                <span className="text-slate-600 text-xs">→</span>
+                <span className="ns-muted text-xs">→</span>
                 <RChip value={p.pot} dim />
               </>
             ) : null}
@@ -165,7 +174,7 @@ function Sparkline({ values, delta }) {
   const W = 72, H = 18, PAD = 2;
   const sx = x => PAD + (maxX === minX ? 0.5 : (x - minX) / (maxX - minX)) * (W - 2 * PAD);
   const sy = y => H - PAD - (maxY === minY ? 0.5 : (y - minY) / (maxY - minY)) * (H - 2 * PAD);
-  const color = delta > 0 ? '#4ade80' : delta < 0 ? '#f87171' : '#64748b';
+  const color = delta > 0 ? 'var(--good)' : delta < 0 ? 'var(--bad)' : 'var(--text-3)';
   return (
     <svg width={W} height={H} className="shrink-0">
       <polyline
@@ -205,31 +214,31 @@ function RatingHistory({ player }) {
   const range = dates.length ? `${dates[0]} → ${dates[dates.length - 1]}` : '';
 
   return (
-    <div className="bg-slate-800/50 rounded-lg p-3">
-      <h3 className="text-xs font-semibold text-slate-400 uppercase mb-1">Rating History</h3>
-      <div className="text-[10px] text-slate-500 mb-2">
+    <div className="ns-card">
+      <h3 className="ns-strip">Rating History</h3>
+      <div className="text-[11px] ns-muted mb-2">
         {range} · {vintages} archived pulls. Projections price the current ratings as they are; last year's growth from this archive feeds the dev numbers.
       </div>
       {rows.length === 0 ? (
-        <div className="text-xs text-slate-500">No rating changes across the last {dates.length} pulls.</div>
+        <div className="text-xs ns-muted">No rating changes across the last {dates.length} pulls.</div>
       ) : (
         <>
           {shown.map(r => (
             <div key={r.col} className="flex items-center justify-between gap-2 py-0.5">
-              <span className="text-slate-500 text-xs w-16 shrink-0">{r.col}</span>
+              <span className="ns-muted text-xs w-16 shrink-0">{r.col}</span>
               <Sparkline values={r.values} delta={r.delta} />
-              <span className="text-xs font-mono text-slate-300 w-16 text-right">
+              <span className="text-xs tabular-nums ns-text w-16 text-right">
                 {r.first} → {r.last}
               </span>
-              <span className={`text-xs font-mono w-9 text-right ${
-                r.delta > 0 ? 'text-green-400' : r.delta < 0 ? 'text-red-400' : 'text-slate-500'
+              <span className={`text-xs tabular-nums w-9 text-right ${
+                r.delta > 0 ? 'ns-good' : r.delta < 0 ? 'ns-bad' : 'ns-muted'
               }`}>
                 {r.delta > 0 ? '+' : ''}{Math.round(r.delta * 10) / 10}
               </span>
             </div>
           ))}
           {rows.length > shown.length && (
-            <div className="text-[10px] text-slate-600 mt-1">
+            <div className="text-[11px] ns-muted mt-1">
               +{rows.length - shown.length} more changed ratings
             </div>
           )}
@@ -248,7 +257,7 @@ function draftStep(mod) {
   const v = Math.round((mod - 1) * 1000) / 10;
   return v > 0 ? `+${v}%` : v < 0 ? `${v}%` : '';
 }
-const stepClass = (s) => (!s ? 'text-slate-600' : s.startsWith('+') ? 'text-green-400' : 'text-red-400');
+const stepClass = (s) => (!s ? 'ns-muted' : s.startsWith('+') ? 'ns-good' : 'ns-bad');
 
 /**
  * Training positions for a hitter (user, 2026-09-24: "notate the positions
@@ -264,12 +273,12 @@ function TrainingLine({ player }) {
   if (!notes.length) return null;
   const signed = (v) => (v >= 0 ? '+' : '') + v.toFixed(1);
   return (
-    <div className="border-t border-slate-700/50 mt-1 pt-1 py-0.5 text-xs text-slate-300">
-      <span className="text-slate-500">Training: </span>
+    <div className="ns-rule-t mt-1 pt-1 py-0.5 text-xs ns-text">
+      <span className="ns-muted">Training: </span>
       {notes.map((n, i) => (
         <span key={n.pos} title={`at his potential, ${n.pos}: ${signed(n.peak)} WAA${n.untrained ? '; never trained there, his tools carry it' : ''}`}>{i > 0 ? ', ' : ''}{n.pos} {n.untrained ? 'new' : `${n.cur}/${n.pot}`}</span>
       ))}
-      <span className="text-slate-500"> ({TRAIN_PEAK_BAR} WAA or better there at his potential)</span>
+      <span className="ns-muted"> ({TRAIN_PEAK_BAR} WAA or better there at his potential)</span>
     </div>
   );
 }
@@ -353,49 +362,49 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
     const colorClass = getCellColorClass(value, colorCol || label);
     return (
       <div className="flex justify-between items-center py-0.5">
-        <span className="text-slate-500 text-xs">{label}</span>
-        <span className={`text-sm font-mono ${colorClass}`}>{display}</span>
+        <span className="ns-muted text-xs">{label}</span>
+        <span className={`text-[13px] tabular-nums ${colorClass}`}>{display}</span>
       </div>
     );
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-5xl w-full max-h-[90vh] overflow-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 ns-scrim z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="ns-box max-w-5xl w-full max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-700 sticky top-0 bg-slate-900 z-10">
+        <div className="ns-strip sticky top-0 z-10 px-4 py-3">
           <div>
-            <h2 className="text-xl font-bold text-white">{player.Name}</h2>
-            <div className="flex gap-3 mt-1 text-sm text-slate-400">
-              <span>{player.POS}</span>
+            <h2 className="font-sans text-[22px] font-extrabold tracking-[-0.03em] leading-tight">{player.Name}</h2>
+            <div className="flex items-center gap-3 mt-1 text-[13px] font-medium ns-text-2">
+              <span className="ns-chip" data-pos={player.POS}>{player.POS}</span>
               <span>{player.ORG}</span>
               <span>Age {Math.round(parseFloat(player.Age) || 0)}</span>
               <span>{player.B}/{player.T}</span>
-              <span>Lvl: {player.Lev}</span>
+              <span>Lvl: {levelKey(player.Lev) ? <span className="ns-chip" data-lvl={levelKey(player.Lev)}>{player.Lev}</span> : player.Lev}</span>
             </div>
           </div>
           <div className="flex items-center gap-4">
             {player._draftFV !== undefined && (
               <div className="text-center">
-                <div className="text-3xl font-black text-green-400">{player._draftFV}</div>
-                <div className="text-[10px] text-slate-500 uppercase tracking-wide">Draft FV</div>
+                <div className={`font-sans text-3xl font-black tabular-nums ${getCellColorClass(player._draftFV, '_draftFV')}`}>{player._draftFV}</div>
+                <div className="text-[11px] font-semibold ns-muted">Draft FV</div>
               </div>
             )}
             <div className="text-center">
-              <div className="text-3xl font-black text-blue-400">{fv.fvScale}</div>
-              <div className="text-[10px] text-slate-500 uppercase tracking-wide">Future Value</div>
+              <div className={`font-sans text-3xl font-black tabular-nums ${getCellColorClass(fv.fvScale, '_fvScale')}`}>{fv.fvScale}</div>
+              <div className="text-[11px] font-semibold ns-muted">Future Value</div>
             </div>
-            <button onClick={onClose} className="text-slate-400 hover:text-white p-1">
-              <X size={20} />
+            <button type="button" onClick={onClose} className="ns-icon-btn" aria-label="Close" title="Close">
+              <CloseX />
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 p-4">
+        <div className="ns-desk grid grid-cols-1 lg:grid-cols-3 gap-4 p-4">
           {/* Column 1: Key Stats */}
           <div className="space-y-4">
-            <div className="bg-slate-800/50 rounded-lg p-3">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">Value Summary</h3>
+            <div className="ns-card">
+              <h3 className="ns-strip">Value Summary</h3>
               {type === 'hitter' ? (
                 <>
                   {statLine('Max WAA (wtd)', player['Max WAA wtd'], 'Max WAA wtd')}
@@ -429,16 +438,16 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
               const glove = best && best !== 'DH' ? num(`${best} RunsP`) : null;
               const posadj = glove !== null ? def - glove : def;
               const R = ({ label, v, strong, indent }) => v === null ? null : (
-                <div className={`flex justify-between items-center py-0.5 ${strong ? 'border-t border-slate-700/50 mt-0.5 pt-1' : ''}`}>
-                  <span className={`text-xs ${strong ? 'text-slate-300 font-semibold' : 'text-slate-500'} ${indent ? 'pl-3' : ''}`}>{label}</span>
-                  <span className={`text-sm font-mono ${strong ? 'font-bold' : ''} ${
-                    v > 0.05 ? 'text-green-400' : v < -0.05 ? 'text-red-400' : 'text-slate-400'
+                <div className={`flex justify-between items-center py-0.5 ${strong ? 'ns-rule-t mt-0.5 pt-1' : ''}`}>
+                  <span className={`text-xs ${strong ? 'ns-text font-semibold' : 'ns-muted'} ${indent ? 'pl-3' : ''}`}>{label}</span>
+                  <span className={`text-[13px] tabular-nums ${strong ? 'font-bold' : ''} ${
+                    v > 0.05 ? 'ns-good' : v < -0.05 ? 'ns-bad' : 'ns-text-2'
                   }`}>{v > 0 ? '+' : ''}{v.toFixed(1)}</span>
                 </div>
               );
               return (
-                <div className="bg-slate-800/50 rounded-lg p-3">
-                  <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">
+                <div className="ns-card">
+                  <h3 className="ns-strip">
                     Runs Breakdown{best ? ` (at ${best})` : ''}
                   </h3>
                   <R label="Batting" v={bat} indent />
@@ -448,7 +457,7 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                   <R label={best === 'DH' ? 'DH charge' : 'Position adj'} v={posadj} indent />
                   <R label="Defense" v={def} strong />
                   <R label="Offense at potential" v={offP} strong />
-                  <div className="text-[10px] text-slate-600 mt-1.5">
+                  <div className="text-[11px] ns-muted mt-1.5">
                     Runs per 600 PA season. Offense + Defense ÷ runs-per-win = Best WAA.
                     {best === 'C' ? ' Catcher offense is on the 500-PA catcher basis, so the components are approximate.' : ''}
                   </div>
@@ -456,8 +465,8 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
               );
             })()}
 
-            <div className="bg-slate-800/50 rounded-lg p-3">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">Future Value Breakdown</h3>
+            <div className="ns-card">
+              <h3 className="ns-strip">Future Value Breakdown</h3>
               {statLine('FV (20-80)', fv.fvScale, '_fvScale')}
               {statLine('Total Future$', fv.futureValue, '_futureValue')}
               {/* WAA (vs average) — same basis as the boards. fv.currentWAA /
@@ -480,16 +489,16 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
               {/* The internal WAR basis, shown raw so the WAA numbers above are auditable.
                   Plain divs, not statLine — statLine runs values through formatCellValue,
                   which parseFloat()s a composite string down to its first number. */}
-              <div className="flex justify-between items-center py-0.5 border-t border-slate-700/50 mt-1 pt-1">
-                <span className="text-slate-500 text-xs">Internal WAR (cur / peak)</span>
-                <span className="text-sm font-mono text-slate-400">{fv.currentWAA} / {fv.expectedPeakWAA}</span>
+              <div className="flex justify-between items-center py-0.5 ns-rule-t mt-1 pt-1">
+                <span className="ns-muted text-xs">Internal WAR (cur / peak)</span>
+                <span className="text-[13px] tabular-nums ns-text-2">{fv.currentWAA} / {fv.expectedPeakWAA}</span>
               </div>
               <div className="flex justify-between items-center py-0.5">
-                <span className="text-slate-500 text-xs">Role (cur / peak)</span>
-                <span className="text-sm font-mono text-slate-400">
+                <span className="ns-muted text-xs">Role (cur / peak)</span>
+                <span className="text-[13px] tabular-nums ns-text-2">
                   {fv.currentRole ?? '?'} / {fv.potentialRole ?? '?'}
                   {fv.currentRole !== fv.potentialRole && (
-                    <span className="ml-1 text-amber-400" title="Current and peak roles differ — the two ends carry different replacement offsets.">*</span>
+                    <span className="ml-1 ns-warn" title="Current and peak roles differ — the two ends carry different replacement offsets.">*</span>
                   )}
                 </span>
               </div>
@@ -501,9 +510,9 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                 : 'At peak')}
               {nextSeason && (
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="text-slate-500 text-xs">{nextSeason.ml ? 'Next season, if he keeps playing' : 'Next season'}</span>
-                  <span className={`text-sm font-mono ${
-                    nextSeason.delta > 0.05 ? 'text-green-400' : nextSeason.delta < -0.05 ? 'text-red-400' : 'text-slate-400'
+                  <span className="ns-muted text-xs">{nextSeason.ml ? 'Next season, if he keeps playing' : 'Next season'}</span>
+                  <span className={`text-[13px] tabular-nums ${
+                    nextSeason.delta > 0.05 ? 'ns-good' : nextSeason.delta < -0.05 ? 'ns-bad' : 'ns-text-2'
                   }`} title={nextSeason.ml
                     ? `Median change next season (age ${nextSeason.age}) from ${devMlWords(player)}, 25th to 75th pct ${fmtWaa(nextSeason.lo)} to ${fmtWaa(nextSeason.hi)}. It assumes he keeps playing: the path models learn only from players who stayed in the league${devIsMl(player)
                       ? `, while Proj Potential counts the ones who wash out. The chart and the Year by year columns are capped at Proj Potential and smoothed (no dip before 28); projected WAA at age ${nextSeason.age} there: ${nextSeason.waa.toFixed(1)}`
@@ -518,10 +527,10 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
               {/* Remaining control — the window everything above is summed over.
                   Plain div, not statLine: formatCellValue would parseFloat the
                   composite string down to its leading number. */}
-              <div className="flex justify-between items-center py-0.5 border-t border-slate-700/50 mt-1 pt-1">
-                <span className="text-slate-500 text-xs">Control</span>
+              <div className="flex justify-between items-center py-0.5 ns-rule-t mt-1 pt-1">
+                <span className="ns-muted text-xs">Control</span>
                 <span
-                  className={`text-sm font-mono ${control.source === 'default' ? 'text-amber-400' : 'text-slate-300'}`}
+                  className={`text-[13px] tabular-nums ${control.source === 'default' ? 'ns-warn' : 'ns-text'}`}
                   title={control.serviceYears !== null
                     ? `${control.serviceYears.toFixed(1)} MLB service yrs (${control.serviceBasis})`
                     : 'No service data on this row — falling back to a full 6-year window'}
@@ -532,41 +541,41 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
             </div>
 
             {player._draftFV !== undefined && (
-              <div className="bg-slate-800/50 rounded-lg p-3 border border-blue-900/30">
-                <h3 className="text-xs font-semibold text-blue-400 uppercase mb-2">Draft FV Breakdown</h3>
+              <div className="ns-card">
+                <h3 className="ns-strip">Draft FV Breakdown</h3>
                 {statLine('Draft FV (20-80)', player._draftFV, '_draftFV')}
                 {statLine('Draft Raw Score', player._draftRawFV, '_draftRawFV')}
                 {statLine('Age Percentile', player._agePercentile, '_agePercentile')}
                 {statLine('Ceiling (WAA)', player._draftCeilingWAA, '_draftCeilingWAA')}
                 {player._ceilingRole && statLine('Ceiling role', player._ceilingRole)}
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="text-slate-500 text-xs">Durability</span>
-                  <span className={`text-sm font-mono ${getCellColorClass(player._durability, '_durability')}`}>
+                  <span className="ns-muted text-xs">Durability</span>
+                  <span className={`text-[13px] ${getCellColorClass(player._durability, '_durability')}`}>
                     {player._durability}
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="text-slate-500 text-xs">Work ethic</span>
-                  <span className={`text-sm font-mono ${stepClass(weStep)}`}>
+                  <span className="ns-muted text-xs">Work ethic</span>
+                  <span className={`text-[13px] tabular-nums ${stepClass(weStep)}`}>
                     {weStep ? `${weStep} Draft FV` : 'None'}
                   </span>
                 </div>
                 {player._toolPenalty !== undefined && player._toolPenalty < 1.0 && (
                   <div className="flex justify-between items-center py-0.5">
-                    <span className="text-slate-500 text-xs">Tool Penalty</span>
-                    <span className="text-sm font-mono text-red-400">
+                    <span className="ns-muted text-xs">Tool Penalty</span>
+                    <span className="text-[13px] tabular-nums ns-bad">
                       -{Math.round((1 - player._toolPenalty) * 100)}% (age pctl)
                     </span>
                   </div>
                 )}
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="text-slate-500 text-xs">High INT</span>
-                  <span className={`text-sm font-mono ${stepClass(intStep)}`}>
+                  <span className="ns-muted text-xs">High INT</span>
+                  <span className={`text-[13px] tabular-nums ${stepClass(intStep)}`}>
                     {player._highINT ? `Yes (${intStep} Draft FV)` : intStep ? `No (low: ${intStep} Draft FV)` : 'No'}
                   </span>
                 </div>
                 {player._wrecked && (
-                  <div className="mt-2 text-center text-red-400 font-bold text-xs uppercase bg-red-900/20 rounded py-1">
+                  <div className="mt-2 text-center font-bold text-xs ns-alert-bad py-1">
                     Undraftable (Wrecked)
                   </div>
                 )}
@@ -578,8 +587,8 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
           <div className="space-y-4">
             {/* Ratings — big colored 20-80 chips, not a radar. This is the card the
                 user reads first: what ARE this guy's ratings. */}
-            <div className="bg-slate-800/50 rounded-lg p-3">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">
+            <div className="ns-card">
+              <h3 className="ns-strip">
                 {type === 'hitter' ? 'Batting Ratings' : 'Pitching Ratings'}
               </h3>
               {type === 'hitter' ? (
@@ -594,7 +603,7 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                       ['Avoid K', 'K vR', 'K vL', 'K P'],
                     ]}
                   />
-                  <h4 className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5 mt-3">Running</h4>
+                  <h4 className="ns-subhead mt-3">Running</h4>
                   <ChipRow player={player} items={[['Speed', 'SPE'], ['Steal', 'STE'], ['Baserun', 'RUN']]} />
                 </>
               ) : (
@@ -608,7 +617,7 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                       ['pBABIP', 'PBABIP vR', 'PBABIP vL', 'PBABIP P'],
                     ]}
                   />
-                  <h4 className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5 mt-3">Usage</h4>
+                  <h4 className="ns-subhead mt-3">Usage</h4>
                   <ChipRow player={player} items={[['Stamina', 'STM'], ['Hold', 'HLD'], ['GB%', 'GB']]} />
                   <PitchRepertoire player={player} />
                 </>
@@ -617,20 +626,20 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
 
             {/* Position WAA Bar Chart (hitters only) */}
             {type === 'hitter' && posWAAData.length > 0 && (
-              <div className="bg-slate-800/50 rounded-lg p-3">
-                <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">WAA by Position</h3>
+              <div className="ns-card">
+                <h3 className="ns-strip">WAA by Position</h3>
                 <ResponsiveContainer width="100%" height={160}>
                   <BarChart data={posWAAData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="pos" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                    <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                    <XAxis dataKey="pos" tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} />
+                    <YAxis tick={{ fill: 'var(--chart-axis)', fontSize: 10 }} />
                     <Tooltip
-                      contentStyle={{ background: '#1e293b', border: '1px solid #475569', borderRadius: 8 }}
-                      labelStyle={{ color: '#e2e8f0' }}
+                      contentStyle={{ background: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: 'var(--radius)' }}
+                      labelStyle={{ color: 'var(--chart-tooltip-text)' }}
                     />
-                    <Bar dataKey="waa" radius={[4, 4, 0, 0]}>
+                    <Bar dataKey="waa" radius={[3, 3, 0, 0]}>
                       {posWAAData.map((entry, i) => (
-                        <Cell key={i} fill={entry.waa >= 0 ? '#3b82f6' : '#ef4444'} />
+                        <Cell key={i} fill={entry.waa >= 0 ? 'var(--zpos)' : 'var(--zneg)'} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -641,24 +650,24 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
 
           {/* Column 3: Development Curve */}
           <div className="space-y-4">
-            <div className="bg-slate-800/50 rounded-lg p-3">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">Projected Development Curve</h3>
+            <div className="ns-card">
+              <h3 className="ns-strip">Projected Development Curve</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={devCurve}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="age" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                  <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                  <XAxis dataKey="age" tick={{ fill: 'var(--chart-axis)', fontSize: 11 }} />
+                  <YAxis tick={{ fill: 'var(--chart-axis)', fontSize: 10 }} />
                   <Tooltip
-                    contentStyle={{ background: '#1e293b', border: '1px solid #475569', borderRadius: 8 }}
-                    labelStyle={{ color: '#e2e8f0' }}
+                    contentStyle={{ background: 'var(--chart-tooltip-bg)', border: '1px solid var(--chart-tooltip-border)', borderRadius: 'var(--radius)' }}
+                    labelStyle={{ color: 'var(--chart-tooltip-text)' }}
                   />
-                  <Line type="monotone" dataKey="WAA" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="WAA" stroke="var(--chart-series-1)" strokeWidth={2} dot={{ r: 3, fill: 'var(--chart-series-1)' }} />
                 </LineChart>
               </ResponsiveContainer>
-              <div className="text-center text-xs text-slate-500 mt-1">
+              <div className="text-center text-xs ns-muted mt-1">
                 {fv.targetSource === 'ml' ? (
                   <>
-                    <span className="text-blue-400">
+                    <span className="ns-series-1">
                       {devIsMl(player)
                         ? 'projected path: five ML years (smoothed, capped at Proj Potential), then the measured DEV curve'
                         : 'projected path: five ML years, then the measured DEV curve'}
@@ -666,18 +675,18 @@ export default function PlayerDetail({ player, onClose, type = 'hitter' }) {
                   </>
                 ) : fv.measured ? (
                   <>
-                    <span className="text-blue-400">projected path (measured DEV curve)</span>
+                    <span className="ns-series-1">projected path (measured DEV curve)</span>
                     {ageCurve ? ` (${ageCurve.source_league ? `${ageCurve.source_league} true ratings, ` : ''}${ageCurve.players} players, ${ageCurve.span_years}yr)` : ''}
                   </>
                 ) : (
-                  <span className="text-blue-400">model curve</span>
+                  <span className="ns-series-1">model curve</span>
                 )}
               </div>
             </div>
 
             {type === 'hitter' && (
-              <div className="bg-slate-800/50 rounded-lg p-3">
-                <h3 className="text-xs font-semibold text-slate-400 uppercase mb-2">Fielding Ratings</h3>
+              <div className="ns-card">
+                <h3 className="ns-strip">Fielding Ratings</h3>
                 <ChipRow
                   player={player}
                   items={[

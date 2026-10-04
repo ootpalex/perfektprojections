@@ -27,11 +27,15 @@
 }
 
 /* Custom table styles */
-/* Tighter cells and a smaller font so more columns fit (user, 2026-09-24). */
+/* Tighter cells and a smaller font so more columns fit (user, 2026-09-24).
+   Night Scorecard skin (mockup `table`): Archivo Narrow header strip, zebra
+   rows, panel-3 hover, the red-pencil underline on the sorted header,
+   column-group rules. The table is meant to sit inside an .ns-box (panel). */
 .data-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .data-table th {
@@ -41,6 +45,7 @@
   padding: 5px 6px;
   text-align: left;
   font-family: var(--font-narrow);
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-2);
   border-bottom: 1px solid var(--line-2);
@@ -52,7 +57,12 @@
 
 .data-table th:hover {
   color: var(--text);
-  background: var(--panel-3);
+}
+
+/* the sorted column: cream label + red-pencil underline (inset, not a shadow) */
+.data-table th.sorted {
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .data-table td {
@@ -61,12 +71,37 @@
   white-space: nowrap;
 }
 
-.data-table tr:hover td {
-  background: var(--panel-2);
+/* box padding on the outer cells */
+.data-table th:first-child, .data-table td:first-child { padding-left: 12px; }
+.data-table th:last-child, .data-table td:last-child { padding-right: 12px; }
+
+.data-table tbody tr:nth-child(even) td {
+  background: var(--zebra);
 }
 
-.data-table tr.selected td {
+.data-table tbody tr:hover td {
+  background: var(--panel-3);
+}
+
+.data-table tbody tr.selected td {
   background: var(--accent-bg);
+}
+
+/* Column-group rule: 1px box rule on the first column of each group. */
+.data-table .col-group-start {
+  border-left: 1px solid var(--line-2);
+}
+
+/* Name cell: cream, semibold; the pencil underline on hover (it opens the card). */
+.data-table td.col-name {
+  font-weight: 600;
+  color: var(--text);
+}
+.data-table tr:hover td.col-name {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
 }
 
 /* Sticky first column (Name): stays put while the table scrolls right
@@ -79,19 +114,27 @@
   box-shadow: inset -1px 0 0 var(--line-2);
 }
 
+.data-table th.col-sticky.sorted {
+  box-shadow: inset -1px 0 0 var(--line-2), inset 0 -2px 0 var(--accent);
+}
+
 .data-table td.col-sticky {
   position: sticky;
   left: 0;
   z-index: 3;
-  background: var(--bg);
+  background: var(--panel);
   box-shadow: inset -1px 0 0 var(--line-2);
 }
 
-.data-table tr:hover td.col-sticky {
-  background: var(--panel-2);
+.data-table tbody tr:nth-child(even) td.col-sticky {
+  background: var(--zebra);
 }
 
-.data-table tr.selected td.col-sticky {
+.data-table tbody tr:hover td.col-sticky {
+  background: var(--panel-3);
+}
+
+.data-table tbody tr.selected td.col-sticky {
   background: var(--accent-bg);
 }
 
@@ -103,9 +146,13 @@
   top: 50%;
   transform: translateY(-50%);
   display: none;
-  padding: 1px;
+  padding: 0 4px;
+  border: 0;
   border-radius: var(--radius);
-  line-height: 0;
+  font-family: var(--font-narrow);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 16px;
   background: var(--panel-3);
   color: var(--text-2);
   cursor: pointer;
@@ -205,3 +252,249 @@
 .nav .nav-foot .dot { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; }
 .nav .nav-foot .refresh { padding: 4px 16px 0 30px; font-size: 11px; color: var(--text-3); }
 .nav .nav-foot .refresh p { margin: 0; }
+
+/* =====================================================================
+   Night Scorecard building blocks for his pages (Phase 4 restyle pattern,
+   docs/phase4/restyle_pattern.md). Built only from the token vars in
+   tokens.css, after ootp-dashboard app/docs/redesign/mockup/night-scorecard.html
+   and theme.js `S`. In the components layer so a Tailwind layout utility
+   (ml-auto, w-full, overflow-auto ...) on the same element still wins.
+   ===================================================================== */
+@layer components {
+  /* ---------- page ---------- */
+  .ns-page { height: 100%; min-height: 0; display: flex; flex-direction: column; padding: 18px 24px 16px; }
+  .ns-page-head {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;
+    padding: 6px 0 14px; margin-bottom: 16px;
+    border-bottom: 2px solid var(--line-ink);
+  }
+  .ns-page-head h1 {
+    margin: 0; font-family: var(--font-ui); font-weight: 800; font-size: 28px;
+    letter-spacing: -0.035em; line-height: 1.05; color: var(--text);
+  }
+  .ns-page-sub { color: var(--text-2); font-size: 13px; margin-top: 6px; }
+  .ns-page-sub b { color: var(--text); font-weight: 600; }
+  .ns-head-actions { display: flex; gap: 8px; align-items: center; padding-bottom: 2px; }
+
+  /* ---------- scorecard box: panel + header strip ---------- */
+  .ns-box { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; }
+  /* .ns-strip goes on the heading itself (<h2 class="ns-strip">) or on a row that holds one */
+  .ns-strip {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    min-height: 34px; margin: 0; padding: 7px 12px;
+    background: var(--panel-2); border-bottom: 1px solid var(--line-2);
+    font-family: var(--font-narrow); font-weight: 700; font-size: 13.5px; letter-spacing: 0.01em;
+    color: var(--text);
+  }
+  .ns-strip h2, .ns-strip h3 {
+    margin: 0; font: inherit; letter-spacing: inherit; color: inherit;
+    display: flex; align-items: center; gap: 6px; min-width: 0;
+  }
+  .ns-count { font-weight: 500; color: var(--text-3); }
+  .ns-strip-right {
+    margin-left: auto; display: flex; align-items: center; gap: 8px;
+    font-family: var(--font-narrow); font-weight: 500; font-size: 12px; color: var(--text-3);
+  }
+  .ns-box-body { padding: 10px 12px; }
+  /* card = a box whose body padding is on the box itself, so his
+     `<div card><h3>Title</h3>...rows</div>` restyles by swapping two classes:
+     container -> .ns-card, heading -> .ns-strip (it bleeds to the box edges). */
+  .ns-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; padding: 0 12px 10px; }
+  .ns-card > .ns-strip:first-child { margin: 0 -12px 10px; }
+  /* the desk behind boxes inside a modal or drawer */
+  .ns-desk { background: var(--bg); }
+  .ns-sub { color: var(--text-2); font-size: 12.5px; padding: 10px 12px 0; }
+  .ns-foot {
+    font-family: var(--font-narrow); font-size: 12px; color: var(--text-3);
+    padding: 7px 12px 8px; border-top: 1px solid var(--line);
+  }
+  /* filter / control row directly under the strip */
+  .ns-toolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 8px 12px; background: var(--panel-2); border-bottom: 1px solid var(--line-2);
+  }
+  .ns-label { font-family: var(--font-narrow); font-weight: 600; font-size: 12.5px; color: var(--text-2); }
+  .ns-subhead { margin: 0 0 6px; font-family: var(--font-narrow); font-weight: 600; font-size: 12px; color: var(--text-3); }
+  .ns-rule-t { border-top: 1px solid var(--line); }
+  .ns-scrim { background: var(--scrim); }
+
+  /* ---------- buttons and toggles ---------- */
+  .ns-btn {
+    font-family: var(--font-narrow); font-weight: 600; font-size: 13px; line-height: 1.2;
+    border-radius: var(--radius); padding: 6px 12px;
+    border: 1px solid var(--line-2); background: var(--panel); color: var(--text);
+    cursor: pointer; transition: border-color 0.12s, background 0.12s;
+  }
+  .ns-btn:hover { background: var(--panel-2); border-color: var(--line-ink); }
+  .ns-btn:disabled { color: var(--text-disabled); border-color: var(--line); background: var(--panel); cursor: default; }
+  .ns-btn-sm { font-size: 12.5px; padding: 4px 10px; }
+  .ns-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .ns-btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  /* a toggle is a .ns-btn with aria-pressed: off = raised panel, muted label; on = pencil outline on accent-bg */
+  .ns-btn[aria-pressed="false"] { color: var(--text-2); }
+  .ns-btn[aria-pressed="true"] { background: var(--accent-bg); border-color: var(--accent); color: var(--text); }
+  /* text-only action ("reset") */
+  .ns-link {
+    border: 0; background: none; padding: 0; cursor: pointer;
+    font-family: var(--font-narrow); font-weight: 600; color: var(--text-2);
+    text-decoration: underline; text-underline-offset: 2px;
+  }
+  .ns-link:hover { color: var(--accent); }
+  /* square icon button (close) */
+  .ns-icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; padding: 0;
+    border: 1px solid var(--line-2); border-radius: var(--radius);
+    background: var(--panel); color: var(--text-2); cursor: pointer;
+  }
+  .ns-icon-btn:hover { color: var(--text); border-color: var(--line-ink); }
+
+  /* ---------- inputs: wells (input) and raised controls (select) ---------- */
+  .ns-input {
+    height: 28px; padding: 5px 8px; line-height: 1.2; font-size: 12.5px;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--line-2); border-radius: var(--radius);
+  }
+  .ns-input::placeholder { color: var(--text-3); }
+  .ns-input:hover { border-color: var(--text-2); }
+  .ns-input:focus, .ns-select:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 2px var(--focus-ring); }
+  .ns-select {
+    height: 28px; padding: 5px 24px 5px 8px; line-height: 1.2;
+    font-family: var(--font-narrow); font-weight: 600; font-size: 13px;
+    background-color: var(--panel); color: var(--text);
+    border: 1px solid var(--line-2); border-radius: var(--radius);
+    cursor: pointer; appearance: none;
+    /* the caret: two token-coloured gradient triangles, no icon font */
+    background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%),
+                      linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
+    background-position: calc(100% - 13px) 50%, calc(100% - 9px) 50%;
+    background-size: 4px 4px; background-repeat: no-repeat;
+  }
+  .ns-select:hover { border-color: var(--line-ink); }
+  .ns-select option { background: var(--panel-2); color: var(--text); }
+  /* search: a well with an inline stroke-SVG glass on the left and an optional clear button */
+  .ns-search { position: relative; display: inline-flex; align-items: center; }
+  .ns-search > svg { position: absolute; left: 8px; color: var(--text-3); pointer-events: none; }
+  .ns-search .ns-input { width: 190px; padding-left: 26px; padding-right: 24px; }
+  .ns-search .ns-clear {
+    position: absolute; right: 4px; border: 0; background: none; padding: 0 4px; cursor: pointer;
+    font-family: var(--font-narrow); font-size: 14px; font-weight: 700; line-height: 1; color: var(--text-3);
+  }
+  .ns-search .ns-clear:hover { color: var(--accent); }
+
+  /* ---------- plain (non-sortable) table: same grammar as .data-table ---------- */
+  .ns-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .ns-table th {
+    font-family: var(--font-narrow); font-size: 12px; font-weight: 600; color: var(--text-2);
+    text-align: left; white-space: nowrap; background: var(--panel-2);
+    border-bottom: 1px solid var(--line-2); padding: 6px 6px;
+  }
+  .ns-table td { padding: 0 6px; height: 27px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .ns-table tbody tr:last-child td { border-bottom: 0; }
+  .ns-table th:first-child, .ns-table td:first-child { padding-left: 12px; }
+  .ns-table th:last-child, .ns-table td:last-child { padding-right: 12px; }
+  .ns-table tbody tr:nth-child(even) td { background: var(--zebra); }
+  .ns-table tbody tr:hover td { background: var(--panel-3); }
+  .ns-table tbody tr.selected td { background: var(--accent-bg); }
+  .ns-table .num { text-align: right; }
+  .ns-table .col-group-start { border-left: 1px solid var(--line-2); }
+
+  /* ---------- chips ---------- */
+  .ns-chip {
+    display: inline-block; min-width: 26px; padding: 0 6px; text-align: center;
+    font-family: var(--font-narrow); font-weight: 700; font-size: 12px; line-height: 17px;
+    border-radius: var(--radius); border: 1px solid currentColor;
+  }
+  .ns-chip[data-pos] { background: color-mix(in oklab, currentColor 10%, var(--panel)); }
+  .ns-chip[data-pos="C"] { color: var(--pos-c); }   .ns-chip[data-pos="1B"] { color: var(--pos-1b); }
+  .ns-chip[data-pos="2B"] { color: var(--pos-2b); } .ns-chip[data-pos="3B"] { color: var(--pos-3b); }
+  .ns-chip[data-pos="SS"] { color: var(--pos-ss); } .ns-chip[data-pos="LF"] { color: var(--pos-lf); }
+  .ns-chip[data-pos="CF"] { color: var(--pos-cf); } .ns-chip[data-pos="RF"] { color: var(--pos-rf); }
+  .ns-chip[data-pos="DH"] { color: var(--pos-dh); } .ns-chip[data-pos="SP"] { color: var(--pos-sp); }
+  .ns-chip[data-pos="RP"], .ns-chip[data-pos="CL"] { color: var(--pos-rp); }
+  /* levels: a filled luminance ladder, every chip ringed line-2; INT dashed (keys from columns.js levelKey) */
+  .ns-chip[data-lvl] { border-color: var(--line-2); }
+  .ns-chip[data-lvl="mlb"] { background: var(--lvl-mlb-bg); color: var(--lvl-mlb-text); }
+  .ns-chip[data-lvl="aaa"] { background: var(--lvl-aaa-bg); color: var(--lvl-aaa-text); }
+  .ns-chip[data-lvl="aa"] { background: var(--lvl-aa-bg); color: var(--lvl-aa-text); }
+  .ns-chip[data-lvl="aplus"] { background: var(--lvl-aplus-bg); color: var(--lvl-aplus-text); }
+  .ns-chip[data-lvl="a"] { background: var(--lvl-a-bg); color: var(--lvl-a-text); }
+  .ns-chip[data-lvl="r"] { background: var(--lvl-r-bg); color: var(--lvl-r-text); }
+  .ns-chip[data-lvl="int"] { background: var(--lvl-int-bg); color: var(--lvl-int-text); border: 1px dashed var(--lvl-int-ring); }
+  /* FV tier pill: filled, ink text, the only 10px radius */
+  .ns-tier {
+    display: inline-block; min-width: 30px; padding: 0 6px; text-align: center;
+    font-family: var(--font-narrow); font-weight: 700; font-size: 12px; line-height: 18px;
+    border-radius: var(--radius-pill);
+  }
+  .ns-tier[data-tier="80"] { background: var(--tier-80-bg); color: var(--tier-80-text); }
+  .ns-tier[data-tier="70"] { background: var(--tier-70-bg); color: var(--tier-70-text); }
+  .ns-tier[data-tier="65"] { background: var(--tier-65-bg); color: var(--tier-65-text); }
+  .ns-tier[data-tier="60"] { background: var(--tier-60-bg); color: var(--tier-60-text); }
+  .ns-tier[data-tier="55"] { background: var(--tier-55-bg); color: var(--tier-55-text); }
+  .ns-tier[data-tier="50"] { background: var(--tier-50-bg); color: var(--tier-50-text); }
+  .ns-tier[data-tier="45+"] { background: var(--tier-45plus-bg); color: var(--tier-45plus-text); }
+  .ns-tier[data-tier="45"] { background: var(--tier-45-bg); color: var(--tier-45-text); }
+  .ns-tier[data-tier="40+"] { background: var(--tier-40plus-bg); color: var(--tier-40plus-text); }
+  .ns-tier[data-tier="40"] { background: var(--tier-40-bg); color: var(--tier-40-text); }
+  .ns-tier[data-tier="35+"] { background: var(--tier-35plus-bg); color: var(--tier-35plus-text); }
+  /* NEED tag (red pencil, outlined) */
+  .ns-need {
+    display: inline-block; margin-left: 3px; padding: 0 3px; vertical-align: 1px;
+    font-style: normal; font-family: var(--font-narrow); font-weight: 700; font-size: 11px; letter-spacing: 0.03em; line-height: 13px;
+    color: var(--accent); border: 1px solid var(--accent); border-radius: 2px;
+  }
+  /* 20-80 rating chip: the grade colour (set by an .ns-gNN class) on a 10% tint of itself */
+  .ns-rchip {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 26px; border-radius: var(--radius);
+    font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums;
+    background: color-mix(in oklab, currentColor 10%, var(--panel));
+    border: 1px solid color-mix(in oklab, currentColor 35%, var(--panel));
+  }
+  .ns-rchip.is-empty { color: var(--text-disabled); background: var(--panel-2); border-color: var(--line); }
+  /* error / warning callouts */
+  .ns-alert-bad { background: var(--bad-bg); border: 1px solid var(--bad); border-radius: var(--radius); color: var(--bad-soft); }
+  .ns-alert-warn { background: var(--warn-bg); border: 1px solid var(--warn); border-radius: var(--radius); color: var(--warn); }
+
+  /* ---------- text encodings ---------- */
+  /* 20-80 grade ramp as stat text; weight per theme.js GRADE_WEIGHT */
+  .ns-g20 { color: var(--g20); font-weight: 700; }
+  .ns-g30 { color: var(--g30); font-weight: 700; }
+  .ns-g40 { color: var(--g40); font-weight: 500; }
+  .ns-g45 { color: var(--g45); font-weight: 500; }
+  .ns-g50 { color: var(--g50); font-weight: 500; }
+  .ns-g55 { color: var(--g55); font-weight: 500; }
+  .ns-g60 { color: var(--g60); font-weight: 600; }
+  .ns-g70 { color: var(--g70); font-weight: 700; }
+  .ns-g80 { color: var(--g80); font-weight: 800; }
+  /* ink levels and meaning (good / bad / warn carry meaning only) */
+  .ns-text { color: var(--text); }
+  .ns-text-2 { color: var(--text-2); }
+  .ns-muted { color: var(--text-3); }
+  .ns-dim { color: var(--text-disabled); }
+  .ns-good { color: var(--good); }
+  .ns-bad { color: var(--bad); }
+  .ns-warn { color: var(--warn); }
+  .ns-series-1 { color: var(--chart-series-1); }
+  /* injury proneness */
+  .ns-prone-iron-man { color: var(--prone-iron-man); font-weight: var(--prone-iron-man-weight); }
+  .ns-prone-durable { color: var(--prone-durable); font-weight: var(--prone-durable-weight); }
+  .ns-prone-normal { color: var(--prone-normal); font-weight: var(--prone-normal-weight); }
+  .ns-prone-fragile { color: var(--prone-fragile); font-weight: var(--prone-fragile-weight); }
+  .ns-prone-wrecked { color: var(--prone-wrecked); font-weight: var(--prone-wrecked-weight); }
+  /* position text in table cells (Archivo Narrow bold, the position hue) */
+  .ns-pos { font-family: var(--font-narrow); font-weight: 700; }
+  .ns-pos-c { color: var(--pos-c); }   .ns-pos-1b { color: var(--pos-1b); } .ns-pos-2b { color: var(--pos-2b); }
+  .ns-pos-3b { color: var(--pos-3b); } .ns-pos-ss { color: var(--pos-ss); } .ns-pos-lf { color: var(--pos-lf); }
+  .ns-pos-cf { color: var(--pos-cf); } .ns-pos-rf { color: var(--pos-rf); } .ns-pos-dh { color: var(--pos-dh); }
+  .ns-pos-sp { color: var(--pos-sp); } .ns-pos-rp, .ns-pos-cl { color: var(--pos-rp); }
+
+  /* z-heat cell (theme.js zHeat): fill = color-mix(oklab, zneg|zpos |z|/2.5, panel); the
+     component sets --z-end / --z-mix / --z-ink / --z-label inline (PositionalStrength heatVars). */
+  .ns-heat {
+    background: color-mix(in oklab, var(--z-end, var(--zpos)) var(--z-mix, 0%), var(--zmid)) !important;
+    color: var(--z-ink, var(--text)); font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .ns-heat-sub { color: var(--z-label, var(--text-2)); font-size: 11px; font-weight: 500; }
+}

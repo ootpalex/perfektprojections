@@ -44,34 +44,32 @@ export default function PitchersPage({ players, isDraft = false, isFA = false, i
     : ['info', 'value', 'valueRP', 'ratingsVR'];
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="p-4 pb-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-white">
-              {isDraft ? 'Draft Pitchers' : isIAFA ? 'International Amateur Pitchers' : isR5 ? 'Rule 5 Pitchers' : isFA ? 'Free Agent Pitchers' : 'Pitchers'}
-            </h1>
-            <p className="text-sm text-slate-400 mt-1">
-              {players.length} players | Toggle column groups to explore data | Click a player for details
-            </p>
-          </div>
-          {fit && fit.slope > 0 && (
-            <div className="text-right">
-              <p className="text-xs text-slate-500">FA market fit {(lowConfidence || banked) && '⚠️'}</p>
-              <p className={`text-sm font-semibold ${lowConfidence ? 'text-orange-400' : banked ? 'text-amber-400' : 'text-green-400'}`}>
-                {formatMoney(fit.slope)}/WAR + {formatMoney(fit.floor)}
-              </p>
-              <p className="text-[10px] text-slate-500">n={fit.n} FA signings, r²={fit.r2.toFixed(2)}</p>
-              {lowConfidence && <p className="text-[10px] text-orange-400">Low data — few FA signings in sample</p>}
-              {banked && (
-                <p className="text-[10px] text-amber-400">
-                  BANKED {banked.bankedAt} — live sample only n={banked.liveN}
-                </p>
-              )}
-            </div>
-          )}
+    <div className="ns-page">
+      <header className="ns-page-head">
+        <div>
+          <h1>
+            {isDraft ? 'Draft Pitchers' : isIAFA ? 'International Amateur Pitchers' : isR5 ? 'Rule 5 Pitchers' : isFA ? 'Free Agent Pitchers' : 'Pitchers'}
+          </h1>
+          <p className="ns-page-sub">
+            <b>{players.length}</b> players · Toggle column groups to explore data · Click a player for details
+          </p>
         </div>
-      </div>
+        {fit && fit.slope > 0 && (
+          <div className="text-right">
+            <p className={`ns-label ${lowConfidence || banked ? 'ns-warn' : 'ns-muted'}`}>FA market fit</p>
+            <p className={`text-[13px] font-semibold ${lowConfidence || banked ? 'ns-warn' : 'ns-good'}`}>
+              {formatMoney(fit.slope)}/WAR + {formatMoney(fit.floor)}
+            </p>
+            <p className="text-[11px] ns-muted">n={fit.n} FA signings, r²={fit.r2.toFixed(2)}</p>
+            {lowConfidence && <p className="text-[11px] ns-warn">Low data — few FA signings in sample</p>}
+            {banked && (
+              <p className="text-[11px] ns-warn">
+                BANKED {banked.bankedAt} — live sample only n={banked.liveN}
+              </p>
+            )}
+          </div>
+        )}
+      </header>
 
       <div className="flex-1 min-h-0">
         <PlayerTable
@@ -81,6 +79,7 @@ export default function PitchersPage({ players, isDraft = false, isFA = false, i
           onPlayerClick={(row) => select(row, 'pitcher')}
           selectedPlayerId={selectedPlayer?.ID}
           maxRows={1000}
+          title="Pitchers"
           storageKey={isIAFA ? 'iafa-pitchers' : isR5 ? 'r5-pitchers' : isFA ? 'fa-pitchers' : isDraft ? 'draft-pitchers' : 'pitchers'}
         />
       </div>

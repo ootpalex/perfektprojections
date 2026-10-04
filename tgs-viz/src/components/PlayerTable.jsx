@@ -1,6 +1,12 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { formatCellValue, getCellColorClass, getCellTitle, COLUMN_LABELS } from '../lib/columns';
-import { ChevronUp, ChevronDown, Search, X, Filter } from 'lucide-react';
+import { formatCellValue, getCellColorClass, getCellTitle, COLUMN_LABELS, levelKey } from '../lib/columns';
+
+// Night Scorecard: no icon font. The search glass is a small inline stroke SVG.
+const SearchGlass = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+    <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
+  </svg>
+);
 
 // Per-column hide (user, 2026-09-24): the set of hidden columns is kept in
 // localStorage under one key per table instance so a hide survives a reload
@@ -59,6 +65,7 @@ export default function PlayerTable({
   maxRows = 500,
   positionViewMode = false, // When true, position dropdown remaps WAA columns instead of filtering
   storageKey, // Optional. Names the localStorage slot for this table's hidden columns.
+  title = 'Players', // Night Scorecard box heading (presentation only).
 }) {
   const [activeGroups, setActiveGroups] = useState(new Set(defaultActiveGroups));
   // Columns the user hid with the x on the header (user, 2026-09-24).
@@ -130,6 +137,21 @@ export default function PlayerTable({
     }
     return cols;
   }, [columnGroups, activeGroups, posColumnMap, hiddenCols]);
+
+  // Night Scorecard column-group rule: the first visible column of each active
+  // group after the first gets a 1px box rule on its left. Presentation only.
+  const groupStarts = useMemo(() => {
+    const starts = new Set();
+    const shown = new Set(visibleColumns);
+    const placed = new Set();
+    for (const [key, group] of Object.entries(columnGroups)) {
+      if (!activeGroups.has(key)) continue;
+      const first = group.columns.map(col => posColumnMap?.[col] || col).find(col => shown.has(col) && !placed.has(col));
+      if (first && placed.size > 0) starts.add(first);
+      for (const col of group.columns) placed.add(posColumnMap?.[col] || col);
+    }
+    return starts;
+  }, [columnGroups, activeGroups, posColumnMap, visibleColumns]);
 
   // Unique values for filters
   const organizations = useMemo(() => {
@@ -215,30 +237,35 @@ export default function PlayerTable({
   }, []);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="ns-box flex flex-col h-full min-h-0">
+      <div className="ns-strip">
+        <h2>{title} <span className="ns-count">({displayPlayers.length} of {players.length} players)</span></h2>
+        <span className="ns-strip-right">
+          {sortKey ? `Sorted by ${COLUMN_LABELS[sortKey] || sortKey}, ${sortDir === 'desc' ? 'descending' : 'ascending'}` : 'Click a header to sort'}
+        </span>
+      </div>
+
       {/* Column Group Toggles */}
-      <div className="flex flex-wrap gap-1.5 p-3 bg-slate-900 border-b border-slate-700">
-        <span className="text-xs text-slate-500 self-center mr-1">Columns:</span>
+      <div className="ns-toolbar gap-1.5">
+        <span className="ns-label mr-1">Columns</span>
         {Object.entries(columnGroups).map(([key, group]) => (
           <button
             key={key}
+            type="button"
+            aria-pressed={activeGroups.has(key)}
             onClick={() => toggleGroup(key)}
-            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
-              activeGroups.has(key)
-                ? 'bg-blue-600 text-white'
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-300'
-            }`}
+            className="ns-btn ns-btn-sm"
           >
             {group.label}
           </button>
         ))}
         {hiddenCols.size > 0 && (
-          <span className="ml-auto self-center text-xs text-slate-500">
+          <span className="ml-auto ns-label ns-muted">
             {hiddenCols.size} hidden ·{' '}
             <button
               type="button"
               onClick={resetHiddenColumns}
-              className="underline hover:text-slate-300"
+              className="ns-link"
               title="Show every hidden column again"
             >
               reset
@@ -248,70 +275,70 @@ export default function PlayerTable({
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 p-3 bg-slate-900/50 border-b border-slate-700">
-        <div className="relative">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+      <div className="ns-toolbar">
+        <div className="ns-search">
+          <SearchGlass />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search players..."
-            className="pl-8 pr-8 py-1.5 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200 w-52 focus:outline-none focus:border-blue-500"
+            className="ns-input"
           />
           {search && (
-            <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
-              <X size={14} />
+            <button type="button" onClick={() => setSearch('')} className="ns-clear" aria-label="Clear search">
+              ×
             </button>
           )}
         </div>
 
         <select value={posFilter} onChange={e => { setPosFilter(e.target.value); if (positionViewMode && e.target.value !== 'ALL') { setSortKey(`${e.target.value} WAA wtd`); setSortDir('desc'); } }}
-          className="py-1.5 px-2 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200">
+          className="ns-select">
           {positions.map(p => <option key={p} value={p}>{p === 'ALL' ? (positionViewMode ? 'View as Position' : 'All Positions') : (positionViewMode ? `View as ${p}` : p)}</option>)}
         </select>
 
         <select value={orgFilter} onChange={e => setOrgFilter(e.target.value)}
-          className="py-1.5 px-2 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200">
+          className="ns-select">
           {organizations.map(o => <option key={o} value={o}>{o === 'ALL' ? 'All Orgs' : o}</option>)}
         </select>
 
         <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)}
-          className="py-1.5 px-2 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200">
+          className="ns-select">
           {levels.map(l => <option key={l} value={l}>{l === 'ALL' ? 'All Levels' : l}</option>)}
         </select>
 
         <div className="flex items-center gap-1.5">
-          <label className="text-xs text-slate-500">Min WAA:</label>
+          <label className="ns-label">Min WAA</label>
           <input
             type="number"
             value={minWAA}
             onChange={e => setMinWAA(e.target.value)}
             placeholder="0"
             step="0.5"
-            className="w-16 py-1.5 px-2 bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-200"
+            className="ns-input w-16 text-right"
           />
-        </div>
-
-        <div className="ml-auto text-xs text-slate-500">
-          {displayPlayers.length} of {players.length} players
         </div>
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-auto" ref={tableRef}>
+      <div className="flex-1 min-h-0 overflow-auto" ref={tableRef}>
         <table className="data-table">
           <thead>
             <tr>
               {visibleColumns.map((col, idx) => (
                 // The first column stays put while the table scrolls right and
                 // cannot be hidden (user, 2026-09-24).
-                <th key={col} onClick={() => handleSort(col)} title={col} className={idx === 0 ? 'col-sticky' : undefined}>
+                <th
+                  key={col}
+                  onClick={() => handleSort(col)}
+                  title={col}
+                  aria-sort={sortKey === col ? (sortDir === 'desc' ? 'descending' : 'ascending') : undefined}
+                  className={[idx === 0 ? 'col-sticky' : '', sortKey === col ? 'sorted' : '', groupStarts.has(col) ? 'col-group-start' : ''].filter(Boolean).join(' ') || undefined}
+                >
                   <div className="flex items-center gap-1">
                     <span>{COLUMN_LABELS[col] || col}</span>
                     {sortKey === col && (
-                      sortDir === 'desc'
-                        ? <ChevronDown size={12} />
-                        : <ChevronUp size={12} />
+                      <span className="text-[10px]" aria-hidden="true">{sortDir === 'desc' ? '▼' : '▲'}</span>
                     )}
                   </div>
                   {idx > 0 && (
@@ -321,7 +348,7 @@ export default function PlayerTable({
                       title={`Hide ${COLUMN_LABELS[col] || col}`}
                       onClick={(e) => { e.stopPropagation(); hideColumn(col); }}
                     >
-                      <X size={11} />
+                      ×
                     </button>
                   )}
                 </th>
@@ -347,11 +374,14 @@ export default function PlayerTable({
                     // first cell of the row stays put while scrolling right
                     // (user, 2026-09-24).
                     const isName = col === 'Name';
-                    const cellClass = [colorClass, idx === 0 ? 'col-sticky' : ''].filter(Boolean).join(' ') || undefined;
+                    const lvl = col === 'Lev' ? levelKey(raw) : null;
+                    const cellClass = [colorClass, idx === 0 ? 'col-sticky' : '', isName ? 'col-name' : '', groupStarts.has(col) ? 'col-group-start' : ''].filter(Boolean).join(' ') || undefined;
                     const cellTitle = title || (isName && raw ? String(raw) : undefined);
                     return (
                       <td key={col} className={cellClass} title={cellTitle}>
-                        {isName ? <span className="block max-w-[150px] truncate">{display}</span> : display}
+                        {isName ? <span className="block max-w-[150px] truncate">{display}</span>
+                          : lvl ? <span className="ns-chip" data-lvl={lvl}>{display}</span>
+                          : display}
                       </td>
                     );
                   })}
@@ -361,7 +391,7 @@ export default function PlayerTable({
           </tbody>
         </table>
         {displayPlayers.length === 0 && (
-          <div className="flex items-center justify-center h-32 text-slate-500">
+          <div className="flex items-center justify-center h-32 ns-muted">
             No players match your filters
           </div>
         )}
