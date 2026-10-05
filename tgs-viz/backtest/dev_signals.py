@@ -163,7 +163,11 @@ FOREIGN_LEV = "-"                         # ratings_db.FOREIGN_LEV: archive lev 
 # Out-of-an-org rule (hidden-card fix, 2026-09-25): leagues whose earlier-pull
 # card is not trusted when the player was out of an org there. The DEV dump
 # league is exempt: its cards are never hidden.
-PREV_ORG_RULE_LEAGUES = ("TGS", "BLM", "SSB")   # every scouted league; only the DEV dump league is exempt
+PREV_ORG_RULE_LEAGUES = ("TGS", "BLM")
+# Not SSB: its StatsPlus snapshots show real cards for amateurs (checked 2026-10-05 on the 2043-07-01
+# snapshot: 773 of the 2044 draft class present a year before the draft, Pot spread 25-45 like today's,
+# Rowan Pot 80 then and now, 1 card of 773 with every skill equal). Past-date replies carry no team or
+# level (Org 0 for every row), so the rule would mark every SSB player "growth unknown".
 OUT_OF_ORG_NOTE = "out of an org a year ago: growth unknown"
 # A player counts as AT a bar when his current WAA is within this much under
 # it: the app shows WAA to one decimal, so a row shown as 0.0 can sit at
