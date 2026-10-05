@@ -283,10 +283,25 @@ function getPlayerWAAValues(player) {
   // here handed every L/S batter his good-side split as "current" (a 3.5vR/0.1vL
   // platoon bat was valued at 3.5), while R batters got the honest blend — an
   // asymmetric handedness bias caught by the user on the FV board (Wisner case).
-  const currentWAACols = [['Max WAA wtd', hOff, 'hitter'],
+  let currentWAACols = [['Max WAA wtd', hOff, 'hitter'],
                           ['WAA wtd', spOff, 'sp'], ['WAA wtd RP', rpOff, 'rp']];
-  const potentialWAACols = [['MAX WAA P', hOff, 'hitter'],
-                            ['WAP', spOff, 'sp'], ['WAP RP', rpOff, 'rp']];
+  let potentialWAACols = [['MAX WAA P', hOff, 'hitter'],
+                          ['WAP', spOff, 'sp'], ['WAP RP', rpOff, 'rp']];
+  // A pitcher's role is OOTP's listed POS (SP starts, RP/CL relieve), not whichever role
+  // prices higher once its credit is added (user decision 2026-10-05, docs/PHASE1_AUDIT.md
+  // D3). On SSB 2043 the listed role matched real usage for 75% of dual-role MLB arms (WAA
+  // argmax 69%, WAR argmax 57%); WAR argmax made most of the draft class starters on the
+  // 2.2-win credit gap alone. A row whose POS is not SP/RP/CL, or has no value for its listed
+  // role, keeps the max over both roles.
+  const pos = String(player.POS ?? '').trim().toUpperCase();
+  const listedRole = pos === 'SP' ? 'sp' : (pos === 'RP' || pos === 'CL') ? 'rp' : null;
+  const ownRole = (cols) => {
+    if (!listedRole) return cols;
+    const own = cols.filter(([col, , role]) => role === listedRole && !isNaN(parseFloat(player[col])));
+    return own.length ? own : cols;
+  };
+  currentWAACols = ownRole(currentWAACols);
+  potentialWAACols = ownRole(potentialWAACols);
 
   let currentWAA = -Infinity;
   let offsetUsed = hOff;   // the role offset behind currentWAA (UI subtracts it for WAA display)
