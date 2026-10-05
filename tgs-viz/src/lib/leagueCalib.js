@@ -182,8 +182,15 @@ export function leagueCalib(league) {
  * dollars and FV rank players against what the market supplies for free.
  * Measured (see header); missing values fall back to 0 (WAR === WAA).
  */
+// A league priced on another league's calibration but with its own measured replacement
+// level (engine/calib/replacement.json; tests/client/leagueCalibSync.test.mjs keeps the two equal).
+// SSB: budget identity on its 2043 season, user decision 2026-10-05.
+export const LEAGUE_REPLACEMENT_MARKET = {
+  SSB: { hitter: 1.872, sp: 2.630, rp: 0.350 },
+};
+
 export function replacementOffset(league, role) {
-  const r = leagueCalib(league).replacementMarket || {};
+  const r = LEAGUE_REPLACEMENT_MARKET[league] || leagueCalib(league).replacementMarket || {};
   const v = r[role];
   return Number.isFinite(v) ? v : 0;
 }

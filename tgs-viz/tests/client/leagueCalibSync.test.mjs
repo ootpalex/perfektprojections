@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { leagueCalib } from '../../src/lib/leagueCalib.js'
+import { leagueCalib, replacementOffset, LEAGUE_REPLACEMENT_MARKET } from '../../src/lib/leagueCalib.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const calib = path.resolve(here, '..', '..', 'engine', 'calib')
@@ -31,6 +31,14 @@ for (const lg of ['TGS', 'BLM']) {
     check(`${lg} replacementMarket.${role}`, () => assert.equal(app.replacementMarket[role], repl[lg][key]))
   }
 }
+
+// Leagues with their own measured replacement level (no calibration of their own).
+for (const lg of Object.keys(LEAGUE_REPLACEMENT_MARKET)) {
+  for (const role of ['hitter', 'sp', 'rp']) {
+    check(`${lg} replacementOffset.${role}`, () => assert.equal(replacementOffset(lg, role), repl[lg][role]))
+  }
+}
+check('SSB has its own replacement entry', () => assert.ok(LEAGUE_REPLACEMENT_MARKET.SSB && !repl.SSB.use))
 
 console.log(`leagueCalibSync: ${passed} passed, ${failed} failed`)
 process.exit(failed ? 1 : 0)

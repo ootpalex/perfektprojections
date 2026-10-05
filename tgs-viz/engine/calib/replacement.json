@@ -9,8 +9,8 @@
     "source": "market replacement, measured: median of budget identity on BLM 2057 (1.912 / 2.643 / 0.298), delivered-WAR regression (2.059 / 2.362 / 0.313) and the hitter market pin (1.815) (src/lib/leagueCalib.js replacementMarket)"
   },
   "SSB": {
-    "use": "BLM",
-    "note": "BLM's credits as a labelled proxy (decision 2026-10-03) until the user signs off on SSB's own measurement below.",
+    "hitter": 1.872, "sp": 2.630, "rp": 0.350,
+    "source": "budget identity on OOTP's own war, SSB 2043 (user decision 2026-10-05: SSB's own measurement replaces BLM's proxy 1.91 / 2.5 / 0.31, which sat inside every 95% range)",
     "measured": {
       "method": "budget identity on OOTP's own war, SSB 2043 (league 155, level 1, split 1, stint 0; 28 clubs x 162 G; SP when GS >= G/2; slots per 600 PA / 800 BF / 300 BF)",
       "season": 2043,

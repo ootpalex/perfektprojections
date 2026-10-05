@@ -44,9 +44,10 @@ class Load(unittest.TestCase):
         self.assertIsNone(W.load_replacement("A", p + ".missing"))
 
     def test_committed_table(self):
-        ssb, blm = W.load_replacement("SSB"), W.load_replacement("BLM")
-        self.assertEqual(ssb["league"], "BLM")              # SSB uses BLM's credits (proxy)
-        self.assertEqual({k: ssb[k] for k in ("hitter", "sp", "rp")}, {k: blm[k] for k in ("hitter", "sp", "rp")})
+        ssb, rg = W.load_replacement("SSB"), W.load_replacement("RG")
+        self.assertEqual(ssb["league"], "SSB")              # SSB's own 2043 measurement (2026-10-05)
+        self.assertEqual({k: ssb[k] for k in ("hitter", "sp", "rp")}, {"hitter": 1.872, "sp": 2.63, "rp": 0.35})
+        self.assertEqual(rg["league"], "BLM")               # RG still on BLM's credits (proxy)
 
     def test_catcher_share(self):
         self.assertAlmostEqual(W.catcher_share("BLM"), 500 / 600)
