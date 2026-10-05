@@ -595,6 +595,19 @@ export function getCellColorClass(value, columnName, row) {
     return 'ns-g20';
   }
 
+  // WAR columns (WAA + the role's replacement credit): one ladder for every role, its cuts set
+  // so each band holds the same share of SSB's MLB players as the WAA ladder below (user
+  // decision 2026-10-05; docs/PHASE1_AUDIT.md D5). Relievers drop by design: 53% sit at
+  // WAA >= 0, 16% at WAR >= 0.75; hitters rise from 45% to 72%.
+  if (columnName.includes('WAR') && !columnName.includes('WAA')) {
+    if (num >= 7) return 'ns-g80';
+    if (num >= 5) return 'ns-g70';
+    if (num >= 3.75) return 'ns-g55';
+    if (num >= 0.75) return 'ns-text-2';
+    if (num >= 0) return 'ns-g30';
+    return 'ns-g20';
+  }
+
   const isValueCol = columnName.includes('WAA') || columnName.includes('WAR') ||
     columnName.includes('WAP') || columnName === '_futureValue' || columnName === '_peakWAA' ||
     columnName === '_currentWAA' || columnName === '_potentialWAA' || columnName === '_rawPotentialWAA' ||

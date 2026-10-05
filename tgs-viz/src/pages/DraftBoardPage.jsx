@@ -138,11 +138,12 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
       return true;
     });
 
-    // Sort — players with raw ceiling > 0 always rank above players with ceiling <= 0
+    // Sort — players with raw ceiling > 0 always rank above players with ceiling <= 0,
+    // except on the Proj Peak (WAR) sort, which is a straight WAR order (2026-10-05).
     players.sort((a, b) => {
       const aAbove = (a._draftCeiling ?? -Infinity) > 0;
       const bAbove = (b._draftCeiling ?? -Infinity) > 0;
-      if (aAbove !== bAbove) return aAbove ? -1 : 1;
+      if (sortBy !== '_potentialWAR' && aAbove !== bAbove) return aAbove ? -1 : 1;
       const aVal = parseFloat(a[sortBy]) || 0;
       const bVal = parseFloat(b[sortBy]) || 0;
       return bVal - aVal;
@@ -371,6 +372,7 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
             <option value="_g5FV">Sort by G5 FV (Peak)</option>
             <option value="_hybridFV">Sort by Hybrid FV</option>
             <option value="_potentialWAA">Sort by Proj Peak (WAA)</option>
+            <option value="_potentialWAR">Sort by Proj Peak (WAR)</option>
             <option value="_peakWAA">Sort by Peak WAA</option>
           </select>
 
@@ -425,6 +427,7 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
                 <th>Dev%</th>
                 <th className="col-group-start">Hybrid</th>
                 <th title="Proj Potential, WAA: where we project him to top out. From the ML model when the row has it (his WAA today + the ML median gain, washouts counted), else his WAA today + the DEV cell gain or the measured curve.">Proj Peak</th>
+                <th title="Proj Peak in WAR: the projected peak plus his role's replacement credit (pitchers by their listed position; catchers 5/6 of the hitter credit).">Peak WAR</th>
               </tr>
             </thead>
             <tbody>
@@ -503,6 +506,9 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
                     </td>
                     <td className={getCellColorClass(player._potentialWAA, '_potentialWAA')}>
                       {formatCellValue(player._potentialWAA, '_potentialWAA')}
+                    </td>
+                    <td className={getCellColorClass(player._potentialWAR, '_potentialWAR')}>
+                      {formatCellValue(player._potentialWAR, '_potentialWAR')}
                     </td>
                   </tr>
                 );

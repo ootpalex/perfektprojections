@@ -706,6 +706,10 @@ function useMeasuredCurve(league) {
 // The app league of a row list (every row carries the same stamp).
 const listLeague = (rows) => (Array.isArray(rows) && rows.length ? rows[0]._appLeague || null : null);
 
+// Catchers are credited 500 of a hitter's 600 PA of replacement value (engine/war.py catcher_share).
+const CATCHER_SHARE = 500 / 600;
+const isCatcherRow = (p) => String(p['Best Pos'] ?? p.POS ?? '').trim().toUpperCase() === 'C';
+
 export function usePlayersWithFV(players) {
   const curve = useMeasuredCurve(listLeague(players));
   return useMemo(() => {
@@ -810,6 +814,13 @@ export function usePlayersWithFV(players) {
         // assumed model's haircut ceiling. The un-haircut ceiling is "Peak
         // Potential".
         _potentialWAA: toWAA(d.expectedPeak),
+        // Proj Peak in WAR: the projected peak plus his peak role's replacement credit (a
+        // pitcher's role is his listed POS; catchers get 500/600 of the hitter credit, as
+        // engine/war.py). WAR conversion, user decisions 2026-10-05.
+        _potentialWAR: (Number.isFinite(d.expectedPeak) && Number.isFinite(fv.potentialOffsetUsed))
+          ? Math.round((d.expectedPeak + fv.potentialOffsetUsed
+              * (fv.potentialRole === 'hitter' && isCatcherRow(p) ? CATCHER_SHARE : 1)) * 100) / 100
+          : null,
         _potentialSource: !fv.measured ? 'model'
           : fv.targetSource === 'ml' ? 'ML'
           : fv.targetSource === 'cell' ? 'DEV cell'
