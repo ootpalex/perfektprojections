@@ -163,7 +163,7 @@ FOREIGN_LEV = "-"                         # ratings_db.FOREIGN_LEV: archive lev 
 # Out-of-an-org rule (hidden-card fix, 2026-09-25): leagues whose earlier-pull
 # card is not trusted when the player was out of an org there. The DEV dump
 # league is exempt: its cards are never hidden.
-PREV_ORG_RULE_LEAGUES = ("TGS", "BLM")
+PREV_ORG_RULE_LEAGUES = ("TGS", "BLM", "SSB")   # every scouted league; only the DEV dump league is exempt
 OUT_OF_ORG_NOTE = "out of an org a year ago: growth unknown"
 # A player counts as AT a bar when his current WAA is within this much under
 # it: the app shows WAA to one decimal, so a row shown as 0.0 can sit at
