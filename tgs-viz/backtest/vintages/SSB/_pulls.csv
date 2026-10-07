@@ -4,3 +4,4 @@ pull_id,league,real_date,real_ts,source,source_files,n_players,content_hash,inge
 578,SSB,2043-07-01,2026-10-05T15:33:20,asof,"[""tgs-viz/ingest/.cache/asof/ssb/2043-07-01.json""]",13767,4455cab54da570cb8af92000b4d6f8d6ec7eb1b9,2026-10-05T15:33:20,2043-07-01
 579,SSB,2026-10-05,2026-10-05T16:17:02,live,"[""tgs-viz/ingest/.cache/history/statsplus_ssb_20261005-1617.json""]",14009,9c58ec547b3b494b1a811671ca9f3b90647ca694,2026-10-05T16:17:03,2044-05-16
 580,SSB,2026-10-06,2026-10-06T06:04:01,live,"[""tgs-viz/ingest/.cache/history/statsplus_ssb_20261006-0604.json""]",14017,25af3e5f31ba10f6c0646a8d6139ef04f6bdaef8,2026-10-06T06:04:02,2044-05-23
+581,SSB,2026-10-07,2026-10-07T06:57:55,live,"[""tgs-viz/ingest/.cache/history/statsplus_ssb_20261007-0657.json""]",14017,25af3e5f31ba10f6c0646a8d6139ef04f6bdaef8,2026-10-07T06:57:56,2044-05-23
