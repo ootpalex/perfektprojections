@@ -20,6 +20,10 @@ Pitchers are fitted on OOTP's war (FIP-based) and ra9war (runs allowed, the engi
 Seasons are reported one by one and pooled. A player missing from the current pull has no
 bats / throws / height, so he is skipped; the coverage line says how much playing time that is.
 
+A second block per season checks the runs side with no OOTP WAR at all: the engine's projected
+RA/9 against the actual RA/9 (R x 9 / IP), per role and by projection quintile, and the actual
+RA/9 of fill-in starters (1-8 and 1-12 GS) as a stats-only replacement level.
+
 Read-only: prints, writes nothing. Python 3.13+, numpy, pandas.
 
   python tgs-viz/backtest/replacement_check.py --league SSB --calib BLM [--seasons 2043,2044]
@@ -123,7 +127,8 @@ def price(path, static, calib):
     precs = R.run_pitchers(pit, calib, scurves=R.live_scurves(calib), currency=cur, park_mode="neutral",
                            role_stuff=R.live_role_stuff(calib), observed=False)
     pit_df = pd.DataFrame([{"player_id": int(r["ID"]), "sp": _f(r.get("WAA wtd")),
-                            "rp": _f(r.get("WAA wtd RP"))} for r in precs])
+                            "rp": _f(r.get("WAA wtd RP")), "ra9_sp": _f(r.get("RA/9 wtd")),
+                            "ra9_rp": _f(r.get("RA/9 wtd RP"))} for r in precs])
     hrecs = R.run_hitters(hit, calib, currency=cur, tails=R.live_hitter_tails(calib),
                           fielding=R.live_fielding(calib), park_mode="neutral")
     cols = list(POS_NUM.values()) + ["DH"]
@@ -156,6 +161,8 @@ def season_rows(league, year, calib, static, log):
     p["year"] = year
     p["role"] = np.where(p.gs >= p.g / 2.0, "SP", "RP")
     p["waa"] = np.where(p.role == "SP", p.sp, p.rp)
+    p["ip_true"] = p.outs / 3.0
+    p["ra9_proj"] = np.where(p.role == "SP", p.ra9_sp, p.ra9_rp)
     # hitters: engine WAA at the positions played, by fielding innings
     ip = fl.groupby(["player_id", "position"]).ip.sum().reset_index()
     ip["pos"] = ip.position.map(POS_NUM)
@@ -213,6 +220,43 @@ def report(label, p, b, clubs, shipped, log):
         f"(slope {s:.2f}); n={len(d)}")
 
 
+def ra_report(label, p, rpw, log):
+    """Runs allowed, no OOTP WAR: projected vs actual RA/9 per role (level and by projection
+    quintile), and the fill-in starters' actual RA/9 as a stats-only replacement level."""
+    log(f"--- {label}: runs allowed (actual R x 9 / IP vs the engine's RA/9; {rpw:.2f} runs per win)")
+    ra9 = lambda d: d.r.sum() * 9.0 / d.ip_true.sum() if d.ip_true.sum() > 0 else float("nan")
+    ip_per_bf = p.ip_true.sum() / p.bf.sum()
+    for role, slot_bf in (("SP", 800.0), ("RP", 300.0)):
+        d = p[(p.role == role) & p.ra9_proj.notna() & (p.ip_true > 0)]
+        if len(d) < 20:
+            log(f"  {role}: only {len(d)} priced pitchers; not checked")
+            continue
+        slot_ip = slot_bf * ip_per_bf
+        act, proj = ra9(d), np.average(d.ra9_proj, weights=d.ip_true)
+        bias = act - proj
+        log(f"  {role}: actual RA/9 {act:.2f}, projected {proj:.2f}, actual - projected {bias:+.2f} "
+            f"= {bias * slot_ip / 9.0 / rpw:+.2f} wins per {slot_bf:.0f} BF the engine credits too much "
+            f"(n={len(d)}, IP {d.ip_true.sum():.0f})")
+        try:
+            q = pd.qcut(d.ra9_proj, 5, labels=False, duplicates="drop")
+        except ValueError:
+            q = None
+        if q is not None:
+            rows = []
+            for k, g in d.groupby(q):
+                rows.append(f"{np.average(g.ra9_proj, weights=g.ip_true):.2f}->{ra9(g):.2f}")
+            log(f"    by projection quintile (best to worst, projected->actual): " + "  ".join(rows))
+    sp = p[p.role == "SP"]
+    avg = ra9(sp)
+    for lo, hi in ((1, 8), (1, 12)):
+        fi = sp[(sp.gs >= lo) & (sp.gs <= hi)]
+        if fi.ip_true.sum() <= 0:
+            continue
+        gap = (ra9(fi) - avg) * 800.0 * ip_per_bf / 9.0 / rpw
+        log(f"  fill-in starters ({lo}-{hi} GS): n={len(fi)}, IP {fi.ip_true.sum():.0f}, actual RA/9 {ra9(fi):.2f} "
+            f"vs every starter {avg:.2f}: replacement {gap:.2f} wins per 800 BF below an average starter")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--league", required=True)
@@ -231,15 +275,18 @@ def main(argv=None):
         ent = json.load(fh).get(args.league) or {}
     shipped = {k: float(ent[k]) for k in ("hitter", "sp", "rp") if k in ent}
     static = static_traits(args.league, args.slug, log)
+    rpw = float((R.live_currency(calib) or {}).get("rpw") or 10.0)
     got = []
     for y in years:
         r = season_rows(args.league, y, calib, static, log)
         if r:
             got.append(r)
             report(str(y), *r, shipped, log)
+            ra_report(str(y), r[0], rpw, log)
     if len(got) > 1:
         report("pooled " + ",".join(str(int(r[0].year.iloc[0])) for r in got),
                pd.concat([r[0] for r in got]), pd.concat([r[1] for r in got]), sum(r[2] for r in got), shipped, log)
+        ra_report("pooled", pd.concat([r[0] for r in got]), rpw, log)
     if not got:
         log("nothing to check")
         return 1
