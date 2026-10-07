@@ -347,6 +347,40 @@ function getPlayerWAAValues(player) {
            offsetUsed, potentialOffsetUsed, currentRole, potentialRole };
 }
 
+/**
+ * The dev projection's own pitcher role (user decision 2026-10-07, option 1 of the
+ * Tang mismatch). The ML model and the DEV cell measure a pitcher's now on the
+ * larger of "WAA wtd" and "WAA wtd RP" (the role DEV was priced on), so their gain
+ * and path are on THAT role's scale. Adding them to the listed role's value mixed
+ * scales (an SP at -10.6 got a gain learned from his -4.35 RP value). For a pitcher
+ * below MLB with a dev projection (ML path or cell gain), current, potential and
+ * both replacement offsets switch to that role, so the projection and its WAR
+ * credit stay on one role. MLB pitchers keep the listed role. Returns vals itself
+ * when nothing changes.
+ */
+function devRoleValues(player, vals) {
+  const pos = String(player.POS ?? '').trim().toUpperCase();
+  if (pos !== 'SP' && pos !== 'RP' && pos !== 'CL') return vals;
+  if (String(player.Lev ?? '').trim().toUpperCase() === 'MLB') return vals;
+  const hasDev = five(player.Dev_MlD) || Number.isFinite(parseFloat(player.Dev_PeakGainP50));
+  if (!hasDev) return vals;
+  const sp = parseFloat(player['WAA wtd']);
+  const rp = parseFloat(player['WAA wtd RP']);
+  if (!Number.isFinite(sp) || !Number.isFinite(rp)) return vals;
+  const role = sp >= rp ? 'sp' : 'rp';
+  if (vals.currentRole === role && vals.potentialRole === role) return vals;
+  const off = replacementOffset(player._appLeague, role);
+  const pot = parseFloat(player[role === 'sp' ? 'WAP' : 'WAP RP']);
+  const hasPotential = Number.isFinite(pot);
+  return {
+    currentWAA: (role === 'sp' ? sp : rp) + off,
+    potentialWAA: (hasPotential ? pot : (role === 'sp' ? sp : rp)) + off,
+    hasPotential,
+    offsetUsed: off, potentialOffsetUsed: off,
+    currentRole: role, potentialRole: role,
+  };
+}
+
 // ============================================================
 // MEASURED PATH: year-by-year WAA on the DEV curve
 // ============================================================
@@ -608,8 +642,10 @@ export function calculateFutureValue(player, yearsOfControl, params = {}) {
   const yoc = Number.isFinite(yearsOfControl) ? yearsOfControl : p.DEFAULT_YEARS_OF_CONTROL;
   const age = parseFloat(player.Age) || 25;
 
-  // Extract WAA values
-  const waaVals = getPlayerWAAValues(player);
+  // Extract WAA values. On the measured path a pitcher's dev projection keeps its
+  // own role (devRoleValues).
+  const listedVals = getPlayerWAAValues(player);
+  const waaVals = params.ageCurve ? devRoleValues(player, listedVals) : listedVals;
   const { currentWAA, potentialWAA, hasPotential } = waaVals;
 
   // Per-player risk factor based on age + gap size (assumed model only)
