@@ -46,6 +46,9 @@ function PickCell({ status }) {
     : <span className="ns-muted" title="You marked him as taken by another club">taken</span>;
 }
 
+// StatsPlus takes up to 3000 player IDs per imported draft list (raised from 500).
+const DRAFT_LIST_MAX = 3000;
+
 // Sorts on the dev model's numbers (ML when the row has them, else the DEV cell).
 const ML_SORTS = new Set(['Dev_PeakP75', 'Dev_PeakUseful', 'Dev_PeakGood']);
 
@@ -198,7 +201,7 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
     }));
   }, [draftBoard]);
 
-  // StatsPlus draft list: an ID header, then up to 500 IDs in board order (the format ours'
+  // StatsPlus draft list: an ID header, then up to DRAFT_LIST_MAX IDs in board order (the format ours'
   // dashboard exported). Players already taken or mine are left out, whatever the Hide taken toggle.
   const exportDraftList = () => {
     const ids = [];
@@ -209,7 +212,7 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
       if (!id || seen.has(id) || (st && (st.taken || st.mine))) continue;
       seen.add(id);
       ids.push(id);
-      if (ids.length >= 500) break;
+      if (ids.length >= DRAFT_LIST_MAX) break;
     }
     const csv = 'ID\n' + ids.join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -268,7 +271,7 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
             </button>
           )}
           <button type="button" onClick={exportDraftList} className="ns-btn ns-btn-primary ns-btn-sm"
-            title="Export the top 500 still available, in board order, as a StatsPlus draft list (ID column)">
+            title={`Export the top ${DRAFT_LIST_MAX} still available, in board order, as a StatsPlus draft list (ID column)`}>
             Export CSV
           </button>
         </div>
