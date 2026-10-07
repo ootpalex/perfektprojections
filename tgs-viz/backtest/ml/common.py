@@ -28,10 +28,13 @@ What lives here:
                  report/<basis>; dev_table(role) names the basis table
   model extras   amateur_flag(): the one model-only feature (1 = amateur),
                  read from the DEV raw Lev or the app Lev
-  earlier card   mask_earlier_card(): the out-of-an-org rule (2026-09-25).
-                 Every feature built from the earlier dump / pull is unknown
-                 for a player who was out of an org there (his card may have
-                 been hidden); prev_in_org says which case a row is
+  earlier card   the earlier dump / pull is read whatever his status there
+                 (amateur, free agent or in an org; user, 2026-10-05: rating
+                 changes count "from generation onward"). mask_earlier_card()
+                 applies the card-replaced failsafe: every feature built from
+                 the earlier card is unknown where the change from it is
+                 larger than real development (card_replaced_mask,
+                 dev_signals.CARD_LIMITS); prev_in_org stays a context input
   history        history_inputs(): the player's own earlier seasons
                  (2026-09-25, behind the --history switch of dataset.py):
                  (A) recent detail 1, 2 and 3 seasons back, (B) the whole
@@ -131,6 +134,7 @@ BASIS = None
 
 if BT not in sys.path:
     sys.path.insert(0, BT)
+import dev_signals as DSIG                                      # noqa: E402  (stdlib only)
 
 # ---------------------------------------------------------------- constants
 ROLES = ("H", "P")
@@ -354,9 +358,11 @@ def build_features(role, cur, prev=None, prev2=None, span1=1.0, span2=2.0, ctx=N
                       growth is the raw total, not scaled
     ctx               dict of arrays: age, age_frac, level (object: LEVELS
                       value or None), in_org, pos, bats, throws, now, ceil,
-                      prev_now, prev_ceil, prev_in_org / prev2_in_org (1 in an
-                      org at the card one / two game-years earlier, 0 out of
-                      an org, NaN no such card); see mask_earlier_card
+                      prev_now, prev_ceil, prev_in_org (1 in an org at the
+                      card one game-year earlier, 0 out of an org, NaN no such
+                      card; context only), card_replaced / card_replaced2
+                      (True where the card-replaced failsafe tripped for the
+                      one-year / two-year pair; see mask_earlier_card)
     Categorical features come back as object arrays; the caller makes them
     pandas categories with the fixed category lists in this module."""
     ctx = ctx or {}
@@ -482,21 +488,27 @@ def build_features(role, cur, prev=None, prev2=None, span1=1.0, span2=2.0, ctx=N
             f["d_pot"] = f["d_ovr"] = nanv.copy()
         f["d_ceiling"] = _f32(ceil - _f32(ctx.get("prev_ceil", nanv)))
         f["d_now"] = _f32(now - _f32(ctx.get("prev_now", nanv)))
-    return mask_earlier_card(f, role, f["prev_in_org"], ctx.get("prev2_in_org"))
+    return mask_earlier_card(f, role, ctx.get("card_replaced"), ctx.get("card_replaced2"))
 
 
-# Rule (hidden-card fix, 2026-09-25): when a player was OUT OF AN ORG at the
-# earlier dump / pull (an amateur, a free agent, an unsigned international,
-# a blank level), every feature built from that earlier card is unknown.
-# Why: TGS pull 22 (2044-07-11) showed the coming draft class as free agents
-# with HIDDEN cards (Grueninger: skills 20, Pot 39); their real ratings came
-# out later (pull 45: skills 40-45, Pot 80), and the growth features read
-# that reveal as growth (TGS 16-22 grow_steps p99 17.1 against DEV's 6.5).
-# DEV cards are never hidden, but DEV rows get the same mask so the models
-# train on what the leagues can show. prev_in_org (1 in an org, 0 out of an
-# org, NaN no earlier card) lets a model tell "first seen" from "was an
-# amateur or free agent a year ago". Two-year growth reads the card two
-# game-years back, so it is unknown when he was out of an org THERE.
+# Earlier card (user, 2026-10-05): the card one / two game-years back is read
+# whatever the player's status there. An amateur, an unsigned international
+# or a free agent has a real card from the day OOTP generates him, so his
+# rating changes count from then on. This replaces the out-of-an-org rule of
+# 2026-09-25, which blanked every feature built from the earlier card when he
+# was out of an org there; it rested on a wrong story (hidden draft-class
+# cards). What really happened: TGS regenerated its draft classes once, in
+# Jan 2045, after an age-rule change (player 37730: SP Jason Lindhout, Pot
+# 40, batting 20 at pull 43, 2045-01-09; CF Lance Grueninger, Pot 80,
+# batting 35-45 at pull 45, 2045-01-30), and the growth features read that
+# swap as growth.
+# Card-replaced failsafe: where the change from the earlier card is larger
+# than real development ever produces (dev_signals.CARD_LIMITS, measured on
+# DEV), every feature built from that card is unknown, as if there were no
+# earlier card. DEV rows: the yearly pair (dump_year-1 -> dump_year); TGS /
+# BLM rows: dev_signals.replaced_cards (the pair and every short step inside
+# its window). prev_in_org (1 in an org, 0 out of an org, NaN no earlier
+# card) stays a context input.
 PREV_CARD_FEATURES = {
     role: [f"g_{n}_{u}" for n in CORE[role] for u in ("steps", "int")]
     + ["grow_steps", "grow_steps_r", "grow_int", "d_pot", "d_ovr", "d_ceiling", "d_now"]
@@ -504,31 +516,76 @@ PREV_CARD_FEATURES = {
 PREV2_CARD_FEATURES = ["grow2_steps", "grow2_int"]
 
 
-def out_of_org_mask(prev_in_org):
-    """True where the player was out of an org at the earlier card (0), False
-    where he was in one (1) or had no earlier card (NaN)."""
-    if prev_in_org is None:
+def _bool_mask(m):
+    """Boolean array of a mask (None stays None; NaN reads False)."""
+    if m is None:
         return None
-    return np.asarray(prev_in_org, dtype=np.float64) == 0
+    a = np.asarray(m)
+    if a.dtype == bool:
+        return a
+    a = a.astype(np.float64)
+    return ~np.isnan(a) & (a != 0)
 
 
-def mask_earlier_card(f, role, prev_in_org, prev2_in_org=None):
-    """Apply the out-of-an-org rule to a feature dict in place: the features
-    of PREV_CARD_FEATURES become NaN where prev_in_org is 0, the two-year
-    growth where prev2_in_org is 0; has_prev is then 1 only where one-year
-    growth is known. Safe to call twice. Returns f."""
-    out = out_of_org_mask(prev_in_org)
-    if out is not None and out.any():
+def mask_earlier_card(f, role, replaced=None, replaced2=None):
+    """Apply the card-replaced failsafe to a feature dict in place: the
+    features of PREV_CARD_FEATURES become NaN where replaced is True, the
+    two-year growth where replaced2 is True; has_prev is then 1 only where
+    one-year growth is known. None = nothing masked. Safe to call twice.
+    Returns f."""
+    rep = _bool_mask(replaced)
+    if rep is not None and rep.any():
         for k in PREV_CARD_FEATURES[role]:
             if k in f:
-                f[k] = _f32(np.where(out, np.nan, f[k]))
-    out2 = out_of_org_mask(prev2_in_org)
-    if out2 is not None and out2.any():
+                f[k] = _f32(np.where(rep, np.nan, f[k]))
+    rep2 = _bool_mask(replaced2)
+    if rep2 is not None and rep2.any():
         for k in PREV2_CARD_FEATURES:
             if k in f:
-                f[k] = _f32(np.where(out2, np.nan, f[k]))
+                f[k] = _f32(np.where(rep2, np.nan, f[k]))
     f["has_prev"] = _f32(~np.isnan(f["grow_steps"]))
     return f
+
+
+def card_limit_arrays(role, age):
+    """(pot, up, down) float arrays of dev_signals.CARD_LIMITS for each row.
+    role is one role for every row ('H' / 'P') or an array of roles; age is
+    clamped to dev_signals.CARD_LIMIT_AGES; an unknown age gets NaN limits
+    (never trips)."""
+    a = np.asarray(age, dtype=np.float64)
+    n = a.shape[0]
+    lo, hi = DSIG.CARD_LIMIT_AGES
+    ai = np.clip(np.nan_to_num(np.floor(a), nan=lo), lo, hi).astype(int)
+    roles = np.broadcast_to(np.asarray(role, dtype=object), (n,))
+    out = [np.full(n, np.nan) for _ in range(3)]
+    for r in ROLES:
+        m = (roles == r) & ~np.isnan(a)
+        if not m.any():
+            continue
+        tab = np.array([DSIG.CARD_LIMITS[r][x] for x in range(lo, hi + 1)], dtype=np.float64)
+        for j in range(3):
+            out[j][m] = tab[ai[m] - lo, j]
+    return tuple(out)
+
+
+def card_replaced_mask(role, age, d_pot, grow_steps_total, span=1.0, same_pos=None):
+    """True where a change from the earlier card trips the card-replaced
+    failsafe (dev_signals.card_change_trips, the pair rule): |d_pot| over the
+    Pot limit, or the core change in display steps (the RAW total over the
+    span, not per game-year) over the growth limit or under the decline
+    limit, each limit times max(1, span). d_pot is not compared where
+    same_pos is False (Pot is graded at the listed position). NaN inputs
+    never trip."""
+    pot, up, down = card_limit_arrays(role, age)
+    scale = np.maximum(1.0, np.nan_to_num(np.asarray(span, dtype=np.float64), nan=1.0))
+    dp = np.asarray(d_pot, dtype=np.float64)
+    g = np.asarray(grow_steps_total, dtype=np.float64)
+    with np.errstate(invalid="ignore"):
+        trip_pot = np.abs(dp) > pot * scale
+        if same_pos is not None:
+            trip_pot = trip_pot & np.asarray(same_pos, dtype=bool)
+        trip = trip_pot | (g > up * scale) | (g < down * scale)
+    return np.asarray(trip, dtype=bool)
 
 
 CATEGORICAL = {"level": LEVELS, "pos": POS_CATS, "bats": BATS_CATS, "throws": THROWS_CATS}
@@ -584,8 +641,8 @@ def feature_spec(role, basis=None, history=False):
         "earlier pull's lev (the archive vintage dev_signals.choose_clean_pulls picks; a blank lev is rebuilt "
         "from the raw pull first, dev_signals.fill_blank_levs): 0 for AMA, FA, INT, '-' (foreign league) or "
         "blank, else 1; NaN when he is missing from that pull or there is no earlier pull",
-        "1 = in an org at the earlier card, 0 = out of an org there (every feature built from that card is "
-        "unknown: the hidden-card rule of 2026-09-25), NaN = no earlier card")
+        "1 = in an org at the earlier card, 0 = out of an org there (an amateur or free agent; his card is read "
+        "all the same), NaN = no earlier card")
     add("pos", "context", "raw dump Pos", "app POS", "listed position", "category")
     add("bats", "context", "raw dump Bats", "raw pull Bats", "R / L / S", "category")
     add("throws", "context", "raw dump Throws", "raw pull Throws", "R / L", "category")
@@ -659,8 +716,8 @@ def feature_spec(role, basis=None, history=False):
         "minus at the earlier pull",
         "listed-peak change")
     add("d_now", "growth", "now_waa - now_waa at dump_year-1", "league .waa_cache pair, as d_ceiling", "now-WAA change")
-    add("has_prev", "growth", "1 when growth is known (0 when out of an org at the earlier card)", "same",
-        "growth known flag")
+    add("has_prev", "growth", "1 when growth is known (0 when there is no earlier card or the card-replaced "
+        "failsafe tripped, common.mask_earlier_card)", "same", "growth known flag")
     if history:
         S.extend(history_spec(role))
     return S
@@ -677,14 +734,19 @@ def feature_spec(role, basis=None, history=False):
 #       level change over k seasons; growth the season before last and the
 #       change from it (acceleration).
 #   (B) WHOLE RECORD from E to now (seasons_recorded, archive_depth, rec_*,
-#       h_grow_int_max3). E = his earliest usable dump / pull: in an org
-#       there (the hidden-card rule), the same person under the ID (TGS reused
-#       IDs), no rating-scale event between it and now (BLM), and at least
+#       h_grow_int_max3). E = his earliest usable dump / pull: no
+#       card-replaced trip between it and now (the failsafe of
+#       mask_earlier_card), the same person under the ID (TGS reused IDs), no
+#       rating-scale event between it and now (BLM), and at least
 #       HIST_MIN_SPAN game-years back. No such dump: E = now, seasons_recorded
 #       0, every total 0 and every per-season value unknown.
-# A card read (skills, Pot, Ovr, WAA) from an earlier dump needs him in an org
-# there. His level and org status there are not card data and are read as
-# they are (seasons in an org, seasons at the current level).
+# A card read (skills, Pot, Ovr, WAA) from an earlier dump needs no
+# card-replaced trip between it and now: DEV, no yearly pair in between trips;
+# a league, the pair from that pull to the latest pull does not trip and no
+# short step in between does (dev_signals.card_steps). His status there
+# (amateur, free agent or in an org) does not matter (user, 2026-10-05).
+# His level and org status there are not card data and are read as they are
+# (seasons in an org, seasons at the current level).
 #
 # The same function builds both sides. A DEV "slot" is the dump j seasons
 # back (span j); a league slot is an archived pull (span = game-years back).
@@ -778,8 +840,8 @@ def history_inputs(role, cur, path, kslots, window=None, archive_depth=np.nan, r
     path    earlier slots, NEAREST FIRST (ascending span for every row): each
             a dict (or a callable returning one) with the cur keys plus 'span'
             (game-years back; scalar or array), 'present' (bool: his record,
-            same person, clean pair) and 'usable' (present and in an org:
-            card readable)
+            same person, clean pair) and 'usable' (present and no
+            card-replaced trip between that card and now: card readable)
     kslots  {k: slot} the slot standing for k seasons back (A inputs)
     window  None = the whole archive; d = an archive that starts d seasons
             back (slots further back are ignored)
@@ -967,9 +1029,11 @@ def history_spec(role):
 
     lg_k = ("the archived pull nearest k game-years back (k = 1: the dev_signals.choose_clean_pulls pick; "
             "k = 2, 3: span within k +- 0.5 and at least 0.5 past the k-1 pick), clean against the latest "
-            "pull (ratings_db.pair_guard); unknown when he was out of an org there, missing, or the ID was "
-            "someone else's (dev_signals.same_person)")
-    dev_k = "dump dump_year-k; unknown when he was out of an org there (raw Lev not in ORG_LEV) or not in it"
+            "pull (ratings_db.pair_guard); unknown when the card-replaced failsafe tripped between it and the "
+            "latest pull (the pair or a short step in between), he is missing, or the ID was someone else's "
+            "(dev_signals.same_person)")
+    dev_k = ("dump dump_year-k; unknown when a yearly pair between it and now tripped the card-replaced "
+             "failsafe, or he is not in it")
     for k in HIST_K:
         add(f"h{k}_grow_int", dev_k, lg_k + "; scaled by k / span",
             f"core growth over {k} season(s), internal points (total, not per season)")
@@ -984,15 +1048,15 @@ def history_spec(role):
         add(f"h{k}_d_level", dev_k + "; collapsed level rank", lg_k + "; archive lev (blank lev: rebuilt from the "
             "raw pull by dev_signals.fill_blank_levs, the app's rule statsplus._lev_for), WL reads R; not scaled",
             f"level rank change over {k} season(s)")
-    add("h_grow_int_prev", "core growth from dump_year-2 to dump_year-1 (both in an org)",
+    add("h_grow_int_prev", "core growth from dump_year-2 to dump_year-1 (both cards usable)",
         "same from the k = 2 and k = 1 pulls, per season (needs 0.5+ game-years between them)",
         "core growth the season before last, internal points per season")
     add("h_accel", "(core growth over the last season) - h_grow_int_prev", "same, per season",
         "growth acceleration")
-    rec_dev = ("E = his earliest dump with him in an org (whole record; under the archive-depth mask: the "
-               "earliest such dump at most sim_depth seasons back)")
+    rec_dev = ("E = his earliest dump with no card-replaced trip between it and now (whole record; under the "
+               "archive-depth mask: the earliest such dump at most sim_depth seasons back)")
     rec_lg = ("E = his earliest archived pull that is clean against the latest pull, 0.5+ game-years back, "
-              "with him in an org and the same person under the ID")
+              "with no card-replaced trip between it and the latest pull and the same person under the ID")
     add("seasons_recorded", rec_dev + "; seasons from E to now", rec_lg + "; game-years from E to now",
         "seasons of his own record (0 = none)")
     add("archive_depth", "min(dump_year - 2025, sim_depth, 4)", "game-years back to the oldest clean pull "
@@ -1106,7 +1170,30 @@ def save_table(df, path):
     os.replace(tmp, path)
 
 
+# GitHub keeps the ML models and training tables in Git LFS (2026-10-06). A
+# clone skips them by default (.lfsconfig), so each file is a small pointer
+# text until `git lfs pull` downloads it.
+LFS_PULL = 'git lfs pull --include="tgs-viz/backtest/.dev_cache/**" --exclude=""'
+
+
+def is_lfs_pointer(path):
+    """True when path is a Git LFS pointer file, not the real data."""
+    try:
+        with open(path, "rb") as fh:
+            return fh.read(40).startswith(b"version https://git-lfs")
+    except OSError:
+        return False
+
+
+def check_downloaded(path):
+    """Stop with the download command when path is a Git LFS pointer."""
+    if is_lfs_pointer(path):
+        raise SystemExit(f"{os.path.basename(path)} is not downloaded (Git LFS pointer). "
+                         f"From the repo folder, run: {LFS_PULL}")
+
+
 def load_table(path):
+    check_downloaded(path)
     return pd.read_pickle(path)
 
 

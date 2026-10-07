@@ -150,10 +150,10 @@ PATH_AGES = (16, 38)
 PEAK_AGES = (16, 26)
 HORIZONS = (1, 2, 3, 4, 5)
 
-# The cell method reads the UNMASKED one-year growth (grow_steps_r_card /
-# has_prev_card): dev_odds builds its cells from every DEV card, and the DEV
-# league is exempt from the out-of-an-org rule in dev_signals (hidden-card fix,
-# 2026-09-25). The model features grow_steps_r / has_prev carry that mask.
+# The cell method reads the one-year growth BEFORE the card-replaced failsafe
+# (grow_steps_r_card / has_prev_card): dev_odds builds its cells from every
+# DEV card. The model features grow_steps_r / has_prev carry the failsafe
+# (common.mask_earlier_card; about 0.003% of DEV yearly pairs).
 KEEP = ["pid", "dump_year", "age", "in_org", "lev_raw", "now_waa", "ceiling_waa", "pot", "grow_steps_r_card",
         "has_prev_card", "now_kind", "peak", "peak_known", "realized", "regular_ever", "regular_future",
         "cohort_first20", "cohort_dev_odds", "fold", "time_split", "present_1",

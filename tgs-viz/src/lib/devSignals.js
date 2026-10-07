@@ -378,12 +378,16 @@ export function devPeakText(p) {
 
 /**
  * Why his growth is unknown, in the words of the signals build's note
- * (dev_signals.py measure_player and its OUT_OF_ORG_NOTE / REUSED_ID_NOTE),
- * or '' when the row says nothing. Out of an org a year ago comes first: his
- * earlier card may have been hidden, so it was not read at all.
+ * (dev_signals.py measure_player and its CARD_REPLACED_NOTE / REUSED_ID_NOTE),
+ * or '' when the row says nothing. A replaced card comes first: the change
+ * from his earlier card was larger than real development (a regenerated or
+ * re-scouted card), so that card was not read at all. 'out of an org a year
+ * ago' is the old rule's note (before 2026-10-05); a dev_signals.json built
+ * before then can still carry it.
  */
 function growUnknownReason(p) {
   const note = typeof p?.Dev_Note === 'string' ? p.Dev_Note : '';
+  if (note.includes('card replaced between pulls')) return 'card replaced between pulls (regenerated or re-scouted)';
   if (note.includes('out of an org a year ago')) return 'out of an org a year ago';
   if (note.includes('ID held by a different player')) return 'ID held by a different player at the earlier pull';
   for (const why of ['no earlier pull', 'not in the earlier pull', 'core skill missing at the earlier pull']) {

@@ -71,18 +71,28 @@ nearest one game-year back whose pair with the latest pull ratings_db
 pair_guard does not flag; growth scaled to one game-year by the span), and a
 winter-league player (app Lev WL) reads level R (common.score_level).
 
-Out-of-an-org rule (hidden-card fix, 2026-09-25; common.mask_earlier_card):
-when a player was out of an org at the earlier card, every feature built from
-that card (per-skill and total growth, d_pot, d_ovr, d_ceiling, d_now) is
-unknown and has_prev is 0. Out of an org = DEV: raw Lev at dump_year-1 not in
-ORG_LEV (AMA or FA); TGS / BLM: the earlier pull's lev is AMA, FA, INT or
-blank. prev_in_org = 1 in an org there, 0 out of one, NaN no earlier card
-(DEV: not in the dump a year back; TGS / BLM: missing from the earlier pull,
-or no earlier pull). DEV cards are never hidden, but DEV rows get the same
-mask so training matches what the leagues can show. The DEV tables keep the
-unmasked one-year growth as info columns grow_steps_r_card / has_prev_card:
-dev_odds builds its cells from every DEV card (DEV is exempt from the rule
-there), and baseline.py rebuilds those cells from these two columns.
+Earlier card (user, 2026-10-05): the card a year back is read whatever the
+player's status there (amateur, unsigned international, free agent or in an
+org): OOTP gives a player a real card from the day it generates him. The
+out-of-an-org rule of 2026-09-25 (every earlier-card feature unknown when he
+was out of an org there) is gone; it rested on a wrong story (hidden
+draft-class cards). TGS regenerated its draft classes once, in Jan 2045,
+after an age-rule change (player 37730: SP Jason Lindhout through pull 43,
+CF Lance Grueninger from pull 45), and that swap is what read as growth.
+Card-replaced failsafe (common.mask_earlier_card): where the change from the
+earlier card is larger than real development ever produces
+(dev_signals.CARD_LIMITS, measured on DEV), every feature built from that
+card (per-skill and total growth, d_pot, d_ovr, d_ceiling, d_now) is unknown
+and has_prev is 0. DEV rows: the yearly pair (dump_year-1 -> dump_year,
+dev_card_replaced; the two-year growth also when the pair a year earlier
+tripped). TGS / BLM rows: dev_signals.replaced_cards, the same players
+dev_signals.json marks (the pair, and every step under 60 game days inside
+its window). prev_in_org = 1 in an org at the earlier card, 0 out of one,
+NaN no earlier card (DEV: not in the dump a year back; TGS / BLM: missing
+from the earlier pull, or no earlier pull); a context input only. The DEV
+tables keep the one-year growth before the failsafe as info columns
+grow_steps_r_card / has_prev_card: dev_odds builds its cells from every DEV
+card, and baseline.py rebuilds those cells from these two columns.
 
 CLI:
   PY314 dataset.py --basis BLM             build and print the checks, write nothing
@@ -100,7 +110,6 @@ import os
 import sqlite3
 import sys
 import time
-from collections import Counter
 
 import numpy as np
 import pandas as pd
@@ -236,11 +245,41 @@ def load_pt():
 
 
 # ---------------------------------------------------------------- DEV table
-def dev_history(role, rows, key, year, num, in_org, level, age, now, ceil, first_year_row, dev_first_year):
+def dev_card_replaced(num, pos, age, year, i_prev, role_row):
+    """The card-replaced failsafe on the DEV long table, yearly pairs only:
+    True where the change from the player's dump a year back trips
+    dev_signals.CARD_LIMITS (common.card_replaced_mask, span 1), judged on
+    the core skills of his table role. The Pot change is compared only when
+    the listed position is the same at both dumps and both dumps rate OVR /
+    POT on the same scale (common.dev_pot_scale). False without a dump a year
+    back."""
+    n = len(i_prev)
+    has = i_prev >= 0
+    ip = np.maximum(i_prev, 0)
+    grow = np.full(n, np.nan)
+    for role in C.ROLES:
+        m = np.flatnonzero(role_row == role)
+        if not len(m):
+            continue
+        stems = {name: stem for name, stem, _p in C.SPLIT_SKILLS[role]}
+        g = np.zeros(len(m))
+        for name in C.CORE[role]:
+            r, l = num[stems[name] + "_R"].astype(np.float64), num[stems[name] + "_L"].astype(np.float64)
+            g = g + ((r[m] + l[m]) / 2.0 - (r[ip[m]] + l[ip[m]]) / 2.0) / 5.0
+        grow[m] = g
+    pot = num["Pot"].astype(np.float64)
+    d_pot = np.where(C.dev_pot_scale(year) == C.dev_pot_scale(year - 1), pot - pot[ip], np.nan)
+    same_pos = pos.astype(str) == pos[ip].astype(str)
+    return C.card_replaced_mask(role_row, age, d_pot, grow, 1.0, same_pos) & has
+
+
+def dev_history(role, rows, key, year, num, in_org, level, age, now, ceil, first_year_row, dev_first_year,
+                card_trip):
     """History inputs of the DEV rows `rows` (indexes into the long table) as
     {column: array}: the full-record inputs, their __w<d> window variants
     (d = 0..3) and sim_depth. Slot j = the dump j seasons back (common
-    history block)."""
+    history block); its card is usable when no yearly pair between it and
+    now trips the card-replaced failsafe (card_trip, dev_card_replaced)."""
     t0 = time.time()
     stems = {name: stem for name, stem, _p in C.SPLIT_SKILLS[role]}
     long = {"age": age.astype(np.float32),
@@ -255,6 +294,19 @@ def dev_history(role, rows, key, year, num, in_org, level, age, now, ceil, first
         core = v.astype(np.float64) if core is None else core + v
     long["core"] = core.astype(np.float32)
     kr = key[rows]
+    # chain[0] = j: True where a yearly pair between the dump j seasons back
+    # and now tripped the failsafe; grown one season at a time, restarted when
+    # a smaller j is asked for (history_inputs walks the slots in order)
+    chain = [0, np.zeros(len(rows), dtype=bool)]
+
+    def replaced_since(j):
+        if j < chain[0]:
+            chain[0], chain[1] = 0, np.zeros(len(rows), dtype=bool)
+        while chain[0] < j:
+            idx = lookup(key, kr - chain[0])         # the pair (chain[0] + 1 back -> chain[0] back)
+            chain[1] = chain[1] | np.where(idx >= 0, card_trip[np.maximum(idx, 0)], False)
+            chain[0] += 1
+        return chain[1]
 
     def slot(j):
         idx = lookup(key, kr - j)
@@ -263,7 +315,7 @@ def dev_history(role, rows, key, year, num, in_org, level, age, now, ceil, first
         s = {k: np.where(ok, v[ii], np.nan).astype(np.float32) for k, v in long.items()}
         s["span"] = float(j)
         s["present"] = ok
-        s["usable"] = ok & (s["in_org"] == 1)
+        s["usable"] = ok & ~replaced_since(j)
         return s
 
     cur = {k: v[rows] for k, v in long.items()}
@@ -370,11 +422,13 @@ def build_dev(basis, rebuild=False, history=False):
     i_prev2 = lookup(key, key - 2)
     prev_now = np.where(i_prev >= 0, now[np.maximum(i_prev, 0)], np.nan).astype(np.float32)
     prev_ceil = np.where(i_prev >= 0, ceil[np.maximum(i_prev, 0)], np.nan).astype(np.float32)
-    # in an org at the dump one / two years back: 1 / 0, NaN when not in that
-    # dump (the out-of-an-org rule, common.mask_earlier_card)
+    # in an org at the dump a year back: 1 / 0, NaN when not in that dump (a
+    # context input; the card there is read either way)
     prev_in_org = np.where(i_prev >= 0, in_org[np.maximum(i_prev, 0)], np.nan).astype(np.float32)
-    prev2_in_org = np.where(i_prev2 >= 0, in_org[np.maximum(i_prev2, 0)], np.nan).astype(np.float32)
-    prev_lev = np.where(i_prev >= 0, lev[np.maximum(i_prev, 0)], None)
+    # card-replaced failsafe on every yearly pair (common.mask_earlier_card)
+    card_trip = dev_card_replaced(num, pos, age, year, i_prev, role_row)
+    log(f"  card-replaced failsafe: {int(card_trip.sum())} of {int((i_prev >= 0).sum())} yearly pairs trip "
+        f"(dev_signals.CARD_LIMITS)")
 
     # ---- targets
     priced = ~np.isnan(now)
@@ -413,22 +467,25 @@ def build_dev(basis, rebuild=False, history=False):
                "prev_now": prev_now[rows], "prev_ceil": prev_ceil[rows],
                "pot_scale": C.dev_pot_scale(year[rows]),
                "prev_pot_scale": np.where(i_prev[rows] >= 0, C.dev_pot_scale(year[rows] - 1), np.nan).astype(np.float32)}
-        # built once without the out-of-an-org mask, so the real earlier-card
-        # growth can be kept for the cell method; then the mask is applied
+        # built once without the failsafe, so the earlier-card growth can be
+        # kept for the cell method; then the failsafe is applied: the yearly
+        # pair, and for two-year growth the pair a year earlier too
         feats = C.build_features(role, cur, prev, prev2, 1.0, 2.0, ctx)
         card_grow_r = feats["grow_steps_r"].copy()
         card_has_prev = feats["has_prev"].copy()
         feats["prev_in_org"] = prev_in_org[rows]
-        C.mask_earlier_card(feats, role, prev_in_org[rows], prev2_in_org[rows])
+        ip = i_prev[rows]
+        rep = card_trip[rows]
+        rep2 = rep | ((ip >= 0) & card_trip[np.maximum(ip, 0)])
+        C.mask_earlier_card(feats, role, rep, rep2)
         a = age[rows]
         young = (a >= 16) & (a <= 26)
         out = prev_in_org[rows] == 0
-        known_lost = out & (card_has_prev == 1)
-        log(f"  {role} out-of-an-org rule, ages 16-26: {int(young.sum())} rows; masked (out of an org a year "
-            f"back) {int((young & out).sum())}, of which growth was known {int((young & known_lost).sum())}; "
-            f"no earlier dump {int((young & np.isnan(prev_in_org[rows])).sum())}; level a year back of the "
-            f"masked rows: {dict(Counter(prev_lev[rows][young & out].astype(str).tolist()).most_common())}; "
-            f"masked rows in an org now {int((young & out & (in_org[rows] == 1)).sum())}")
+        log(f"  {role} earlier card, ages 16-26: {int(young.sum())} rows; with a dump a year back "
+            f"{int((young & (card_has_prev == 1)).sum())}, of which out of an org there (card read) "
+            f"{int((young & out & (card_has_prev == 1)).sum())}; card replaced (failsafe) "
+            f"{int((young & rep).sum())} (all ages {int(rep.sum())}); no earlier dump "
+            f"{int((young & np.isnan(prev_in_org[rows])).sum())}")
         df = pd.DataFrame({"pid": pid[rows], "dump_year": year[rows].astype(np.int16)})
         df = pd.concat([df, C.to_frame(feats)], axis=1)
         g = gid[rows]
@@ -465,7 +522,7 @@ def build_dev(basis, rebuild=False, history=False):
         if history:
             first_year_row = first_year[gid]
             hist = dev_history(role, rows, key, year, num, in_org, level, age, now, ceil,
-                               first_year_row, int(min(years)))
+                               first_year_row, int(min(years)), card_trip)
             df = pd.concat([df, pd.DataFrame(hist)], axis=1)
         tables[role] = df
         log(f"  {role}: {len(df)} rows, {df['pid'].nunique()} players [{time.time() - t0:.0f}s]")
@@ -582,9 +639,10 @@ def archive_identity(league, pull_id):
 
 
 def prev_org_flag(lev):
-    """Out-of-an-org rule for a TGS / BLM earlier pull: 0.0 when the lev is
-    AMA, FA, INT, '-' (a foreign-league row) or blank (out of an org, the card
-    may be hidden), else 1.0. Rule: dev_signals.lev_out_of_org."""
+    """prev_in_org of a TGS / BLM earlier pull: 0.0 when the lev is AMA, FA,
+    INT, '-' (a foreign-league row) or blank (out of an org), else 1.0. Rule:
+    dev_signals.lev_out_of_org. A context input only: the card is read
+    either way."""
     return 0.0 if DSIG.lev_out_of_org(lev) else 1.0
 
 
@@ -650,7 +708,10 @@ def league_archive(league, conn, pulls, gdates, choice, fp):
     one), before the latest pull, clean against it (ratings_db.pair_guard via
     dev_signals.pair_reading), and at least HIST_MIN_SPAN game-years back (E
     candidates), plus the k = 1 pick whatever its span. Returns (records
-    oldest-last by span, k picks {k: record}, archive_depth, note)."""
+    oldest-last by span, k picks {k: record}, archive_depth, note, steps);
+    steps = dev_signals.card_steps over every pull from the oldest kept pull
+    to the latest ({player_id: [(start date, end date, text)]}, the step
+    check of the card-replaced failsafe; league_slot reads it)."""
     import ratings_db as _RDB
     to_id, to_date = choice["to_id"], choice["to_date"]
     if choice["dates"] == "in-game":
@@ -675,7 +736,7 @@ def league_archive(league, conn, pulls, gdates, choice, fp):
         hits = glob.glob(os.path.join(C.LEAGUE_VINT, league, f"*_p{p}.csv.gz"))
         if not hits:
             continue
-        cols = ["player_id", "name", "age", "org", "lev"] + list(C.ARCHIVE_TO_RAW)
+        cols = ["player_id", "name", "age", "pos", "org", "lev"] + list(C.ARCHIVE_TO_RAW)
         df = pd.read_csv(hits[0], dtype={"player_id": str, "name": str, "lev": str, "org": str},
                          usecols=lambda c: c in cols)
         ids = df["player_id"].astype(str).tolist()
@@ -689,10 +750,12 @@ def league_archive(league, conn, pulls, gdates, choice, fp):
         org_in = np.array([o is not None and str(o).strip() not in ("", "0", "-", "nan") for o in org])
         rank, ino = level_codes(levs, org_in)
         w, _fp, wfile = league_waa(league, p, fp)
-        recs.append({"pull": p, "date": str(d), "span": float(span), "idx": {x: i for i, x in enumerate(ids)},
+        pos = (df["pos"].fillna("").astype(str).str.strip().to_numpy(dtype=object) if "pos" in df.columns
+               else np.full(len(df), "", dtype=object))
+        recs.append({"pull": p, "date": str(d), "d": d, "span": float(span), "idx": {x: i for i, x in enumerate(ids)},
                      "ident": {x: {"name": nm, "age": a} for x, nm, a in zip(ids, df["name"], df["age"])},
                      "age": pd.to_numeric(df["age"], errors="coerce").to_numpy(dtype=np.float32),
-                     "card": card, "rank": rank, "in_org": ino, "lev_how": how,
+                     "card": card, "pos": pos, "rank": rank, "in_org": ino, "lev_how": how,
                      "waa": w, "waa_file": wfile})
     by_id = {r["pull"]: r for r in recs}
     picks = {}
@@ -706,21 +769,38 @@ def league_archive(league, conn, pulls, gdates, choice, fp):
         if not cands:
             break
         picks[k] = min(cands, key=lambda r: (abs(r["span"] - k), r["pull"]))
+    # card-replaced failsafe, step check: every pull from the oldest kept pull
+    # to the latest, role and age at the latest pull
+    steps = {}
+    dates = DSIG.pair_dates(pulls, gdates, choice)
+    if recs and to_id in dates:
+        oldest = max(recs, key=lambda r: r["span"])["pull"]
+        if oldest in dates:
+            players = {str(r["player_id"]): (DO.role_of(r.get("pos") or ""), DO.to_int(r.get("age")))
+                       for r in DSIG.card_rows(conn, to_id)}
+            steps = DSIG.card_steps(conn, DSIG.pull_window(pulls, dates, oldest, to_id), dates, players)
     note = {"pulls_read": [{"pull": r["pull"], "date": r["date"], "span": round(r["span"], 3),
                             "lev": r["lev_how"], "waa": r["waa_file"]} for r in recs],
             "pulls_flagged": [{"pull": p, "date": str(d), "span": round(s, 3)} for p, d, s in flagged],
             "k_picks": {str(k): {"pull": r["pull"], "date": r["date"], "span": round(r["span"], 3)}
                         for k, r in picks.items()},
             "archive_depth": round(float(depth), 3),
+            "players_with_a_replaced_step": len(steps),
             "rule": "E = his earliest pull 0.5+ game-years back that is clean against the latest pull, with "
-                    "him in an org there and the same person under the ID; k picks: k = 1 the "
-                    "choose_clean_pulls pick, k = 2, 3 the clean pull nearest k game-years back within "
-                    "k +- 0.5 and 0.5+ past the k-1 pick"}
-    return recs, picks, float(depth), note
+                    "no card-replaced trip between it and the latest pull (the pair, or a step under "
+                    f"{DSIG.CARD_STEP_DAYS} game days in between) and the same person under the ID; k picks: "
+                    "k = 1 the choose_clean_pulls pick, k = 2, 3 the clean pull nearest k game-years back "
+                    "within k +- 0.5 and 0.5+ past the k-1 pick"}
+    return recs, picks, float(depth), note, steps
 
 
-def league_slot(rec, rid, to_ident, role):
-    """One archived pull as a history slot for the players rid of one role."""
+def league_slot(rec, rid, to_ident, role, cmp=None, steps=None):
+    """One archived pull as a history slot for the players rid of one role.
+    The card is usable unless the card-replaced failsafe trips between it and
+    the latest pull: the pair (cmp = the latest card of rid: 'age', 'pot',
+    'pos', 'disp' {core skill: display}; common.card_replaced_mask, limits
+    times max(1, span)) or a step that starts at or after this pull (steps,
+    league_archive)."""
     n = len(rid)
     j = np.array([rec["idx"].get(p, -1) for p in rid])
     same = np.array([jj >= 0 and DSIG.same_person(to_ident.get(p), rec["ident"].get(p), rec["span"])
@@ -744,16 +824,29 @@ def league_slot(rec, rid, to_ident, role):
     w = rec["waa"]
     s["now"] = np.where(ok, np.array([w.get(p, (np.nan,) * 3)[0] for p in rid], dtype=np.float32), np.nan)
     s["ceil"] = np.where(ok, np.array([w.get(p, (np.nan,) * 3)[1] for p in rid], dtype=np.float32), np.nan)
-    s["usable"] = ok & (s["in_org"] == 1)
+    rep = np.zeros(n, dtype=bool)
+    if cmp is not None:
+        g = np.zeros(n)
+        for sk in C.CORE[role]:
+            st = stems[sk]
+            g = g + (cmp["disp"][sk] - pick((card[st + "_R"] + card[st + "_L"]) / 2.0)) / 5.0
+        same_pos = ok & (np.asarray(cmp["pos"], dtype=object) == np.where(ok, rec["pos"][jj], None))
+        rep = C.card_replaced_mask(role, cmp["age"], cmp["pot"] - s["pot"], g, rec["span"], same_pos)
+    if steps:
+        d0 = rec["d"]
+        rep = rep | np.array([any(a >= d0 for a, _b, _t in steps.get(p, ())) for p in rid], dtype=bool)
+    s["usable"] = ok & ~rep
+    s["replaced"] = ok & rep
     s["reused"] = (j >= 0) & ~same
     return s
 
 
-def league_history(role, rid, cur, recs, picks, depth, to_ident):
+def league_history(role, rid, cur, recs, picks, depth, to_ident, cmp=None, steps=None):
     """History inputs of the TGS / BLM players rid of one role, and the pull
-    id of each one's E (-1 = none)."""
+    id of each one's E (-1 = none). cmp and steps feed the card-replaced
+    failsafe of each slot (league_slot)."""
     n = len(rid)
-    slots = [(r, league_slot(r, rid, to_ident, role)) for r in recs]
+    slots = [(r, league_slot(r, rid, to_ident, role, cmp, steps)) for r in recs]
     # E slot: his oldest usable pull at least HIST_MIN_SPAN back
     keys = ["age", "rank", "in_org", "pot", "ovr", "now", "ceil", "core"] + [f"i_{s}" for s in C.CORE[role]]
     e = {k: np.full(n, np.nan, dtype=np.float32) for k in keys}
@@ -797,7 +890,10 @@ def build_league(league, history=False):
     Value columns are the league's own app values (its own calibration), the
     basis its own model trains on. Earlier pull: dev_signals.choose_clean_pulls
     (nearest one game-year back, pair with the latest pull not flagged by
-    ratings_db.pair_guard), the same pull for hitters and pitchers.
+    ratings_db.pair_guard), the same pull for hitters and pitchers. The
+    card-replaced failsafe (dev_signals.replaced_cards, the same players
+    dev_signals.json marks) blanks the earlier-card features of a pair whose
+    change is larger than real development.
     history=True adds the history inputs from every archived pull
     (league_archive / league_history) and the info column rec_start_pull."""
     conn = sqlite3.connect(f"file:{C.DB_PATH}?mode=ro", uri=True)
@@ -806,6 +902,7 @@ def build_league(league, history=False):
         gdates = DSIG.game_dates(league, pulls)
         plain = DSIG.choose_pulls(pulls, gdates)
         choice = DSIG.choose_clean_pulls(conn, league, pulls, gdates)
+        replaced = DSIG.replaced_cards(conn, pulls, gdates, choice)
         src = conn.execute("SELECT source, source_files FROM pulls WHERE pull_id=?",
                            (choice["to_id"],)).fetchone()
     finally:
@@ -887,7 +984,8 @@ def build_league(league, history=False):
         th = time.time()
         hconn = sqlite3.connect(f"file:{C.DB_PATH}?mode=ro", uri=True)
         try:
-            h_recs, h_picks, h_depth, note["history"] = league_archive(league, hconn, pulls, gdates, choice, fp)
+            h_recs, h_picks, h_depth, note["history"], h_steps = league_archive(league, hconn, pulls, gdates,
+                                                                                choice, fp)
         finally:
             hconn.close()
         log(f"  {league} history archive: {len(h_recs)} pulls read, k picks "
@@ -905,9 +1003,11 @@ def build_league(league, history=False):
         rows = np.flatnonzero(role == r)
         rid = [ids[i] for i in rows]
         pv, c_now_fr, c_ceil_fr = None, np.full(len(rows), np.nan, np.float32), np.full(len(rows), np.nan, np.float32)
-        # out-of-an-org rule: 1 in an org at the earlier pull, 0 out of one
-        # (AMA, FA, INT, blank), NaN missing from it or no earlier pull
+        # context: 1 in an org at the earlier pull, 0 out of one (AMA, FA,
+        # INT, blank), NaN missing from it or no earlier pull
         prev_in_org = np.full(len(rows), np.nan, np.float32)
+        # card-replaced failsafe: True where the pair trips (same person only)
+        rep = np.zeros(len(rows), dtype=bool)
         if from_id is not None:
             prev_ids, prev_num, prev_file, prev_lev = archive_cards(league, from_id)
             if prev_ids is not None:
@@ -920,6 +1020,12 @@ def build_league(league, history=False):
                 pv = C.take(prev_num, pidx)
                 prev_in_org = np.array([prev_org_flag(prev_lev[j]) if j >= 0 else np.nan for j in pidx],
                                        dtype=np.float32)
+                # A pull with nobody in an org carries no org data (SSB's past-date
+                # snapshots read Org 0, so every row is FA): unknown there, not 0.
+                if all(DSIG.lev_out_of_org(v) for v in prev_lev):
+                    prev_in_org = np.full(len(rows), np.nan, np.float32)
+                    note.setdefault("prev_in_org_unknown", {})[r] = "earlier pull has no org data"
+                rep =np.array([j >= 0 and p in replaced for p, j in zip(rid, pidx)], dtype=bool)
                 note["from_source"][r] = f"vintages/{league}/{prev_file}"
             w_from, _fp, f_from = league_waa(league, from_id, fp)
             note["waa_cache"]["from_" + r] = f_from
@@ -931,14 +1037,14 @@ def build_league(league, history=False):
         cur = {k: v[rows] for k, v in num.items()}
         ctx = {"age": age[rows], "level": level[rows], "in_org": in_org[rows], "pos": pos[rows],
                "bats": strs["Bats"][rows], "throws": strs["Throws"][rows], "now": now[rows], "ceil": ceil[rows],
-               "prev_in_org": prev_in_org,
+               "prev_in_org": prev_in_org, "card_replaced": rep,
                "pot_scale": np.full(len(rows), C.LEAGUE_OVR_POT_SCALE.get(league, 0.0), dtype=np.float32)}
         feats = C.build_features(r, cur, pv, None, span if span else np.nan, 2.0, ctx)
         # WAA growth: both ends from the league cache (one engine, neutral park), like DEV
         feats["d_ceiling"] = (c_ceil_to[rows] - c_ceil_fr).astype(np.float32)
         feats["d_now"] = (c_now_to[rows] - c_now_fr).astype(np.float32)
-        # the out-of-an-org rule again, now that d_ceiling / d_now are set
-        C.mask_earlier_card(feats, r, prev_in_org)
+        # the card-replaced failsafe again, now that d_ceiling / d_now are set
+        C.mask_earlier_card(feats, r, rep)
         e_pull = None
         if history:
             stems = {nm: st for nm, st, _p in C.SPLIT_SKILLS[r]}
@@ -951,14 +1057,21 @@ def build_league(league, history=False):
                 hcur[f"i_{sk}"] = C.split_internal(cur[stems[sk] + "_R"], cur[stems[sk] + "_L"]).astype(np.float32)
                 hcore = hcore + hcur[f"i_{sk}"]
             hcur["core"] = hcore.astype(np.float32)
-            hfe, e_pull, h_reused = league_history(r, rid, hcur, h_recs, h_picks, h_depth, to_ident)
+            # the latest card for the failsafe's pair check of each slot
+            hcmp = {"age": age[rows], "pot": cur["Pot"],
+                    "pos": np.array([str(x or "").strip() for x in pos[rows]], dtype=object),
+                    "disp": {sk: (cur[stems[sk] + "_R"] + cur[stems[sk] + "_L"]) / 2.0 for sk in C.CORE[r]}}
+            hfe, e_pull, h_reused = league_history(r, rid, hcur, h_recs, h_picks, h_depth, to_ident,
+                                                   hcmp, h_steps)
             feats.update(hfe)
             note["history"].setdefault("reused_id_by_pull", {})[r] = h_reused
         young = (age[rows] >= 16) & (age[rows] <= 26)
-        note.setdefault("prev_org_rule", {})[r] = {
+        note.setdefault("earlier_card", {})[r] = {
             "ages_16_26": int(young.sum()),
-            "masked_out_of_org_a_year_back": int((young & (prev_in_org == 0)).sum()),
+            "out_of_org_a_year_back_card_read": int((young & (prev_in_org == 0) & ~rep).sum()),
             "in_org_a_year_back": int((young & (prev_in_org == 1)).sum()),
+            "card_replaced": int((young & rep).sum()),
+            "card_replaced_all_ages": int(rep.sum()),
             "no_earlier_card": int((young & np.isnan(prev_in_org)).sum())}
         df = pd.DataFrame({"pid": np.array([int(x) for x in rid], dtype=np.int64),
                            "name": [str(app[x].get("Name") or "") for x in rid]})
@@ -1181,10 +1294,10 @@ INFO_DEFS = {
     "mlb_pa": "MLB PA in season dump_year (0 when none or unknown)",
     "mlb_bf": "MLB BF in season dump_year",
     "fold": "0..4, md5 of the pid string mod 5; every dump of a player in one fold",
-    "grow_steps_r_card": "grow_steps_r BEFORE the out-of-an-org mask (the real DEV card a year back). Only the cell "
-                         "method reads it (baseline.py, as dev_odds builds its cells from every DEV card); never a "
-                         "model feature",
-    "has_prev_card": "has_prev BEFORE the out-of-an-org mask; read with grow_steps_r_card by baseline.py only",
+    "grow_steps_r_card": "grow_steps_r BEFORE the card-replaced failsafe (the DEV card a year back as it is). Only "
+                         "the cell method reads it (baseline.py, as dev_odds builds its cells from every DEV card); "
+                         "never a model feature",
+    "has_prev_card": "has_prev BEFORE the card-replaced failsafe; read with grow_steps_r_card by baseline.py only",
     "time_split": "train when first_seen_year <= the cutoff, else test",
     "sim_depth": "simulated archive depth of the row (history tables only): -1 = full record (about half the "
                  "rows), else 0, 1, 2 or 3 seasons of archive (one eighth each); md5 of 'pid/dump_year' "

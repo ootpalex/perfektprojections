@@ -253,6 +253,13 @@ def make_model(kind, hp, st, feats, quantile=None, monotonic=False, sklearn_only
     if kind == "quantile":
         return HistGradientBoostingRegressor(loss="quantile", quantile=quantile, **common)
     mono = {"now_waa": 1} if monotonic and "now_waa" in feats else None
+    if not sklearn_only and quantile_backend()[0] == "xgboost":
+        # the reach classifiers train on the GPU too (2026-10-06, the user keeps
+        # CPU load light; they tied scikit-learn in gpu_compare.py)
+        import xgb_models as XM
+        return XM.classifier(dict(hp, max_iter=st["max_iter"], max_bins=st["max_bins"],
+                                  n_iter_no_change=st["n_iter_no_change"]),
+                             "now_waa" if monotonic else None, feats)
     return HistGradientBoostingClassifier(loss="log_loss", monotonic_cst=mono, **common)
 
 
@@ -293,7 +300,11 @@ def fit_one(target, df, feats, st, val, log_prefix=""):
         mono = st.get("monotonic_now", False) and target in REACH
         m = make_model("classifier", st["classifier"], st, feats, monotonic=mono)
         y, yv = df.loc[tr, target].to_numpy().astype(int), df.loc[va, target].to_numpy().astype(int)
-        m.fit(X, y, X_val=Xv, y_val=yv)
+        if hasattr(m, "n_iter_no_change"):
+            m.fit(X, y, X_val=Xv, y_val=yv)
+        else:
+            import xgb_models as XM
+            XM.fit(m, X, y, Xv, yv)
         pv = m.predict_proba(Xv)[:, 1]
         vloss = float(log_loss(yv, np.clip(pv, 1e-7, 1 - 1e-7), labels=[0, 1]))
         iso = None

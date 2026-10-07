@@ -78,6 +78,7 @@ import pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import common as C                                         # noqa: E402
+import xgb_models as XM  # noqa: E402
 
 import sklearn                                             # noqa: E402
 from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor  # noqa: E402
@@ -185,18 +186,29 @@ def model_specs(loss):
 
 
 def fit_one(spec, params, feats, path, pres, rows_path, rows_pres):
-    """Fit one model on the given training row masks. Returns the model and n rows used."""
+    """Fit one model on the given training row masks. Returns the model and n rows used.
+    XGBoost on the GPU when it is installed (xgb_models.py: the user keeps CPU
+    load light), else scikit-learn as before."""
     name, tcol, kind, loss, q = spec
+    use_xgb = XM.backend()[0] == "xgboost"
     if kind == "cls":
         d = pres[rows_pres]
-        X, y, val = d[feats], d[tcol].to_numpy().astype(int), d["val"].to_numpy()
-        m = fit_es(make_cls(params), X, y, val)
+        X, y, val = d[feats], d[tcol].to_numpy().astype(int), d["val"].to_numpy().astype(bool)
+        if use_xgb:
+            m = XM.fit(XM.classifier(params, feats=feats), X[~val], y[~val], X[val], y[val])
+        else:
+            m = fit_es(make_cls(params), X, y, val)
         return m, len(d)
     d = path[rows_path]
     y = d[tcol].to_numpy(dtype=np.float64)
     ok = ~np.isnan(y)
     d = d[ok]
-    m = fit_es(make_reg(params, loss, q), d[feats], y[ok], d["val"].to_numpy())
+    if use_xgb:
+        val = d["val"].to_numpy().astype(bool)
+        X, yy = d[feats], y[ok]
+        m = XM.fit(XM.regressor(params, loss, q), X[~val], yy[~val], X[val], yy[val])
+    else:
+        m = fit_es(make_reg(params, loss, q), d[feats], y[ok], d["val"].to_numpy())
     return m, len(d)
 
 
@@ -231,9 +243,9 @@ def run_split(role, feats, path, pres, params, loss, train_path, train_pres, tes
             outp["p_present1"] = p
         else:
             predict_into(outp, name, m, Xp, kind)
-        info[name] = {"n_train": int(n), "n_iter": int(m.n_iter_), "loss": lo or "log_loss",
+        info[name] = {"n_train": int(n), "n_iter": XM.n_iter(m), "loss": lo or "log_loss",
                       "seconds": round(time.time() - t0, 1)}
-        log(f"  {role}{tag} {name}: n {n:,} iters {m.n_iter_} {time.time() - t0:.0f}s")
+        log(f"  {role}{tag} {name}: n {n:,} iters {XM.n_iter(m)} {time.time() - t0:.0f}s")
         if keep_models:
             models[name] = m
     lo, hi = np.minimum(outp["d1_q25"], outp["d1_q75"]), np.maximum(outp["d1_q25"], outp["d1_q75"])
@@ -525,8 +537,9 @@ def cmd_fit_final(roles):
             with open(os.path.join(C.MODELS_DIR, fn), "wb") as fh:
                 pickle.dump(m, fh)
             entry["models"][name] = {"file": fn, "target": tcol, "kind": kind, "loss": lo or "log_loss",
-                                     "quantile": q, "n_train": int(n), "n_iter": int(m.n_iter_)}
-            log(f"  final {role} {name}: n {n:,} iters {m.n_iter_} {time.time() - t0:.0f}s -> {fn}")
+                                     "quantile": q, "n_train": int(n), "n_iter": XM.n_iter(m),
+                                     "library": "xgboost" if XM.is_xgb(m) else "scikit-learn"}
+            log(f"  final {role} {name}: n {n:,} iters {XM.n_iter(m)} {time.time() - t0:.0f}s -> {fn}")
         entry["fit_seconds"] = round(time.time() - t_role, 1)
         manifest[role] = entry
     manifest["_meta"] = {"written": datetime.datetime.now().isoformat(timespec="seconds"),

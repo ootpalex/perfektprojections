@@ -146,9 +146,11 @@ def load_bundle(basis):
     for role in C.ROLES:
         r = {"peak": {}, "path": {}}
         for t, info in pm["roles"][role]["models"].items():
+            C.check_downloaded(os.path.join(d, info["file"]))
             with open(os.path.join(d, info["file"]), "rb") as fh:
                 r["peak"][t] = pickle.load(fh)
         for name, info in am[role]["models"].items():
+            C.check_downloaded(os.path.join(d, info["file"]))
             with open(os.path.join(d, info["file"]), "rb") as fh:
                 r["path"][name] = pickle.load(fh)
         out["models"][role] = r

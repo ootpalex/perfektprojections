@@ -120,7 +120,7 @@ def main():
                 else:
                     mono = st.get("monotonic_now", False)
                     if backend == "sklearn_cpu":
-                        m = PK.make_model("classifier", st["classifier"], st, feats, monotonic=mono)
+                        m = PK.make_model("classifier", st["classifier"], st, feats, monotonic=mono, sklearn_only=True)
                         m.fit(X, y, X_val=Xv, y_val=yv)
                         it = int(m.n_iter_)
                     else:

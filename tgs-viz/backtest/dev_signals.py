@@ -28,19 +28,35 @@ Per player (age 16-26 at "to"):
   grow        sum over the core skills of (display at to - display at from) / 5,
               display = mean of vR and vL, scaled to one game-year, rounded to 0.5
   pot_delta   Pot grade at to minus Pot grade at from; pot_dir up / flat / down
-  out-of-an-org rule (hidden-card fix, 2026-09-25)
-              a player OUT OF AN ORG at the earlier pull (its lev AMA, FA,
-              INT, '-' (a TGS foreign league) or blank; a blank lev is first
-              rebuilt from the pull's raw file, ratings_db.derive_lev) may
-              show a hidden card there, so grow, pot_delta,
-              pot_dir and the keep / move flag are null and the odds and peak
-              cells are the pot-only ones; note: "out of an org a year ago:
-              growth unknown". TGS pull 22 (2044-07-11) showed the coming
-              draft class as free agents with hidden cards (Grueninger:
-              skills 20, Pot 39; real card later: skills 40-45, Pot 80), and
-              the old growth read that reveal as growth. Applies to TGS and
-              BLM (PREV_ORG_RULE_LEAGUES); the DEV dump league is exempt
-              (its cards are never hidden, and it only supplies the grid).
+  earlier card
+              read whatever his status was at the earlier pull. An amateur, an
+              unsigned international or a free agent has a real card from the
+              day OOTP generates him, so his rating changes count from then on
+              (user, 2026-10-05). The out-of-an-org rule of 2026-09-25 (no
+              growth when he was out of an org at the earlier pull) is gone:
+              it rested on a wrong story (hidden draft-class cards). What
+              really happened: TGS regenerated its draft classes once, in Jan
+              2045, after an age-rule change (player 37730: SP Jason Lindhout,
+              Pot 39-40, skills 20, through pull 43 (2045-01-09); CF Lance
+              Grueninger, Pot 80, skills 40-45, from pull 45 (2045-01-30)).
+  card replaced (failsafe, 2026-10-05)
+              when the change from the earlier card to the latest card is
+              larger than real development ever produces, the earlier card
+              counts as a different card: grow, pot_delta, pot_dir and the
+              keep / move flag are null, the odds and peak cells are the
+              pot-only ones, note: "card replaced between pulls (regenerated
+              or re-scouted): growth unknown", and card_replaced says what
+              tripped. Two checks (replaced_cards):
+                pair  the change from the earlier pull to the latest pull is
+                      over the limit times max(1, span)
+                step  one step between two consecutive pulls inside the pair
+                      window, under CARD_STEP_DAYS (60) game days apart, is
+                      over the one-year limit, even when the pair total looks
+                      possible
+              The limits per role and age come from the DEV league (true
+              ratings, never regenerated); CARD_LIMITS says how. A rating
+              scale event (ratings_db.pair_guard) never reaches this check:
+              choose_clean_pulls already skips a pair that crosses one.
   core_sum    sum over the core skills of underlying(display), dev_odds scale
   odds        grid cell role / age / Pot bucket / growth bucket; the grid has a
               cell for every age 16-26; null when the cell has fewer than MIN_N
@@ -160,15 +176,9 @@ MOVE_GROW = {"H": 2.0, "P": 1.0}
 TOP = 10
 NO_ORG_LEVELS = {"AMA", "FA", "INT"}      # app Lev values of players outside every org
 FOREIGN_LEV = "-"                         # ratings_db.FOREIGN_LEV: archive lev of an NPB / KBO row
-# Out-of-an-org rule (hidden-card fix, 2026-09-25): leagues whose earlier-pull
-# card is not trusted when the player was out of an org there. The DEV dump
-# league is exempt: its cards are never hidden.
-PREV_ORG_RULE_LEAGUES = ("TGS", "BLM")
-# Not SSB: its StatsPlus snapshots show real cards for amateurs (checked 2026-10-05 on the 2043-07-01
-# snapshot: 773 of the 2044 draft class present a year before the draft, Pot spread 25-45 like today's,
-# Rowan Pot 80 then and now, 1 card of 773 with every skill equal). Past-date replies carry no team or
-# level (Org 0 for every row), so the rule would mark every SSB player "growth unknown".
-OUT_OF_ORG_NOTE = "out of an org a year ago: growth unknown"
+# Leagues whose archived pulls can carry a blank lev that fill_blank_levs
+# rebuilds from the raw StatsPlus pull (ratings_db.derive_lev).
+RAW_LEV_LEAGUES = ("TGS", "BLM")
 # A player counts as AT a bar when his current WAA is within this much under
 # it: the app shows WAA to one decimal, so a row shown as 0.0 can sit at
 # -0.02 and would otherwise read under 100% useful (user, 2026-09-24: "guys
@@ -246,14 +256,15 @@ def same_person(rec_now, rec_prev, span):
 def lev_out_of_org(lev):
     """True when an archive lev puts the player out of an org: AMA, FA, INT,
     '-' (a foreign-league row) or blank. Readers fill a blank lev first with
-    fill_blank_levs."""
+    fill_blank_levs. Context only (the ML feature prev_in_org, counts): his
+    card is read either way."""
     s = "" if lev is None else str(lev).strip()
     return s == "" or s == FOREIGN_LEV or s in NO_ORG_LEVELS
 
 
 def out_of_org_then(rec):
-    """True when an earlier-pull record shows the player out of an org (the
-    out-of-an-org rule; his card may be hidden). See lev_out_of_org."""
+    """True when an earlier-pull record shows the player out of an org. See
+    lev_out_of_org."""
     return lev_out_of_org(rec.get("lev"))
 
 
@@ -264,7 +275,7 @@ def fill_blank_levs(conn, pull_id, league, ids, levs):
     source knows stays ''. Returns (list of levels, number filled)."""
     out = ["" if v is None or (isinstance(v, float) and v != v) else str(v).strip() for v in levs]
     blank = [i for i, v in enumerate(out) if v == ""]
-    if not blank or league not in PREV_ORG_RULE_LEAGUES:
+    if not blank or league not in RAW_LEV_LEAGUES:
         return out, 0
     import ratings_db as RDB
     raw = RDB.raw_pull_levels(conn, pull_id, league)
@@ -277,6 +288,208 @@ def fill_blank_levs(conn, pull_id, league, ids, levs):
             out[i] = v
             n += 1
     return out, n
+
+
+# ---------------------------------------------------------------- card replaced
+# Card-replaced failsafe (user, 2026-10-05: "a failsafe in case there are
+# massive shifts detected falsely like grueninger"). A change from one card to
+# a later one that is larger than real development ever produces means the
+# earlier card is in effect another card: a regenerated player (TGS
+# regenerated its draft classes once, in Jan 2045) or a re-scouted BLM card.
+# The earlier card is then unknown for that pair, as if he had no earlier pull.
+#
+# Limits per role (H / P) and age at the later card, from the DEV league
+# (true ratings, never regenerated; 6,745,218 yearly player pairs, dumps
+# 2025-2507, measured 2026-10-05):
+#   Pot   |Pot change|, only over a pair with the same listed position at both
+#         cards (OOTP grades Pot at the listed position: TGS player 20094 read
+#         75 at 1B, 42 at SP and 75 at 1B again within three months)
+#   up    core growth in display steps (grow: the sum over the core skills of
+#         the vR / vL display change / 5)
+#   down  core decline in the same steps
+# Rule: limit = CARD_MARGIN (1.5) x the widest DEV p99.9 of ages age-1, age and
+# age+1 (DEV ages are Jan-1 ages, league ages are ages on the pull date; the
+# neighbours cover that offset), Pot rounded up to a whole grade, growth up to
+# 0.5. down = the lower of -up and 1.5 x the DEV p0.1 decline: DEV players
+# under 22 hardly ever decline, so a DEV-only down limit would trip on a
+# temporary dip (TGS player 35107 lost 1.5 steps for ten weeks and got them
+# back). DEV pairs over the limits: 230 of 6,745,218 (0.003%). Ages under 16
+# read 16, over 40 read 40.
+# Examples, DEV p99.9 / p99.99 / max -> limit: H 18 Pot 16 / 23 / 31 -> 27,
+# grow 7.0 / 9.0 / 20.0 -> 13.0; H 21 grow 11.0 / 15.1 / 22.5 -> 16.5; P 20 Pot
+# 16 / 21 / 28 -> 24, grow 5.0 / 6.5 / 11.0 -> 8.5.
+# Grueninger (37730, TGS): pull 43 (2045-01-09) SP, Pot 40, batting 20 ->
+# pull 45 (2045-01-30) CF, Pot 80, batting 35-45: core +21 steps in one step
+# of 21 game days (+22 over the pair 2044-08-08 to 2045-08-07) against the
+# limit of +15 for a hitter of 19 (the Pot is not compared: SP -> CF).
+CARD_MARGIN = 1.5
+CARD_STEP_DAYS = 60             # the step check reads steps shorter than this (game days)
+CARD_LIMIT_AGES = (16, 40)
+CARD_LIMITS = {                 # role: {age: (Pot, core up, core down)}
+    "H": {
+        16: (27, 5.5, -5.5), 17: (27, 10.5, -10.5), 18: (27, 13.0, -13.0), 19: (24, 15.0, -15.0),
+        20: (23, 16.5, -16.5), 21: (21, 16.5, -16.5), 22: (21, 16.5, -16.5), 23: (21, 15.0, -15.0),
+        24: (23, 14.5, -14.5), 25: (23, 13.0, -13.0), 26: (23, 10.0, -10.0), 27: (21, 7.0, -7.0),
+        28: (20, 6.0, -6.0), 29: (21, 6.0, -6.0), 30: (21, 6.0, -7.0), 31: (23, 5.5, -7.0),
+        32: (23, 5.5, -7.5), 33: (23, 4.5, -7.5), 34: (29, 4.5, -8.5), 35: (29, 4.5, -8.5),
+        36: (29, 4.5, -9.0), 37: (24, 3.0, -9.0), 38: (24, 3.0, -9.0), 39: (24, 3.0, -9.0),
+        40: (24, 2.5, -9.0),
+    },
+    "P": {
+        16: (23, 3.0, -3.0), 17: (23, 5.5, -5.5), 18: (24, 7.0, -7.0), 19: (24, 7.5, -7.5),
+        20: (24, 8.5, -8.5), 21: (24, 9.0, -9.0), 22: (23, 9.0, -9.0), 23: (21, 9.0, -9.0),
+        24: (23, 9.0, -9.0), 25: (23, 8.5, -8.5), 26: (23, 7.5, -7.5), 27: (23, 7.0, -7.0),
+        28: (23, 6.0, -6.0), 29: (23, 5.5, -5.5), 30: (21, 4.5, -4.5), 31: (21, 4.5, -4.5),
+        32: (17, 4.5, -5.5), 33: (17, 4.5, -5.5), 34: (17, 4.5, -5.5), 35: (20, 4.5, -5.5),
+        36: (20, 4.0, -5.5), 37: (22, 4.0, -6.0), 38: (22, 4.0, -6.5), 39: (22, 4.0, -6.5),
+        40: (20, 3.5, -6.5),
+    },
+}
+CARD_REPLACED_NOTE = "card replaced between pulls (regenerated or re-scouted): growth unknown"
+CARD_COLS = (["player_id", "age", "pos", "c_Pot"]
+             + [stem + s for role in ("H", "P") for _n, stem in CORE_COLS[role] for s in ("_vR", "_vL")])
+
+
+def card_limits(role, age):
+    """(Pot, core up, core down) limits of one role at one age (clamped to
+    CARD_LIMIT_AGES); None when the age is unknown."""
+    a = DO.to_int(age)
+    if a is None:
+        return None
+    a = min(max(a, CARD_LIMIT_AGES[0]), CARD_LIMIT_AGES[1])
+    return CARD_LIMITS["P" if role == "P" else "H"][a]
+
+
+def core_change(prev, rec, role):
+    """Core change in display steps from card prev to card rec: the sum over
+    the role's core skills of (display at rec - display at prev) / 5. None
+    when a core skill is missing on either card."""
+    a = [display(prev, stem) for _n, stem in CORE_COLS[role]]
+    b = [display(rec, stem) for _n, stem in CORE_COLS[role]]
+    if any(v is None for v in a + b):
+        return None
+    return sum((y - x) / 5.0 for x, y in zip(a, b))
+
+
+def pot_change(prev, rec):
+    """Pot change from card prev to card rec. None when either Pot is missing
+    or the listed position differs (OOTP grades Pot at the listed position)."""
+    if str(prev.get("pos") or "").strip() != str(rec.get("pos") or "").strip():
+        return None
+    a, b = num(prev.get("c_Pot")), num(rec.get("c_Pot"))
+    return None if a is None or b is None else b - a
+
+
+def card_change_trips(role, age, d_pot, grow, scale=1.0):
+    """Why a card change is larger than real development, as a list of short
+    texts; empty = a possible change. d_pot or grow None = not checked. Each
+    limit of card_limits(role, age) is multiplied by scale."""
+    lim = card_limits(role, age)
+    if lim is None:
+        return []
+    pot, up, down = (x * scale for x in lim)
+    out = []
+    if d_pot is not None and abs(d_pot) > pot:
+        out.append(f"Pot {d_pot:+.0f} (limit {pot:.1f})")
+    if grow is not None and grow > up:
+        out.append(f"core {grow:+.1f} steps (limit +{up:.1f})")
+    if grow is not None and grow < down:
+        out.append(f"core {grow:+.1f} steps (limit {down:.1f})")
+    return out
+
+
+def card_rows(conn, pull_id):
+    """The CARD_COLS records of one pull, one dict per player."""
+    q = "SELECT " + ", ".join(f'"{c}"' for c in CARD_COLS) + " FROM ratings WHERE pull_id=?"
+    for row in conn.execute(q, (pull_id,)):
+        yield dict(zip(CARD_COLS, row))
+
+
+def pair_dates(pulls, gdates, choice):
+    """{pull_id: date} on the footing of a choose_pulls choice: the in-game
+    dates, or the real dates of the pulls that are not asof snapshots when
+    the latest pull has no in-game date."""
+    if choice["dates"] == "in-game":
+        return dict(gdates)
+    out = {}
+    for pid, rd, _ts in pulls:
+        d = parse_date(rd)
+        if d is not None and not is_asof(pulls, pid):
+            out[pid] = d
+    return out
+
+
+def pull_window(pulls, dates, from_id, to_id):
+    """Pull ids from from_id to to_id (both included) in game order, the
+    pulls without a date in dates left out."""
+    order = [pid for pid, _rd, _ts in pulls]
+    i0, i1 = order.index(from_id), order.index(to_id)
+    return [p for p in order[i0:i1 + 1] if p in dates]
+
+
+def card_steps(conn, window, dates, players):
+    """The step check of the card-replaced failsafe over a run of pulls.
+
+    window   pull ids in game order; dates {pull_id: date}
+    players  {player_id: (role, age)}, role and age at the latest card
+    Returns {player_id: [(start date, end date, text)]}: every step between
+    two consecutive pulls of the window that hold him, under CARD_STEP_DAYS
+    game days apart, whose change trips card_change_trips at scale 1."""
+    last = {}
+    out = {}
+    for p in window:
+        d = dates[p]
+        for rec in card_rows(conn, p):
+            pid = str(rec["player_id"])
+            ra = players.get(pid)
+            if ra is None:
+                continue
+            prev = last.get(pid)
+            if prev is not None and (d - prev[0]).days < CARD_STEP_DAYS:
+                why = card_change_trips(ra[0], ra[1], pot_change(prev[1], rec), core_change(prev[1], rec, ra[0]))
+                if why:
+                    out.setdefault(pid, []).append((prev[0], d, "; ".join(why)))
+            last[pid] = (d, rec)
+    return out
+
+
+def replaced_cards(conn, pulls, gdates, choice, ids=None):
+    """The card-replaced failsafe for the pair a choose_clean_pulls choice
+    picked. Returns {player_id: text} for every player in both pulls whose
+    change trips a check (text = which check and what tripped):
+      pair  the change from the earlier pull to the latest pull, each limit
+            times max(1, span)
+      step  one step between two consecutive pulls inside the pair window,
+            under CARD_STEP_DAYS game days apart, at the one-year limits
+    Role and age are the ones at the latest pull. ids limits the check to
+    these player ids (default: every player of the latest pull). The
+    reused-ID test (same_person) is the caller's: a player whose ID changed
+    hands is out of the pair before this check matters."""
+    if choice.get("from_id") is None:
+        return {}
+    to_id, from_id = choice["to_id"], choice["from_id"]
+    dates = pair_dates(pulls, gdates, choice)
+    if to_id not in dates or from_id not in dates:
+        return {}
+    want = None if ids is None else {str(x) for x in ids}
+    to_rows = {str(r["player_id"]): r for r in card_rows(conn, to_id)
+               if want is None or str(r["player_id"]) in want}
+    from_rows = {str(r["player_id"]): r for r in card_rows(conn, from_id) if str(r["player_id"]) in to_rows}
+    players = {pid: (DO.role_of(to_rows[pid].get("pos") or ""), DO.to_int(to_rows[pid].get("age")))
+               for pid in from_rows}
+    scale = max(1.0, choice.get("span") or 1.0)
+    out = {}
+    for pid, (role, age) in players.items():
+        prev, rec = from_rows[pid], to_rows[pid]
+        why = card_change_trips(role, age, pot_change(prev, rec), core_change(prev, rec, role), scale)
+        if why:
+            out[pid] = f"pair {dates[from_id]} to {dates[to_id]}: " + "; ".join(why)
+    steps = card_steps(conn, pull_window(pulls, dates, from_id, to_id), dates, players)
+    for pid, ev in steps.items():
+        if pid not in out:
+            a, b, why = ev[0]
+            out[pid] = f"one step {a} to {b} ({(b - a).days} game days): {why}"
+    return out
 
 
 # ---------------------------------------------------------------- inputs
@@ -596,10 +809,10 @@ def share_at_least(grid, d, pcts):
     return 0.0
 
 
-def measure_player(pid, rec, prev, span, odds, levels, peaks, currents, pcts, bars, prev_out=False):
-    """One player's entry, or None when he is outside 16-26. prev_out = True
-    when he was out of an org at the earlier pull (the out-of-an-org rule):
-    nothing is read from that earlier card."""
+def measure_player(pid, rec, prev, span, odds, levels, peaks, currents, pcts, bars, replaced=None):
+    """One player's entry, or None when he is outside 16-26. replaced = the
+    card-replaced failsafe's text when it tripped for his pair
+    (replaced_cards): nothing is read from that earlier card."""
     age = DO.to_int(rec.get("age"))
     if age is None or age < AGE_MIN or age > AGE_MAX:
         return None
@@ -620,10 +833,11 @@ def measure_player(pid, rec, prev, span, odds, levels, peaks, currents, pcts, ba
     pot_dir = None
     if prev is None:
         notes.append("not in the earlier pull" if span is not None else "no earlier pull")
-    elif prev_out:
-        # out-of-an-org rule: his earlier card may be hidden, so growth, the
-        # Pot change and the growth cell stay unknown (pot-only cells)
-        notes.append(OUT_OF_ORG_NOTE)
+    elif replaced:
+        # card-replaced failsafe: the change from the earlier card is larger
+        # than real development, so growth, the Pot change and the growth
+        # cell stay unknown (pot-only cells)
+        notes.append(CARD_REPLACED_NOTE)
     else:
         pcur = [display(prev, stem) for _n, stem in CORE_COLS[role]]
         if core_sum is not None and all(v is not None for v in pcur):
@@ -804,6 +1018,7 @@ def measure_player(pid, rec, prev, span, odds, levels, peaks, currents, pcts, ba
             "share_basis": share_basis,
             "share_now": round(now, 2) if now is not None else None,
             "listed_peak": listed_peak, "peak_vs_listed": peak_vs_listed,
+            "card_replaced": replaced or None,
             "note": "; ".join(notes)}
 
 
@@ -811,25 +1026,29 @@ def measure(conn, league, odds, log=print):
     pulls = league_pulls(conn, league)
     if not pulls:
         raise SystemExit(f"no pulls for league {league} in the archive")
-    choice = choose_clean_pulls(conn, league, pulls, game_dates(league, pulls))
+    gdates = game_dates(league, pulls)
+    choice = choose_clean_pulls(conn, league, pulls, gdates)
     to_rows = load_rows(conn, choice["to_id"], league)
     from_rows = load_rows(conn, choice["from_id"], league) if choice["from_id"] is not None else {}
+    # card-replaced failsafe over the pair and every step inside its window
+    replaced = replaced_cards(conn, pulls, gdates, choice)
     levels, peaks, currents = app_rows(league)
     pcts = list(odds.get("gain_grid_pcts") or DO.GAIN_GRID_PCTS)
     bars = odds.get("peak_bars") or DO.PEAK_BARS
     players = {}
-    rule_on = league in PREV_ORG_RULE_LEAGUES
+    n_out = 0
     for pid in sorted(to_rows, key=lambda s: (len(s), s)):
         prev = from_rows.get(pid)
         reused = prev is not None and not same_person(to_rows[pid], prev, choice["span"])
         if reused:
             prev = None                      # someone else's card: not in the earlier pull
-        prev_out = rule_on and prev is not None and out_of_org_then(prev)
+        why = replaced.get(pid) if prev is not None else None
         e = measure_player(pid, to_rows[pid], prev, choice["span"], odds, levels, peaks,
-                           currents, pcts, bars, prev_out=prev_out)
+                           currents, pcts, bars, replaced=why)
         if e is not None:
             if reused:
                 e["note"] = f"{e['note']}; {REUSED_ID_NOTE}" if e.get("note") else REUSED_ID_NOTE
+            n_out += prev is not None and out_of_org_then(prev)
             players[pid] = e
     log(f"dev_signals {league}: to pull {choice['to_id']} ({choice['to_date']}, real {choice['to_real']}), "
         + (f"from pull {choice['from_id']} ({choice['from_date']}, real {choice['from_real']}), "
@@ -837,6 +1056,10 @@ def measure(conn, league, odds, log=print):
            if choice["from_id"] is not None else "no earlier pull"))
     for n in choice["notes"]:
         log(f"  note: {n}")
+    log(f"  earlier card read for {n_out} players {AGE_MIN}-{AGE_MAX} who were out of an org at the earlier "
+        f"pull; card replaced (failsafe) for "
+        f"{sum(1 for e in players.values() if e['card_replaced'])} players {AGE_MIN}-{AGE_MAX} "
+        f"({len(replaced)} of every age, reused IDs included)")
     # vs_typical against SAME-LEAGUE peers of the same age and Pot bucket. The
     # DEV typical carries a league offset (a whole fictional league's rating
     # distribution), which put every TGS player hundreds of points "ahead".
@@ -876,11 +1099,11 @@ def counts_of(players, bars=None):
                          "pot-only, now tercile": 0, "pot-only, now tercile, edge": 0,
                          "pot-only, whole cell": 0, "none": 0},
          "keep": 0, "move": 0, "none": 0, "keep_H": 0, "keep_P": 0, "move_H": 0, "move_P": 0,
-         "out_of_org_a_year_ago": 0, "reused_id": 0}
+         "card_replaced": 0, "reused_id": 0}
     for e in players.values():
         c[e["role"]] += 1
         c["with_growth"] += e["grow"] is not None
-        c["out_of_org_a_year_ago"] += OUT_OF_ORG_NOTE in (e["note"] or "")
+        c["card_replaced"] += bool(e.get("card_replaced"))
         c["reused_id"] += REUSED_ID_NOTE in (e["note"] or "")
         c["with_odds"] += e["odds"] is not None
         c["with_peak"] += e["peak_p50"] is not None
@@ -926,6 +1149,8 @@ def build_payload(league, choice, players, odds):
             "odds_generated": odds.get("generated"),
             "min_cell_n": MIN_N,
             "bar_tolerance": BAR_TOLERANCE,
+            "card_step_days": CARD_STEP_DAYS,
+            "card_margin": CARD_MARGIN,
         },
         "definitions": {
             "players": f"every player aged {AGE_MIN}-{AGE_MAX} at the latest pull; age = the pull's Age "
@@ -933,11 +1158,21 @@ def build_payload(league, choice, players, odds):
             "role": "P when pos is SP, RP or CL, else H",
             "grow": "sum over the core skills (H BABIP GAP POW EYE K; P STU HRR PBABIP CON) of "
                     "(display at to - display at from) / 5, display = mean of vR and vL, divided by "
-                    "the span in game-years, rounded to 0.5; null without an earlier pull, and null when "
-                    "he was out of an org at the earlier pull (lev AMA, FA, INT or blank: his card there "
-                    "may be hidden; note 'out of an org a year ago: growth unknown')",
+                    "the span in game-years, rounded to 0.5; read whatever his status at the earlier "
+                    "pull (an amateur or free agent has a real card from the day OOTP generates him); "
+                    "null without an earlier pull, and null when the card-replaced failsafe trips "
+                    "(note 'card replaced between pulls (regenerated or re-scouted): growth unknown')",
             "pot_delta": "OOTP Pot grade at to minus at from, over the span, not scaled; "
-                         "pot_dir = up / flat / down; null on the same out-of-an-org rule as grow",
+                         "pot_dir = up / flat / down; null on the same card-replaced rule as grow",
+            "card_replaced": f"the card-replaced failsafe: what tripped, else null. The earlier card counts "
+                             f"as another card when the change is larger than real development: |Pot "
+                             f"change| (same listed position at both cards only), core growth or core "
+                             f"decline in display steps over the limit of his role and age "
+                             f"(CARD_LIMITS: {CARD_MARGIN:g} x the widest DEV p99.9 of ages age-1 to "
+                             f"age+1; decline at least as wide as growth). Two checks: the pair from the "
+                             f"earlier pull to the latest (limits times max(1, span)) and every step "
+                             f"between two consecutive pulls inside the pair window under "
+                             f"{CARD_STEP_DAYS} game days apart (the one-year limits)",
             "core_sum": "sum over the core skills of underlying(display) on the dev_odds internal scale",
             "odds": f"dev_odds grid cell role / age / Pot bucket / growth bucket (odds_cell); "
                     + (f"ages {AGE_MIN}-{GRID_AGE_MIN - 1} use the age-{GRID_AGE_MIN} cell; " if AGE_MIN < GRID_AGE_MIN
@@ -1031,8 +1266,8 @@ def in_org(e):
 def print_summary(league, players, log=print):
     c = counts_of(players)
     log(f"  players {AGE_MIN}-{AGE_MAX}: {c['players']} (H {c['H']}, P {c['P']}); "
-        f"with growth {c['with_growth']}; out of an org a year ago (growth unknown) "
-        f"{c['out_of_org_a_year_ago']}; with odds {c['with_odds']}; "
+        f"with growth {c['with_growth']}; card replaced (growth unknown) "
+        f"{c['card_replaced']}; with odds {c['with_odds']}; "
         f"with Exp peak {c['with_peak']}; with gain {c['with_gain']}; with MLB share {c['with_mlb']}; "
         f"with useful/good {c['with_useful']}; with a listed peak {c['with_listed_peak']}")
     sb = c["share_basis"]
@@ -1085,9 +1320,8 @@ def print_summary(league, players, log=print):
 
 def exported_leagues():
     """Leagues put in the app from an OOTP database export (ingest/
-    export_league.py; leagues.json entries with a "basis"). Their cards are
-    never hidden (true ratings from the export), so the out-of-an-org rule
-    (PREV_ORG_RULE_LEAGUES) does not apply to them."""
+    export_league.py; leagues.json entries with a "basis"). They read the
+    same rules as TGS and BLM (true ratings from the export)."""
     try:
         with open(os.path.join(DATA_DIR, "leagues.json"), encoding="utf-8") as fh:
             return [e["id"] for e in json.load(fh).get("leagues") or []
