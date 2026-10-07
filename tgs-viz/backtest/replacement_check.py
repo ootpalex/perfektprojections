@@ -22,7 +22,9 @@ bats / throws / height, so he is skipped; the coverage line says how much playin
 
 A second block per season checks the runs side with no OOTP WAR at all: the engine's projected
 RA/9 against the actual RA/9 (R x 9 / IP), per role and by projection quintile, and the actual
-RA/9 of fill-in starters (1-8 and 1-12 GS) as a stats-only replacement level.
+RA/9 of fill-in starters (1-8 and 1-12 GS) as a stats-only replacement level. --metadata prices with
+another metadata build laid over the calibration's Data Points (e.g. SSB's own constants), so the
+two runs show which constants project the league's real runs better.
 
 Read-only: prints, writes nothing. Python 3.13+, numpy, pandas.
 
@@ -118,6 +120,40 @@ def static_traits(league, slug=None, log=print):
             out[pid] = {"B": hand[str(r["bats"])], "T": hand[str(r["throws"])], "HT": r.get("height")}
     log(f"bats / throws / height: {n_app} from the current pull, {len(out) - n_app} more from StatsPlus /players")
     return out
+
+
+_OVERLAY = {}
+
+
+def set_metadata_overlay(meta_dir, calib, log=print):
+    """Price with another metadata build's cells laid over the calibration league's Data Points
+    (the way ssb_metadata_compare.py pricing does it): meta_dir holds a metadata_calibrate.py
+    metadata-latest.json, e.g. SSB's own. The calibration layers (currency, tails, fielding curves,
+    S-curves, role stuff) stay the calibration league's."""
+    sys.path.insert(0, os.path.join(VIZ, "tools"))
+    import sync_datapoints as SD
+    sheets = os.path.join(os.path.dirname(VIZ), f"The Sheets {calib}")
+    hpath, ppath = os.path.join(sheets, "The Sheet Hitters.xlsx"), os.path.join(sheets, "The Sheet Pitchers.xlsx")
+    hdp, hfilt, hpark = R._scan_consts_cached(hpath)
+    pdp, pfilt, ppark = R.P.scan_consts(ppath)
+    Hv, Pv = SD.load_vals(hpath, "Data Points"), SD.load_vals(ppath, "Data Points")
+    REG = SD.load_vals(os.path.join(sheets, "25 Regressions.xlsx"), "Data Points")
+    with open(os.path.join(VIZ, "engine", "calib", calib, "metadata-latest.json"), encoding="utf-8") as fh:
+        live = {k: v for k, v in json.load(fh)["cells"].items() if v is not None and v != ""}
+    with open(os.path.join(meta_dir, "metadata-latest.json"), encoding="utf-8") as fh:
+        cells = {k: v for k, v in json.load(fh)["cells"].items() if v is not None and v != ""}
+    hd, pd_ = dict(hdp), dict(pdp)
+    n = 0
+    for m in SD.build_mapping(Hv, Pv, REG, live):
+        v = cells.get(m["sc"])
+        if m["src"] == "MET" and isinstance(v, (int, float)) and not isinstance(v, bool):
+            (hd if m["ts"] == "H" else pd_)[m["tc"]] = float(v)
+            n += 1
+    R._HITTER_DP[calib] = hdp                    # the park chain reads the calibration's constants
+    R._scan_consts_cached = lambda *x, **k: (dict(hd), dict(hfilt), dict(hpark))
+    R.P.scan_consts = lambda path: (dict(pd_), dict(pfilt), ppark)
+    _OVERLAY["dir"] = meta_dir
+    log(f"metadata overlay: {n} cells from {meta_dir} laid over {calib}'s Data Points")
 
 
 def price(path, static, calib):
@@ -263,6 +299,8 @@ def main(argv=None):
     ap.add_argument("--calib", help="engine calibration the app prices the league with (default: the league)")
     ap.add_argument("--seasons", help="comma list (default: every banked season)")
     ap.add_argument("--slug", help="StatsPlus slug for /players (default: lowercased league)")
+    ap.add_argument("--metadata", help="folder with a metadata-latest.json to lay over --calib's Data Points "
+                                       "(e.g. SSB's own build); default: the calibration's own metadata")
     args = ap.parse_args(argv)
     calib = args.calib or args.league
     log = print
@@ -274,6 +312,8 @@ def main(argv=None):
     with open(os.path.join(VIZ, "engine", "calib", "replacement.json"), encoding="utf-8") as fh:
         ent = json.load(fh).get(args.league) or {}
     shipped = {k: float(ent[k]) for k in ("hitter", "sp", "rp") if k in ent}
+    if args.metadata:
+        set_metadata_overlay(args.metadata, calib, log)
     static = static_traits(args.league, args.slug, log)
     rpw = float((R.live_currency(calib) or {}).get("rpw") or 10.0)
     got = []
