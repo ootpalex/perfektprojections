@@ -90,7 +90,9 @@ def snapshot_for(league, year):
     return best
 
 
-def static_traits(league):
+def static_traits(league, slug=None, log=print):
+    """{player_id: {"B", "T", "HT"}}: the current shipped pull first, then StatsPlus /players
+    (it keeps retired players too: bats/throws 1=R 2=L 3=S, height in cm like HT)."""
     out = {}
     for fn in ("hitters.json", "pitchers.json"):
         p = os.path.join(VIZ, "public", "data", league, fn)
@@ -98,6 +100,19 @@ def static_traits(league):
             with open(p, encoding="utf-8") as fh:
                 for r in json.load(fh):
                     out[str(r.get("ID"))] = {"B": r.get("B"), "T": r.get("T"), "HT": r.get("HT")}
+    n_app = len(out)
+    try:
+        import statsplus as sp
+        rows = sp.fetch_players(sp.normalize_base(slug or league.lower()), cache=True)
+    except Exception as e:  # noqa: BLE001  the fallback is optional
+        log(f"StatsPlus /players not read ({e}); players missing from the current pull are skipped")
+        return out
+    hand = {"1": "R", "2": "L", "3": "S"}
+    for r in rows:
+        pid = str(r.get("ID") or "")
+        if pid and pid not in out and str(r.get("bats")) in hand and str(r.get("throws")) in hand:
+            out[pid] = {"B": hand[str(r["bats"])], "T": hand[str(r["throws"])], "HT": r.get("height")}
+    log(f"bats / throws / height: {n_app} from the current pull, {len(out) - n_app} more from StatsPlus /players")
     return out
 
 
@@ -179,6 +194,9 @@ def report(label, p, b, clubs, shipped, log):
         ident = d.war.sum() / (d.bf.sum() / base)
         dd = d.dropna(subset=["waa"])
         dd = dd[dd.bf >= 50]
+        if len(dd) < 20:
+            log(f"  {role}: only {len(dd)} priced pitchers with 50+ BF; not fitted")
+            continue
         mean_waa = np.average(dd.waa, weights=dd.bf)
         parts = [f"{role}: shipped {shipped.get(role.lower(), float('nan')):.3f}, budget identity {ident:.3f}, "
                  f"mean engine WAA {mean_waa:+.2f}"]
@@ -200,6 +218,7 @@ def main(argv=None):
     ap.add_argument("--league", required=True)
     ap.add_argument("--calib", help="engine calibration the app prices the league with (default: the league)")
     ap.add_argument("--seasons", help="comma list (default: every banked season)")
+    ap.add_argument("--slug", help="StatsPlus slug for /players (default: lowercased league)")
     args = ap.parse_args(argv)
     calib = args.calib or args.league
     log = print
@@ -211,7 +230,7 @@ def main(argv=None):
     with open(os.path.join(VIZ, "engine", "calib", "replacement.json"), encoding="utf-8") as fh:
         ent = json.load(fh).get(args.league) or {}
     shipped = {k: float(ent[k]) for k in ("hitter", "sp", "rp") if k in ent}
-    static = static_traits(args.league)
+    static = static_traits(args.league, args.slug, log)
     got = []
     for y in years:
         r = season_rows(args.league, y, calib, static, log)
