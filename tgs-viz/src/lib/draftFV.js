@@ -36,7 +36,7 @@
 // TUNABLE DEFAULTS
 // ============================================================
 
-import { replacementOffset } from './leagueCalib.js';
+import { replacementOffset, pitcherCeilingRole } from './leagueCalib.js';
 
 export const DRAFT_FV_DEFAULTS = {
   // Weighting: how far he leads his age peers, how high he can get, and how much of
@@ -390,10 +390,9 @@ export function calculateDraftFV(player, ageGroups, playerType, params = {}) {
     // the order. Scoring a starting prospect on his bullpen ceiling buries him. Same
     // reasoning orgBuilder.js:64 already applies to minor-league rotations.
     // Eligibility GATES which lines are available; among the ones he can actually
-    // fill, his ceiling is simply the best of them. A pitcher who adds more wins in
-    // relief is a reliever. Note the two rules agree exactly at the top of the board —
-    // they differ only on arms projecting BELOW average as starters, where relief
-    // "wins" purely because it is 70 innings of a bad pitcher instead of 200.
+    // fill, the role is the one worth more in WAR (2026-10-07, pitcherCeilingRole): a
+    // below-average starter's ~200 innings beat a slightly-above-average reliever's ~70,
+    // which a WAA comparison missed for every arm projecting below average as a starter.
     const isStarter = player['Starter'] === true ||
       String(player['Starter']).toUpperCase() === 'TRUE';
     const spCeiling = parseFloat(player['WAP']);
@@ -401,7 +400,10 @@ export function calculateDraftFV(player, ageGroups, playerType, params = {}) {
     const spOk = isStarter && !isNaN(spCeiling);
 
     if (spOk && !isNaN(rpCeiling)) {
-      const useSP = spCeiling >= rpCeiling;
+      // Among the lines he can fill, the role is picked in WAR (pitcherCeilingRole,
+      // user decision 2026-10-07): a below-average starter's innings are worth more than
+      // a slightly-above-average reliever's. The ceiling itself stays that role's WAA.
+      const useSP = pitcherCeilingRole(player) === 'sp';
       ceiling = useSP ? spCeiling : rpCeiling;
       ceilingRole = useSP ? 'sp' : 'rp';
     } else if (spOk) {

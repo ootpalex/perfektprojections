@@ -46,7 +46,7 @@
 // MODEL PARAMETERS — all tunable from Dev Analysis page
 // ============================================================
 
-import { replacementOffset } from './leagueCalib.js';
+import { replacementOffset, pitcherCeilingRole } from './leagueCalib.js';
 import { curveShape, GROWTH_END_AGE, PATH_END_AGE } from './ageCurve.js';
 
 export const FV_DEFAULTS = {
@@ -349,8 +349,8 @@ function getPlayerWAAValues(player) {
 
 /**
  * A pitcher's role for his dev projection: the CEILING ROLE (user decision 2026-10-07),
- * the rule draftFV.js uses for "Ceiling role": eligible to start (the engine's Starter
- * flag) and WAP >= WAP RP -> SP, else RP. Pitchers below MLB with a dev projection (ML
+ * the rule draftFV.js uses for "Ceiling role" (leagueCalib.pitcherCeilingRole: eligible to
+ * start and his starter ceiling in WAR at least his relief ceiling in WAR -> SP, else RP). Pitchers below MLB with a dev projection (ML
  * path or cell gain) take current, potential and both replacement offsets from that role;
  * MLB pitchers keep the listed role.
  *
@@ -373,8 +373,7 @@ function devRoleValues(player, vals) {
   const pot = { sp: parseFloat(player['WAP']), rp: parseFloat(player['WAP RP']) };
   if (!Number.isFinite(now.sp) || !Number.isFinite(now.rp)) return vals;
   const devRole = now.sp >= now.rp ? 'sp' : 'rp';
-  const isStarter = player['Starter'] === true || String(player['Starter']).toUpperCase() === 'TRUE';
-  let role = isStarter && Number.isFinite(pot.sp) && !(pot.rp > pot.sp) ? 'sp' : 'rp';
+  let role = pitcherCeilingRole(player) === 'sp' ? 'sp' : 'rp';
   let devScale = 1, devCap = Infinity;
   if (role !== devRole) {
     const gapDev = pot[devRole] - now[devRole];

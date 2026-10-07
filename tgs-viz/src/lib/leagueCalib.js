@@ -196,6 +196,29 @@ export function replacementOffset(league, role) {
 }
 
 /**
+ * A pitcher's CEILING ROLE (draftFV "Ceiling role", the dev projection's role): 'sp' when
+ * he is eligible to start (the engine's Starter flag) and his starter ceiling in WAR is at
+ * least his relief ceiling in WAR (WAP + SP credit vs WAP RP + RP credit), else 'rp'; null
+ * with neither ceiling. WAR, not WAA (user decision 2026-10-07): a below-average starter
+ * fills ~800 BF and is worth more than a slightly-above-average reliever's ~300, which the
+ * replacement credits price in. A non-starter with no WAP RP falls back to his WAP.
+ */
+export function pitcherCeilingRole(player) {
+  const league = player?._appLeague;
+  const isStarter = player?.Starter === true || String(player?.Starter).toUpperCase() === 'TRUE';
+  const sp = parseFloat(player?.WAP);
+  const rp = parseFloat(player?.['WAP RP']);
+  const spOk = isStarter && Number.isFinite(sp);
+  if (spOk && Number.isFinite(rp)) {
+    return sp + replacementOffset(league, 'sp') >= rp + replacementOffset(league, 'rp') ? 'sp' : 'rp';
+  }
+  if (spOk) return 'sp';
+  if (Number.isFinite(rp)) return 'rp';
+  if (Number.isFinite(sp)) return 'sp';
+  return null;
+}
+
+/**
  * ORG replacement offsets — WAR = WAA + offset(role) in the next-man-up
  * currency. ONLY for internal roster decisions (rosterOptimizer _war):
  * when deciding whom to cut/keep, the alternative is your own depth, not
