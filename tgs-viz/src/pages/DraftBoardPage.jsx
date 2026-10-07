@@ -46,6 +46,9 @@ function PickCell({ status }) {
     : <span className="ns-muted" title="You marked him as taken by another club">taken</span>;
 }
 
+// Sorts on the dev model's numbers (ML when the row has them, else the DEV cell).
+const ML_SORTS = new Set(['Dev_PeakP75', 'Dev_PeakUseful', 'Dev_PeakGood']);
+
 export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitchers, picks = [], league }) {
   const [viewMode, setViewMode] = useState('combined'); // combined, hitters, pitchers
   const [sortBy, setSortBy] = useState('_draftRawFV'); // default to Draft FV Raw
@@ -139,14 +142,17 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
     });
 
     // Sort — players with raw ceiling > 0 always rank above players with ceiling <= 0,
-    // except on the Proj Peak (WAR) sort, which is a straight WAR order (2026-10-05).
+    // except on the Proj Peak (WAR) sort and the ML sorts, which are straight orders
+    // (a row with no ML number sorts last there, not at 0).
+    const straight = sortBy === '_potentialWAR' || ML_SORTS.has(sortBy);
     players.sort((a, b) => {
       const aAbove = (a._draftCeiling ?? -Infinity) > 0;
       const bAbove = (b._draftCeiling ?? -Infinity) > 0;
-      if (sortBy !== '_potentialWAR' && aAbove !== bAbove) return aAbove ? -1 : 1;
-      const aVal = parseFloat(a[sortBy]) || 0;
-      const bVal = parseFloat(b[sortBy]) || 0;
-      return bVal - aVal;
+      if (!straight && aAbove !== bAbove) return aAbove ? -1 : 1;
+      const miss = ML_SORTS.has(sortBy) ? -Infinity : 0;
+      const aVal = Number.isFinite(parseFloat(a[sortBy])) ? parseFloat(a[sortBy]) : miss;
+      const bVal = Number.isFinite(parseFloat(b[sortBy])) ? parseFloat(b[sortBy]) : miss;
+      return aVal === bVal ? 0 : bVal > aVal ? 1 : -1;
     });
 
     return players;
@@ -374,6 +380,9 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
             <option value="_potentialWAA">Sort by Proj Peak (WAA)</option>
             <option value="_potentialWAR">Sort by Proj Peak (WAR)</option>
             <option value="_peakWAA">Sort by Peak WAA</option>
+            <option value="Dev_PeakP75">Sort by Upside (ML 75th pct)</option>
+            <option value="Dev_PeakUseful">Sort by Starter % (ML)</option>
+            <option value="Dev_PeakGood">Sort by Star % (ML)</option>
           </select>
 
           <div className="flex items-center gap-2">
@@ -428,6 +437,9 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
                 <th className="col-group-start">Hybrid</th>
                 <th title="Proj Potential, WAA: where we project him to top out. From the ML model when the row has it (his WAA today + the ML median gain, washouts counted), else his WAA today + the DEV cell gain or the measured curve.">Proj Peak</th>
                 <th title="Proj Peak in WAR: the projected peak plus his role's replacement credit (pitchers by their listed position; catchers 5/6 of the hitter credit).">Peak WAR</th>
+                <th className="col-group-start" title="Upside, WAA: his WAA today + the 75th-percentile gain (ML model when the row has it, else the DEV cell). One in four lookalikes did better.">Upside</th>
+                <th title="Starter %: chance his peak reaches 0 WAA or better (ML model when the row has it, else the DEV cell share)">Starter %</th>
+                <th title="Star %: chance his peak reaches +1.5 WAA or better (ML model when the row has it, else the DEV cell share)">Star %</th>
               </tr>
             </thead>
             <tbody>
@@ -509,6 +521,15 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
                     </td>
                     <td className={getCellColorClass(player._potentialWAR, '_potentialWAR')}>
                       {formatCellValue(player._potentialWAR, '_potentialWAR')}
+                    </td>
+                    <td className={`col-group-start ${getCellColorClass(player.Dev_PeakP75, 'Dev_PeakP50')}`}>
+                      {formatCellValue(player.Dev_PeakP75, 'Dev_PeakP50')}
+                    </td>
+                    <td className={getCellColorClass(player.Dev_PeakUseful, 'Dev_PeakUseful')}>
+                      {formatCellValue(player.Dev_PeakUseful, 'Dev_PeakUseful')}
+                    </td>
+                    <td className={getCellColorClass(player.Dev_PeakGood, 'Dev_PeakGood')}>
+                      {formatCellValue(player.Dev_PeakGood, 'Dev_PeakGood')}
                     </td>
                   </tr>
                 );
