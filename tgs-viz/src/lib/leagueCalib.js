@@ -197,15 +197,23 @@ export function replacementOffset(league, role) {
 
 /**
  * A pitcher's CEILING ROLE (draftFV "Ceiling role", the dev projection's role): 'sp' when
- * he is eligible to start (the engine's Starter flag) and his starter ceiling in WAR is at
+ * he is eligible to start (the engine's Starter flag and STM >= SP_ROLE_MIN_STM) and his starter ceiling in WAR is at
  * least his relief ceiling in WAR (WAP + SP credit vs WAP RP + RP credit), else 'rp'; null
  * with neither ceiling. WAR, not WAA (user decision 2026-10-07): a below-average starter
  * fills ~800 BF and is worth more than a slightly-above-average reliever's ~300, which the
  * replacement credits price in. A non-starter with no WAP RP falls back to his WAP.
  */
+// Stamina a pitcher needs for the SP ceiling role. The engine's Starter flag lets 35 through
+// (engine/pitchers.py STARTER_MIN_STM, so 35-stamina arms keep a starter projection), but
+// clubs do not start them: SSB 2043 MLB starters (GS >= G/2) at STM 35 were 2 of 147 and
+// 1.1% of starter BF; at 40, 10 (6.6%); at 45, 11 (7.0%); 50 and up the rest.
+export const SP_ROLE_MIN_STM = 40;
+
 export function pitcherCeilingRole(player) {
   const league = player?._appLeague;
-  const isStarter = player?.Starter === true || String(player?.Starter).toUpperCase() === 'TRUE';
+  const stm = parseFloat(player?.STM);
+  const isStarter = (player?.Starter === true || String(player?.Starter).toUpperCase() === 'TRUE')
+    && !(Number.isFinite(stm) && stm < SP_ROLE_MIN_STM);
   const sp = parseFloat(player?.WAP);
   const rp = parseFloat(player?.['WAP RP']);
   const spOk = isStarter && Number.isFinite(sp);
