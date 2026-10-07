@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { calculateFutureValue } from '../lib/futureValue';
+import { calculateFutureValue, expectedPositiveWAR } from '../lib/futureValue';
 import { controlWindow } from '../lib/serviceTime';
 import { buildAgeGroups, calculateDraftFV } from '../lib/draftFV';
 import { replacementOffset, setLeagueBases } from '../lib/leagueCalib.js';
@@ -821,6 +821,17 @@ export function usePlayersWithFV(players) {
           ? Math.round((d.expectedPeak + fv.potentialOffsetUsed
               * (fv.potentialRole === 'hitter' && isCatcherRow(p) ? CATCHER_SHARE : 1)) * 100) / 100
           : null,
+        // Exp WAR: the expected peak WAR with busts counted as 0, from the ML gain
+        // quantiles in the projection's role plus that role's replacement credit (catchers
+        // 5/6 of the hitter credit, as Peak WAR). ML rows aged 26 and under only.
+        // Upside: the 75th-percentile peak in the projection's role (display WAA).
+        _upsideWAA: Array.isArray(fv.peakQuantilesWAA) ? fv.peakQuantilesWAA[3] : null,
+        _expWAR: (() => {
+          if (!Array.isArray(fv.peakQuantilesWAA) || !Number.isFinite(fv.potentialOffsetUsed)) return null;
+          const off = fv.potentialOffsetUsed * (fv.potentialRole === 'hitter' && isCatcherRow(p) ? CATCHER_SHARE : 1);
+          const ev = expectedPositiveWAR(fv.peakQuantilesWAA.map(x => x + off));
+          return ev === null ? null : Math.round(ev * 100) / 100;
+        })(),
         _potentialSource: !fv.measured ? 'model'
           : fv.targetSource === 'ml' ? 'ML'
           : fv.targetSource === 'cell' ? 'DEV cell'

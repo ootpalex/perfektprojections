@@ -50,7 +50,7 @@ function PickCell({ status }) {
 const DRAFT_LIST_MAX = 3000;
 
 // Sorts on the dev model's numbers (ML when the row has them, else the DEV cell).
-const ML_SORTS = new Set(['Dev_PeakP75', 'Dev_PeakUseful', 'Dev_PeakGood']);
+const ML_SORTS = new Set(['_expWAR', '_upsideWAA', 'Dev_PeakUseful', 'Dev_PeakGood']);
 
 export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitchers, picks = [], league }) {
   const [viewMode, setViewMode] = useState('combined'); // combined, hitters, pitchers
@@ -383,7 +383,8 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
             <option value="_potentialWAA">Sort by Proj Peak (WAA)</option>
             <option value="_potentialWAR">Sort by Proj Peak (WAR)</option>
             <option value="_peakWAA">Sort by Peak WAA</option>
-            <option value="Dev_PeakP75">Sort by Upside (ML 75th pct)</option>
+            <option value="_expWAR">Sort by Exp WAR (ML, busts = 0)</option>
+            <option value="_upsideWAA">Sort by Upside (ML 75th pct)</option>
             <option value="Dev_PeakUseful">Sort by Starter % (ML)</option>
             <option value="Dev_PeakGood">Sort by Star % (ML)</option>
           </select>
@@ -440,7 +441,8 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
                 <th className="col-group-start">Hybrid</th>
                 <th title="Proj Potential, WAA: where we project him to top out. From the ML model when the row has it (his WAA today + the ML median gain, washouts counted), else his WAA today + the DEV cell gain or the measured curve.">Proj Peak</th>
                 <th title="Proj Peak in WAR: the projected peak plus his role's replacement credit (pitchers by their listed position; catchers 5/6 of the hitter credit).">Peak WAR</th>
-                <th className="col-group-start" title="Upside, WAA: his WAA today + the 75th-percentile gain (ML model when the row has it, else the DEV cell). One in four lookalikes did better.">Upside</th>
+                <th className="col-group-start" title="Exp WAR: his expected peak WAR with busts counted as 0, over the ML model's whole range of outcomes (10th to 90th percentile gain), in his ceiling role, plus that role's replacement credit. A pick that never gets above replacement is worth nothing; one that becomes a star is worth his WAR.">Exp WAR</th>
+                <th title="Upside, WAA: his WAA today + the ML model's 75th-percentile gain, in his ceiling role. One in four lookalikes did better.">Upside</th>
                 <th title="Starter %: chance his peak reaches 0 WAA or better (ML model when the row has it, else the DEV cell share)">Starter %</th>
                 <th title="Star %: chance his peak reaches +1.5 WAA or better (ML model when the row has it, else the DEV cell share)">Star %</th>
               </tr>
@@ -525,8 +527,11 @@ export default function DraftBoardPage({ hitters, pitchers, allHitters, allPitch
                     <td className={getCellColorClass(player._potentialWAR, '_potentialWAR')}>
                       {formatCellValue(player._potentialWAR, '_potentialWAR')}
                     </td>
-                    <td className={`col-group-start ${getCellColorClass(player.Dev_PeakP75, 'Dev_PeakP50')}`}>
-                      {formatCellValue(player.Dev_PeakP75, 'Dev_PeakP50')}
+                    <td className="col-group-start tabular-nums">
+                      {Number.isFinite(player._expWAR) ? player._expWAR.toFixed(2) : '-'}
+                    </td>
+                    <td className={getCellColorClass(player._upsideWAA, 'Dev_PeakP50')}>
+                      {formatCellValue(player._upsideWAA, 'Dev_PeakP50')}
                     </td>
                     <td className={getCellColorClass(player.Dev_PeakUseful, 'Dev_PeakUseful')}>
                       {formatCellValue(player.Dev_PeakUseful, 'Dev_PeakUseful')}

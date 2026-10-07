@@ -348,15 +348,20 @@ function getPlayerWAAValues(player) {
 }
 
 /**
- * The dev projection's own pitcher role (user decision 2026-10-07, option 1 of the
- * Tang mismatch). The ML model and the DEV cell measure a pitcher's now on the
- * larger of "WAA wtd" and "WAA wtd RP" (the role DEV was priced on), so their gain
- * and path are on THAT role's scale. Adding them to the listed role's value mixed
- * scales (an SP at -10.6 got a gain learned from his -4.35 RP value). For a pitcher
- * below MLB with a dev projection (ML path or cell gain), current, potential and
- * both replacement offsets switch to that role, so the projection and its WAR
- * credit stay on one role. MLB pitchers keep the listed role. Returns vals itself
- * when nothing changes.
+ * A pitcher's role for his dev projection: the CEILING ROLE (user decision 2026-10-07),
+ * the rule draftFV.js uses for "Ceiling role": eligible to start (the engine's Starter
+ * flag) and WAP >= WAP RP -> SP, else RP. Pitchers below MLB with a dev projection (ML
+ * path or cell gain) take current, potential and both replacement offsets from that role;
+ * MLB pitchers keep the listed role.
+ *
+ * The ML model and the DEV cell measure a pitcher's now on the larger of "WAA wtd" and
+ * "WAA wtd RP" (the role DEV was priced on), so their gain is on THAT role's scale; for
+ * an amateur that is the RP scale (300 BF of a raw arm beats 800). When the ceiling role
+ * differs, devScale converts the gain to the ceiling role's scale: the share of his
+ * listed gap the gain closes (gain / (WAP_dev - now_dev), capped at 1 by devCap) is
+ * applied to the ceiling role's gap (WAP_role - now_role). Without a usable gap on both
+ * sides the projection keeps its own role (devScale 1). Returns vals itself when nothing
+ * changes.
  */
 function devRoleValues(player, vals) {
   const pos = String(player.POS ?? '').trim().toUpperCase();
@@ -364,21 +369,56 @@ function devRoleValues(player, vals) {
   if (String(player.Lev ?? '').trim().toUpperCase() === 'MLB') return vals;
   const hasDev = five(player.Dev_MlD) || Number.isFinite(parseFloat(player.Dev_PeakGainP50));
   if (!hasDev) return vals;
-  const sp = parseFloat(player['WAA wtd']);
-  const rp = parseFloat(player['WAA wtd RP']);
-  if (!Number.isFinite(sp) || !Number.isFinite(rp)) return vals;
-  const role = sp >= rp ? 'sp' : 'rp';
-  if (vals.currentRole === role && vals.potentialRole === role) return vals;
+  const now = { sp: parseFloat(player['WAA wtd']), rp: parseFloat(player['WAA wtd RP']) };
+  const pot = { sp: parseFloat(player['WAP']), rp: parseFloat(player['WAP RP']) };
+  if (!Number.isFinite(now.sp) || !Number.isFinite(now.rp)) return vals;
+  const devRole = now.sp >= now.rp ? 'sp' : 'rp';
+  const isStarter = player['Starter'] === true || String(player['Starter']).toUpperCase() === 'TRUE';
+  let role = isStarter && Number.isFinite(pot.sp) && !(pot.rp > pot.sp) ? 'sp' : 'rp';
+  let devScale = 1, devCap = Infinity;
+  if (role !== devRole) {
+    const gapDev = pot[devRole] - now[devRole];
+    const gapRole = pot[role] - now[role];
+    if (Number.isFinite(gapDev) && Number.isFinite(gapRole) && gapDev > 0.05 && gapRole > 0) {
+      devScale = gapRole / gapDev;
+      devCap = gapRole;
+    } else {
+      role = devRole;            // no usable gaps: the projection keeps its own role
+    }
+  }
+  if (vals.currentRole === role && vals.potentialRole === role && devScale === 1) return vals;
   const off = replacementOffset(player._appLeague, role);
-  const pot = parseFloat(player[role === 'sp' ? 'WAP' : 'WAP RP']);
-  const hasPotential = Number.isFinite(pot);
+  const hasPotential = Number.isFinite(pot[role]);
   return {
-    currentWAA: (role === 'sp' ? sp : rp) + off,
-    potentialWAA: (hasPotential ? pot : (role === 'sp' ? sp : rp)) + off,
+    currentWAA: now[role] + off,
+    potentialWAA: (hasPotential ? pot[role] : now[role]) + off,
     hasPotential,
     offsetUsed: off, potentialOffsetUsed: off,
     currentRole: role, potentialRole: role,
+    devScale, devCap,
   };
+}
+
+/**
+ * Expected peak WAR with busts counted as 0: E[max(peak, 0)] over a distribution read
+ * from five quantiles (10/25/50/75/90th) of peak WAR, linear between them and extended
+ * past the 10th and 90th on the neighbouring slope. A replacement-level outcome is worth
+ * nothing to the club that drafts him, so only the part above 0 WAR counts.
+ */
+export function expectedPositiveWAR(q) {
+  if (!Array.isArray(q) || q.length !== 5 || !q.every(Number.isFinite)) return null;
+  const ps = [0.10, 0.25, 0.50, 0.75, 0.90];
+  const at = (u) => {
+    if (u <= ps[0]) return q[0] - (q[1] - q[0]) * (ps[0] - u) / (ps[1] - ps[0]);
+    if (u >= ps[4]) return q[4] + (q[4] - q[3]) * (u - ps[4]) / (ps[4] - ps[3]);
+    let i = 0;
+    while (u > ps[i + 1]) i++;
+    return q[i] + (q[i + 1] - q[i]) * (u - ps[i]) / (ps[i + 1] - ps[i]);
+  };
+  const N = 200;
+  let sum = 0;
+  for (let k = 0; k < N; k++) sum += Math.max(0, at((k + 0.5) / N));
+  return sum / N;
 }
 
 // ============================================================
@@ -681,7 +721,11 @@ export function calculateFutureValue(player, yearsOfControl, params = {}) {
   // typical outcome for players like him, and the closure share is the
   // measured shortfall against a listed ceiling. A second haircut would
   // count the same risk twice.
-  const devGain = Number.isFinite(p.devGain) ? p.devGain : null;
+  // A dev gain measured on another role's scale is converted to this role's (devRoleValues).
+  const devScale = Number.isFinite(waaVals.devScale) ? waaVals.devScale : 1;
+  const devCap = Number.isFinite(waaVals.devCap) ? waaVals.devCap : Infinity;
+  const toRole = (g) => (Number.isFinite(g) ? Math.min(g * devScale, devCap) : g);
+  const devGain = Number.isFinite(p.devGain) ? toRole(p.devGain) : null;
   const shape = p.ageCurve ? curveShape(p.ageCurve) : null;
   const measured = !!shape && Number.isFinite(age);
   let targetSource = null;
@@ -693,9 +737,12 @@ export function calculateFutureValue(player, yearsOfControl, params = {}) {
   // at it. EXPECTED path (money, marketValue.agedWARPath): the same with the
   // ML means (Dev_MlDm) and no cap. Rows without the ML fields run exactly
   // as before.
-  const mlD = measured ? five(player.Dev_MlD) : null;
-  const mlDm = mlD ? (five(player.Dev_MlDm) || mlD) : null;
-  const mlGainArr = Array.isArray(player.Dev_MlGain) ? player.Dev_MlGain : null;
+  const mlDraw = measured ? five(player.Dev_MlD) : null;
+  const mlD = mlDraw && devScale !== 1 ? mlDraw.map(toRole) : mlDraw;
+  const mlDmRaw = mlDraw ? (five(player.Dev_MlDm) || mlDraw) : null;
+  const mlDm = mlDmRaw && devScale !== 1 ? mlDmRaw.map(toRole) : mlDmRaw;
+  const mlGainArr = Array.isArray(player.Dev_MlGain)
+    ? (devScale !== 1 ? player.Dev_MlGain.map(toRole) : player.Dev_MlGain) : null;
   const mlGain = mlGainArr && Number.isFinite(mlGainArr[2]) ? mlGainArr[2] : devGain;
   let mlTarget = null;
   let expPathAs = null, expPath = null;
@@ -941,6 +988,12 @@ export function calculateFutureValue(player, yearsOfControl, params = {}) {
         rawWAA: Math.round(expPath[i].waa * 100) / 100,
       })),
     } : {}),
+    // ML rows aged 26 and under: the peak at the model's 10/25/50/75/90th percentile gain,
+    // display WAA in the projection's role (the gain converted by devScale, never below 0).
+    // Exp WAR on the boards reads it. null elsewhere.
+    peakQuantilesWAA: mlTarget !== null && mlGainArr && mlGainArr.length === 5 && mlGainArr.every(Number.isFinite)
+      ? mlGainArr.map(g => Math.round((currentAsWAA + Math.max(0, g)) * 1000) / 1000)
+      : null,
     // Role replacement offsets baked into the WAR values above. offsetUsed belongs
     // to currentWAA, potentialOffsetUsed to potentialWAA — they DIFFER whenever the
     // best current role and the best peak role differ (common for young arms).
